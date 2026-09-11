@@ -216,7 +216,7 @@ class PipelineConfig(BaseModel):
 
     #: Also emit the bilingual display-name variant (resourcepack/overrides
     #: rendered with the original in parentheses on short display names).
-    bilingual_names: bool = False
+    bilingual_names: bool = True
 
     model: str = "openai/gpt-5.6-luna"
     api_key: str | None = None
@@ -2267,14 +2267,8 @@ _FRESH_STATUSES = (
 )
 
 
-async def write_outputs(result: PipelineResult) -> GenerationResult:
-    """(Re)generate the installable outputs from ``result.entries``.
-
-    Entries are the single source of truth: fresh statuses feed the
-    resource pack (already-translated pairs are omitted), while override
-    files additionally carry pre-existing SKIPPED translations because
-    they replace whole files. Idempotent — wipes and rewrites the trees.
-    """
+def file_outputs(result: PipelineResult) -> list[FileOutput]:
+    """Entries and persisted namespaces shared by whole-pack and per-mod output."""
     config = result.config
     # A restored session has no scan_result, so fall back to the map persisted
     # with it. Without that, a handler-extracted file whose path carries no
@@ -2309,6 +2303,13 @@ async def write_outputs(result: PipelineResult) -> GenerationResult:
         file_output.full[entry.key] = entry.translated_text
         if entry.status in _FRESH_STATUSES:
             file_output.fresh[entry.key] = entry.translated_text
+    return list(outputs.values())
+
+
+async def write_outputs(result: PipelineResult) -> GenerationResult:
+    """Regenerate both installable variants from the reviewed entry state."""
+    config = result.config
+    outputs = file_outputs(result)
 
     # The description shows under the moru icon in the resource-pack UI.
     # The pack list already displays the pack's name, so the description
@@ -2353,7 +2354,7 @@ async def write_outputs(result: PipelineResult) -> GenerationResult:
             ),
         )
     )
-    generation = await generator.generate(list(outputs.values()))
+    generation = await generator.generate(outputs)
     # Surface the one loss the installable outputs cannot absorb, so it
     # reaches the completion screen instead of dying in a log line.
     result.stats.undeliverable_jar_files = generation.skipped_jar_data

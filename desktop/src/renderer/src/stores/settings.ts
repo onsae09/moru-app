@@ -56,7 +56,6 @@ export interface TranslationRunSettings {
    */
   speechLevel: SpeechLevel;
   termStyle: TermStyle;
-  bilingualNames: boolean;
   targetLocale: string;
   /** Frozen with the rest: a queued run must use the blacklist that was
    *  in force when the queue started, not whatever it is edited to later. */
@@ -96,8 +95,6 @@ interface SettingsStore {
   speechLevel: SpeechLevel;
   /** Meaning-translate vs transliterate for terms with no established name. */
   termStyle: TermStyle;
-  /** Also emit the bilingual display-name variant, from the same run. */
-  bilingualNames: boolean;
   targetLocale: string;
   recentFolders: string[];
   /** Mod ids never translated; seeded from DEFAULT_MOD_BLACKLIST. */
@@ -128,11 +125,8 @@ export const useSettings = create<SettingsStore>()(
       glossaryMaxTerms: 3000,
       ollamaBaseUrl: "http://localhost:11434",
       openaiCompatBaseUrl: "http://localhost:1234/v1",
-      // Today's behaviour, exactly: nothing extra reaches the prompt and no
-      // second output tree is written unless the user asks.
       speechLevel: "auto",
       termStyle: "auto",
-      bilingualNames: false,
       targetLocale: "ko_kr",
       recentFolders: [],
       modBlacklist: [...DEFAULT_MOD_BLACKLIST],
@@ -143,7 +137,17 @@ export const useSettings = create<SettingsStore>()(
           recentFolders: [path, ...state.recentFolders.filter((p) => p !== path)].slice(0, 8),
         })),
     }),
-    { name: "moru-settings" },
+    {
+      name: "moru-settings",
+      merge: (persisted, current) => {
+        const saved = {
+          ...(persisted as Partial<SettingsStore> & { bilingualNames?: boolean }),
+        };
+        // Both variants are always generated, regardless of the old setting.
+        delete saved.bilingualNames;
+        return { ...current, ...saved };
+      },
+    },
   ),
 );
 
@@ -167,7 +171,6 @@ export function snapshotTranslationSettings(): TranslationRunSettings {
     openaiCompatBaseUrl: state.openaiCompatBaseUrl,
     speechLevel: state.speechLevel,
     termStyle: state.termStyle,
-    bilingualNames: state.bilingualNames,
     targetLocale: state.targetLocale,
     modBlacklist: [...state.modBlacklist],
   };

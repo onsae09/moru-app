@@ -144,7 +144,14 @@ async def test_source_text_tree_matches_a_translated_run(
 
     source_root = output_root(source.config)
     translated_root = output_root(translated.config)
-    assert _tree(source_root) == _tree(translated_root)
+    # A translated run always carries the bilingual sibling tree; a source
+    # text export has nothing to annotate, so the identity holds for the
+    # plain trees only.
+    plain_translated_tree = [
+        name for name in _tree(translated_root) if not name.startswith("bilingual/")
+    ]
+    assert _tree(source_root) == plain_translated_tree
+    assert any(name.startswith("bilingual/") for name in _tree(translated_root))
     # Sanity: the comparison is not vacuous.
     assert "resourcepack/pack.mcmeta" in _tree(source_root)
     assert any(name.startswith("overrides/") for name in _tree(source_root))

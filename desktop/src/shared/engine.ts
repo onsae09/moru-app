@@ -512,14 +512,6 @@ export interface TranslateParams {
   speech_level?: SpeechLevel;
   /** Rendering preference for un-named terms; every target language. */
   term_style?: TermStyle;
-  /**
-   * Also emit the bilingual display-name variant: a SECOND output tree whose
-   * short display names carry the original in parentheses ("철 곡괭이 (Iron
-   * Pickaxe)"). The ordinary output is unchanged and both come out of the one
-   * translation run, so this costs no extra model calls. Tooltips, quest
-   * prose and numbered sibling lines never get it.
-   */
-  bilingual_names?: boolean;
   use_tm?: boolean;
   use_vanilla_glossary?: boolean;
   extract_glossary?: boolean;
@@ -602,6 +594,29 @@ export interface UploadParams {
   changelog?: string;
   web_url?: string;
   api_token?: string;
+  share_mods?: boolean;
+}
+
+export interface ModPackUploadResult {
+  shared: number;
+  skipped: number;
+  failed: number;
+  skipped_reason?: "login_required" | "disabled" | "unresolved";
+  bundle_url?: string;
+}
+
+/** Background CurseForge identification for a scanned modpack's jars. */
+export interface ModSourcesResult {
+  status: "pending" | "running" | "done" | "failed";
+  total: number;
+  resolved: number;
+  unresolved: number;
+  sources: Array<{
+    jar_name: string;
+    project_id: number | null;
+    file_id: number | null;
+    source: "instance" | "prism" | "fingerprint" | "unresolved";
+  }>;
 }
 
 /* ---- WebSocket event frames (/jobs/{id}/events) ---- */
@@ -687,13 +702,18 @@ export interface TerminalFrame extends JobEventMeta {
   status: JobStatus;
   error?: string;
   stats?: PipelineStats;
-  /** export terminal payload — either zip is null when its tree is empty */
+  /** export terminal payload — each zip is null when its tree is empty */
   zip_path?: string | null;
   overrides_zip_path?: string | null;
+  bilingual_zip_path?: string | null;
+  bilingual_overrides_zip_path?: string | null;
   file_count?: number;
   /** upload terminal payload */
   pack_id?: string;
   url?: string;
+  modpack_slug?: string;
+  bundle_url?: string;
+  mod_packs?: ModPackUploadResult;
 }
 
 export type JobEventFrame =

@@ -476,6 +476,15 @@ def create_app(
         except UnknownJobError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @api.get("/jobs/{job_id}/mod-sources")
+    async def get_mod_sources(job_id: str) -> dict[str, Any]:
+        try:
+            return manager.get_mod_sources(job_id).payload()
+        except UnknownJobError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except JobStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @api.post("/jobs/{job_id}/cancel", status_code=202)
     async def cancel_job(job_id: str) -> dict[str, Any]:
         try:

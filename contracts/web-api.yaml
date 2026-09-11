@@ -39,8 +39,13 @@ info:
     would let the engine honour a declared range it must not trust. An
     absent Minecraft version caps a candidate at exact-version matching,
     which is the fail-closed default.
-  version: "0.6.0"
-  x-contract-version: 6
+    Contract v7 adds authenticated single-mod translations, grouped upload
+    URLs and desktop batch registration. Modpack Index supplies mod lists
+    for browser-assembled bundles; bundle downloads return presigned R2 GET
+    URLs without proxying archive bytes. CurseForge search and file/version
+    metadata use a one-hour upstream Data Cache.
+  version: "0.7.0"
+  x-contract-version: 7
 servers:
   - url: "https://moru.gg"
 paths:
@@ -53,6 +58,10 @@ paths:
         desktop client marker header `X-Moru-Client: moru-engine/<version>`
         — the website upload form stays sign-in only. Other anonymous
         calls are rejected with 401.
+        Files sharing a group share one translations/{uuid} prefix.
+        Ungrouped files share a separate prefix, as before. Without groups
+        the maximum is five files; with any group the maximum is 200 and
+        only archive kinds are allowed.
       security: [{ apiToken: [] }]
       requestBody:
         required: true
@@ -64,6 +73,8 @@ paths:
               properties:
                 files:
                   type: array
+                  minItems: 1
+                  maxItems: 200
                   items:
                     type: object
                     required: [kind, size, sha256]
@@ -88,6 +99,11 @@ paths:
                           ask for one archive or all four.
                       size: { type: integer }
                       sha256: { type: string }
+                      group:
+                        type: string
+                        minLength: 1
+                        maxLength: 100
+                        description: Optional per-mod grouping key; echoed in uploads.
       responses:
         "200":
           content:
@@ -103,6 +119,7 @@ paths:
                         kind: { type: string }
                         url: { type: string, description: presigned PUT URL }
                         object_key: { type: string }
+                        group: { type: string, description: Present when supplied for this file }
   /api/translations:
     post:
       summary: Register uploaded pack metadata (after presigned upload completes)
@@ -114,6 +131,13 @@ paths:
         to no account. Supplying pack_id appends a version to that pack
         instead of creating another TranslationPack and requires its
         owner (or an admin).
+        project_kind defaults to modpack. Single-mod registrations require
+        a signed-in caller and CurseForge project id, accept only resource
+        packs (plain/bilingual), and record the mod file's MC versions and
+        loader. Without pack_id, the same project, normalized version,
+        languages and owner revise the existing published pack. Omitted
+        artifact slots always carry forward. Mod registrations announce
+        individually but never auto-fulfill modpack requests.
       security: [{ apiToken: [] }]
       requestBody:
         required: true
@@ -129,6 +153,10 @@ paths:
                 properties:
                   pack_id: { type: string }
                   url: { type: string, description: public pack page }
+                  modpack_slug: { type: string }
+                  project_kind: { type: string, enum: [modpack, mod] }
+        "400": { description: invalid registration metadata or file kinds }
+        "401": { description: authentication required, including anonymous desktop mod registrations }
         "403":
           description: pack_id is not owned by the caller
   /api/translations/compatible:
@@ -146,6 +174,8 @@ paths:
         404: a transport failure means "try later" while an empty list
         means "nobody has translated this", and the engine must be able
         to tell them apart.
+        Only project_kind=modpack projects are searched; single-mod
+        translations do not appear in these results.
       parameters:
         - { name: target_lang, in: query, required: true, schema: { type: string, example: ko_kr } }
         - { name: modpack_name, in: query, schema: { type: string } }
@@ -159,8 +189,8 @@ paths:
         - name: mc_version
           in: query
           description: >
-            Accepted and ignored. The platform stores no Minecraft version
-            per translation pack, so it cannot filter on one.
+            Accepted and ignored for this modpack-only lookup. Minecraft
+            compatibility is stored only on single-mod translations.
           schema: { type: string }
       responses:
         "200":
@@ -175,6 +205,212 @@ paths:
                     items: { $ref: "#/components/schemas/CompatibleTranslation" }
         "400": { description: unsupported target_lang, or neither curseforge_id nor modpack_name }
         "429": { description: rate limited }
+  /api/translations/batch:
+    post:
+      summary: Register up to 100 signed-in desktop per-mod translations
+      description: >
+        Requires a session or desktop API token; an anonymous desktop marker
+        is insufficient. Rate limited to 30 requests/hour per account.
+        Unknown projects are enriched through CurseForge batch lookups in
+        chunks of 50. Each mod follows the same revision/artifact retention
+        semantics as /api/translations. No announcements or request
+        auto-fulfillment; the owner's score is recomputed once per batch.
+        Individual failures do not roll back successful mods.
+      security: [{ apiToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModTranslationBatch" }
+      responses:
+        "201":
+          description: Per-mod registration outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [packs, failed]
+                properties:
+                  packs:
+                    type: array
+                    items:
+                      type: object
+                      required: [curseforge_id, pack_id, url]
+                      properties:
+                        curseforge_id: { type: integer }
+                        pack_id: { type: string }
+                        url: { type: string }
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                      required: [curseforge_id, error]
+                      properties:
+                        curseforge_id: { type: integer }
+                        error: { type: string }
+        "400": { description: invalid batch metadata or mod ids }
+        "401": { description: authentication required }
+        "429": { description: rate limited }
+  /api/modpacks/search:
+    get:
+      summary: Search CurseForge Minecraft modpacks (class 4471)
+      description: Upstream search responses are cached for one hour.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        "200":
+          description: Ranked CurseForge projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/CurseForgeSearchResult" }
+        "400": { description: invalid q }
+        "429": { description: rate limited }
+        "503": { description: search unavailable }
+  /api/mods/search:
+    get:
+      summary: Search CurseForge Minecraft mods (class 6)
+      description: Same result shape as modpack search; cached upstream for one hour.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        "200":
+          description: Ranked CurseForge mod projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/CurseForgeSearchResult" }
+        "400": { description: invalid q }
+        "429": { description: rate limited }
+        "503": { description: search unavailable }
+  /api/modpacks/{id}/versions:
+    get:
+      summary: Selectable files for any CurseForge mod or modpack project
+      description: >
+        Upstream files and Minecraft versions are cached for one hour.
+        Only available non-server, non-child files are offered, newest first.
+        game_version restricts results to files containing that MC version.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: game_version, in: query, schema: { type: string, example: "1.20.1" } }
+      responses:
+        "200":
+          description: Selectable CurseForge releases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fileId: { type: integer }
+                        version: { type: string }
+                        fileName: { type: string }
+                        fileDate: { type: string, format: date-time }
+                        releaseType: { type: integer }
+                        minecraftVersions: { type: array, items: { type: string } }
+                        loader: { type: [string, "null"], enum: [forge, neoforge, fabric, quilt, null] }
+        "400": { description: invalid id }
+        "429": { description: rate limited }
+        "503": { description: versions unavailable }
+  /api/curseforge/minecraft-versions:
+    get:
+      summary: Minecraft versions for the upload selector
+      description: Upstream metadata is cached for one hour.
+      responses:
+        "200":
+          description: Version strings reported by CurseForge
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versions: { type: array, items: { type: string } }
+        "429": { description: rate limited }
+        "503": { description: versions unavailable }
+  /api/mods/modpack-search:
+    get:
+      summary: Search Modpack Index for a bundle's modpack
+      description: >
+        Unauthenticated, limited to 60 requests/hour per IP. Modpack Index
+        requests carry the moru.gg User-Agent and are cached for one hour.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        "200":
+          description: Modpack Index search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/ModpackIndexSummary" }
+        "400": { description: invalid q }
+        "429": { description: rate limited }
+        "503": { description: search unavailable }
+  /api/bundles/download:
+    post:
+      summary: Sign selected mod translation archives for browser assembly
+      description: >
+        Only published mod packs are eligible. Missing/rejected/non-mod packs
+        and packs without a resource archive are skipped. A missing bilingual
+        variant falls back to plain via the pack's available variants. URLs
+        expire in 300 seconds; browser GET downloads require R2 CORS permitting
+        GET and range from the site origins. No archive bytes pass through
+        Vercel. Duplicate ids are removed while preserving requested order.
+        Each included pack's download and parent counter increment together,
+        at most once per IP/day using the same dl:pack:{id}:{ip} key as direct
+        downloads. Only owners crossing a download-point block are rescored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pack_ids, variant]
+              properties:
+                pack_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 400
+                  items: { type: string, minLength: 1, maxLength: 100 }
+                variant: { type: string, enum: [plain, bilingual] }
+      responses:
+        "200":
+          description: Presigned files in requested order and unavailable pack ids
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files, skipped]
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [pack_id, url, file_name]
+                      properties:
+                        pack_id: { type: string }
+                        url: { type: string, description: Presigned R2 GET URL }
+                        file_name:
+                          type: string
+                          description: "{modName}-{modVersion}-{lang}[-bilingual].zip (actual variant)"
+                  skipped: { type: array, items: { type: string } }
+        "400": { description: invalid ids or variant }
+        "500": { description: signing or download accounting failed }
   /api/export/corrections:
     get:
       summary: Approved corrections for evalset building (operator token required)
@@ -255,6 +491,85 @@ components:
       scheme: bearer
       description: Desktop API token issued via /auth/desktop-login
   schemas:
+    CurseForgeSearchResult:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        summary: { type: string }
+        logoUrl: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        downloads: { type: number }
+        gameVersions: { type: [string, "null"], description: Comma-separated MC versions }
+        url: { type: [string, "null"] }
+    ModpackIndexSummary:
+      type: object
+      required: [id, name, slug, summary, thumbnailUrl, curseforgeId, downloads]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        summary: { type: string }
+        thumbnailUrl: { type: [string, "null"] }
+        curseforgeId: { type: [integer, "null"] }
+        downloads: { type: number }
+    MinecraftVersions:
+      type: array
+      minItems: 1
+      maxItems: 20
+      items: { type: string, pattern: '^\d+(\.\d+){1,2}(-[\w.]+)?$' }
+    ModResourceFile:
+      type: object
+      required: [kind, object_key]
+      properties:
+        kind: { type: string, enum: [resource_pack, resource_pack_bilingual] }
+        object_key: { type: string }
+    ModTranslationBatch:
+      type: object
+      required: [modpack_name, target_lang, engine_version, mods]
+      properties:
+        modpack_curseforge_id: { type: integer, minimum: 1 }
+        modpack_name: { type: string, minLength: 1, maxLength: 200 }
+        modpack_version: { type: string, maxLength: 100 }
+        target_lang: { type: string, example: ko_kr }
+        source_lang: { type: string, default: en_us }
+        engine_version: { type: string, minLength: 1, maxLength: 50 }
+        is_manual_translation: { type: boolean }
+        mods:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [curseforge_id, game_versions, files, stats]
+            properties:
+              curseforge_id: { type: integer, minimum: 1 }
+              curseforge_file_id: { type: integer, minimum: 1 }
+              name: { type: string, maxLength: 200 }
+              version: { type: string, maxLength: 100 }
+              game_versions: { $ref: "#/components/schemas/MinecraftVersions" }
+              loader: { type: string, maxLength: 30 }
+              files:
+                type: array
+                minItems: 1
+                maxItems: 2
+                items: { $ref: "#/components/schemas/ModResourceFile" }
+              stats: { $ref: "#/components/schemas/PackStats" }
+    PackStats:
+      type: object
+      properties:
+        total_entries: { type: integer }
+        translated_entries: { type: integer }
+        failed_entries: { type: integer }
+        coverage_percent: { type: number }
+        quality_score: { type: number, description: validator pass rate 0-1 }
+        tm_hits: { type: integer }
+        categories:
+          type: object
+          additionalProperties: { type: integer }
+        model: { type: string }
+        duration_seconds: { type: number }
     CompatibleTranslation:
       type: object
       description: >
@@ -362,9 +677,21 @@ components:
         pack_id:
           type: string
           description: existing owned TranslationPack to update with a new PackVersion
+        project_kind:
+          type: string
+          enum: [modpack, mod]
+          default: modpack
+          description: mod requires authentication, curseforge_id and game_versions, and resource-only file kinds
         modpack_name: { type: string }
         modpack_version: { type: string }
         curseforge_id: { type: integer, nullable: true }
+        curseforge_file_id: { type: integer, minimum: 1, description: Mod file the translation was made from }
+        game_versions: { $ref: "#/components/schemas/MinecraftVersions" }
+        loader: { type: string, maxLength: 30 }
+        mod_pack_count:
+          type: integer
+          minimum: 0
+          description: Modpack only; adds "모드별 팩 N개 포함" to its new-pack Discord announcement when positive
         target_lang: { type: string, example: ko_kr }
         source_lang: { type: string, default: en_us }
         description: { type: string }
@@ -397,17 +724,4 @@ components:
         artifact_id:
           type: string
           description: which compiled DSPy artifact produced this pack
-        stats:
-          type: object
-          properties:
-            total_entries: { type: integer }
-            translated_entries: { type: integer }
-            failed_entries: { type: integer }
-            coverage_percent: { type: number }
-            quality_score: { type: number, description: validator pass rate 0-1 }
-            tm_hits: { type: integer }
-            categories:
-              type: object
-              additionalProperties: { type: integer }
-            model: { type: string }
-            duration_seconds: { type: number }
+        stats: { $ref: "#/components/schemas/PackStats" }

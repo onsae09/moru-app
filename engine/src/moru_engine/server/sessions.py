@@ -15,6 +15,7 @@ from typing import Any
 
 from platformdirs import user_data_dir
 
+from ..modsources import ModSource, ModSources
 from ..pipeline import (
     EntryResult,
     EntryStatus,
@@ -121,6 +122,27 @@ class SessionStore:
     def _session_file_path(self, session_id: str) -> Path:
         return self.sessions_dir / f"{_safe_session_id(session_id)}.moru"
 
+    def save_mod_sources(self, job_id: str, sources: ModSources) -> None:
+        path = self.sessions_dir / ".mod-sources" / f"{_safe_session_id(job_id)}.json"
+        _atomic_write_json(path, asdict(sources))
+
+    def load_mod_sources(self, job_id: str) -> ModSources | None:
+        path = self.sessions_dir / ".mod-sources" / f"{_safe_session_id(job_id)}.json"
+        data = _read_json(path)
+        return self._deserialize_mod_sources(data) if isinstance(data, dict) else None
+
+    @staticmethod
+    def _deserialize_mod_sources(data: dict[str, Any]) -> ModSources:
+        sources = ModSources(
+            status=data.get("status", "pending"),
+            sources=[ModSource(**item) for item in data.get("sources", [])],
+        )
+        if sources.status in ("running", "pending"):
+            # A process restart ended the task. Preserve partial identities,
+            # but never advertise a running lookup with no worker behind it.
+            sources.status = "failed"
+        return sources
+
     def save_job_session(self, record: JobRecord) -> Path | None:
         """Serialize a completed/cancelled translate JobRecord and persist to disk."""
         if record.type is not JobType.TRANSLATE or not isinstance(record.result, PipelineResult):
@@ -166,6 +188,8 @@ class SessionStore:
             "glossary_max_terms": config.glossary_max_terms,
             "include_categories": config.include_categories,
             "mod_blacklist": config.mod_blacklist,
+            "manual_seed": config.manual_seed,
+            "source_text_only": config.source_text_only,
         }
 
         stats_source = res.stats
@@ -201,6 +225,7 @@ class SessionStore:
             "config": config_data,
             "identity": identity_dict,
             "scan_result": record.params.get("scan_result"),
+            "mod_sources": asdict(record.mod_sources),
             # The scanner's ScanResult dataclass is NOT rebuilt on restore, and
             # the contract-shaped "scan_result" above cannot substitute: it has
             # no source_path/namespace pairs. So persist just the map
@@ -306,6 +331,8 @@ class SessionStore:
             glossary_max_terms=config_data.get("glossary_max_terms"),
             include_categories=config_data.get("include_categories"),
             mod_blacklist=config_data.get("mod_blacklist"),
+            manual_seed=config_data.get("manual_seed", False),
+            source_text_only=config_data.get("source_text_only", False),
         )
 
         entries = [
@@ -366,6 +393,11 @@ class SessionStore:
             result=pipeline_result,
             done_payload=data.get("done_payload"),
             finished=True,
+            mod_sources=(
+                self._deserialize_mod_sources(data["mod_sources"])
+                if isinstance(data.get("mod_sources"), dict)
+                else ModSources()
+            ),
         )
         return record
 
@@ -410,6 +442,8 @@ class SessionStore:
             "stats": stats,
             "export_zip_path": done_payload.get("zip_path"),
             "export_overrides_zip_path": done_payload.get("overrides_zip_path"),
+            "export_bilingual_zip_path": done_payload.get("bilingual_zip_path"),
+            "export_bilingual_overrides_zip_path": done_payload.get("bilingual_overrides_zip_path"),
         }
 
     def journal_for(self, session_id: str) -> ManualJournal:

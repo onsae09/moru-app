@@ -14,6 +14,7 @@ from .generator import (
     OutputGenerator,
     Route,
     create_zip_from_directory,
+    jar_name_for,
     route_for,
     pack_format_for_minecraft_version,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "OutputGenerator",
     "Route",
     "create_zip_from_directory",
+    "jar_name_for",
     "route_for",
     "pack_format_for_minecraft_version",
 ]

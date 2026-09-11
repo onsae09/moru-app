@@ -409,6 +409,8 @@ function ensureFailedSession(
     error,
     exportZipPath: null,
     exportOverridesZipPath: null,
+    exportBilingualZipPath: null,
+    exportBilingualOverridesZipPath: null,
     sharedUrl: null,
   });
   return id;

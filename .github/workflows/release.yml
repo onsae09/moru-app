@@ -57,6 +57,14 @@ jobs:
           cache-dependency-glob: engine/uv.lock
       - uses: oven-sh/setup-bun@v2
 
+      - name: Embed CurseForge fingerprint API key
+        shell: bash
+        working-directory: engine
+        env:
+          MORU_CURSEFORGE_API_KEY: ${{ secrets.MORU_CURSEFORGE_API_KEY }}
+        run: |
+          uv run python -c "import os; from pathlib import Path; Path('src/moru_engine/_embedded_keys.py').write_text('CURSEFORGE_API_KEY = ' + repr(os.environ.get('MORU_CURSEFORGE_API_KEY', '')) + '\n', encoding='utf-8')"
+
       - name: Build engine sidecar (PyInstaller onedir)
         shell: bash
         working-directory: engine

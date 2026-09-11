@@ -77,6 +77,23 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/JobSnapshot" }
         "404": { description: unknown job }
+  /jobs/{jobId}/mod-sources:
+    get:
+      summary: CurseForge identities for the scan's installed mod JARs
+      description: >-
+        Discovery starts in the background after a successful scan, using
+        minecraftinstance.json, Prism .pw.toml metadata, then fingerprint
+        matches for remaining JARs. Failures never fail the scan, and retain
+        launcher matches. Restored translate session ids are also accepted.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "200":
+          description: Current or persisted mod identities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModSources" }
+        "404": { description: unknown job }
+        "409": { description: job has no mod sources }
   /jobs/{jobId}/events:
     get:
       summary: >
@@ -111,10 +128,16 @@ paths:
         A/B/C matches reused from a previous translation, and stats.categories
         maps web-facing category keys to non-failed entry counts (an empty map
         means none);
-        done export frames carry {zip_path (resource pack, null when the run shipped no
-        resource-pack files), overrides_zip_path (kubejs/config/ftbquests
-        overrides, null when none), file_count}; done upload frames carry
-        {pack_id, url}.
+        done export frames carry {zip_path, overrides_zip_path,
+        bilingual_zip_path, bilingual_overrides_zip_path, file_count}.
+        Each path is null when its output tree is empty. Bilingual archive
+        names are "<stem> (병기).zip" and "<stem> (병기)_overrides.zip".
+        Upload progress also includes {stage: mods, current, total, message}
+        with the current mod display name. Done upload frames carry
+        {pack_id, url, modpack_slug?, mod_packs: {shared, skipped, failed,
+        skipped_reason?}}. skipped_reason is login_required, disabled, or
+        unresolved. The engine does not know a Modpack Index id and omits
+        bundle_url; the desktop links to /ko/modpack/{modpack_slug}.
       parameters:
         - { $ref: "#/components/parameters/JobId" }
         - name: after
@@ -867,6 +890,8 @@ components:
             scan_job_id reuses a completed matching scan and its run-scoped
             migration index; it is only a hint - an unknown, unfinished or
             non-matching id is ignored and the run scans afresh.
+            Translated runs always generate plain and bilingual variants;
+            source-text-only runs omit the redundant bilingual trees.
             include_categories
             limits translation to the named scan categories (default all).
             manual_seed: true seeds a hand-translation session - the run
@@ -894,14 +919,61 @@ components:
             upload: {translate_job_id, modpack_name, web_url? (default
             https://moru.gg), api_token? (Bearer token for the web platform;
             omitted = anonymous desktop upload, attributed to no account),
-            modpack_version?, description?, changelog?, curseforge_id?
-            (positive integer; forwarded verbatim so the web platform can
-            link the pack to its CurseForge project)} - publishes the
-            completed or user-cancelled translate job's reviewed archives
-            (resource_pack.zip and, when the run produced override files,
-            overrides.zip) to the moru web platform (see
-            contracts/web-api.yaml); the terminal done frame carries
-            {pack_id, url}.
+            modpack_version?, description?, changelog?, share_mods? (default
+            true), curseforge_id? (positive integer; forwarded verbatim so
+            the web platform can link the pack to its CurseForge project)}.
+            Publishes reviewed resource pack and override archives in both
+            variants, skipping empty trees. The whole modpack is registered
+            first; per-mod packs require api_token and use grouped upload
+            slots and /api/translations/batch in chunks of at most 100 mods,
+            with six concurrent archive PUTs. Identity lookup is awaited for
+            at most 120 seconds. The whole registration includes
+            mod_pack_count and is_manual_translation for manual-seed runs.
+            The terminal done frame follows UploadResult.
+    ModSources:
+      type: object
+      required: [status, total, resolved, unresolved, sources]
+      properties:
+        status: { type: string, enum: [pending, running, done, failed] }
+        total: { type: integer, minimum: 0 }
+        resolved: { type: integer, minimum: 0 }
+        unresolved: { type: integer, minimum: 0 }
+        sources:
+          type: array
+          items:
+            type: object
+            required: [jar_name, project_id, file_id, source]
+            properties:
+              jar_name: { type: string }
+              project_id: { type: integer, nullable: true }
+              file_id: { type: integer, nullable: true }
+              source: { type: string, enum: [instance, prism, fingerprint, unresolved] }
+    ExportResult:
+      type: object
+      required: [zip_path, overrides_zip_path, bilingual_zip_path, bilingual_overrides_zip_path, file_count]
+      properties:
+        zip_path: { type: string, nullable: true }
+        overrides_zip_path: { type: string, nullable: true }
+        bilingual_zip_path: { type: string, nullable: true }
+        bilingual_overrides_zip_path: { type: string, nullable: true }
+        file_count: { type: integer, minimum: 0 }
+    UploadResult:
+      type: object
+      required: [pack_id, url, mod_packs]
+      properties:
+        pack_id: { type: string }
+        url: { type: string }
+        modpack_slug: { type: string }
+        bundle_url: { type: string, description: Not emitted by the engine }
+        mod_packs:
+          type: object
+          required: [shared, skipped, failed]
+          properties:
+            shared: { type: integer, minimum: 0 }
+            skipped: { type: integer, minimum: 0 }
+            failed: { type: integer, minimum: 0 }
+            skipped_reason: { type: string, enum: [login_required, disabled, unresolved] }
+            bundle_url: { type: string, description: Not emitted by the engine }
     Job:
       type: object
       required: [id, type, status]
@@ -1414,5 +1486,7 @@ components:
         stats: { type: object, nullable: true }
         export_zip_path: { type: string, nullable: true }
         export_overrides_zip_path: { type: string, nullable: true }
+        export_bilingual_zip_path: { type: string, nullable: true }
+        export_bilingual_overrides_zip_path: { type: string, nullable: true }
 security:
   - sessionToken: []

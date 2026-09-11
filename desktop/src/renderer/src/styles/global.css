@@ -10,7 +10,7 @@
  */
 @theme {
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "Pretendard Variable", Pretendard, ui-monospace, monospace;
 
   /* neutrals */
   --color-ink: #06090a; /* page backdrop */

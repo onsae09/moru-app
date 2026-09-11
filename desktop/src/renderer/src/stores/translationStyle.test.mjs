@@ -1,6 +1,5 @@
 /**
- * Translation-style params: speech level (말투), term rendering, and the
- * bilingual display-name variant.
+ * Translation-style params: speech level (말투) and term rendering.
  *
  * Two properties matter and both have a real failure mode:
  *
@@ -48,7 +47,6 @@ beforeEach(() => {
   useSettings.setState({
     speechLevel: "auto",
     termStyle: "auto",
-    bilingualNames: false,
   });
 });
 
@@ -57,18 +55,13 @@ function postedParams(state = STATE) {
   return JSON.parse(JSON.stringify(buildTranslateParams(state, snapshotTranslationSettings())));
 }
 
-test("the settings snapshot carries all three style axes", () => {
-  useSettings.setState({
-    speechLevel: "hage",
-    termStyle: "transliterate",
-    bilingualNames: true,
-  });
+test("a queued settings snapshot keeps its style when live preferences change", () => {
+  useSettings.setState({ speechLevel: "hage", termStyle: "transliterate" });
   const snapshot = snapshotTranslationSettings();
-  // They belong in the snapshot for the same reason `modBlacklist` does: a
-  // queued pack must run the style that was in force when the queue started.
-  expect(snapshot.speechLevel).toBe("hage");
-  expect(snapshot.termStyle).toBe("transliterate");
-  expect(snapshot.bilingualNames).toBe(true);
+  useSettings.setState({ speechLevel: "polite", termStyle: "translate" });
+  const params = buildTranslateParams(STATE, snapshot);
+  expect(params.speech_level).toBe("hage");
+  expect(params.term_style).toBe("transliterate");
 });
 
 test("defaults post no style keys at all", () => {
@@ -92,21 +85,31 @@ test("a chosen term style reaches the job params", () => {
   }
 });
 
-test("bilingual names reaches the job params", () => {
-  useSettings.setState({ bilingualNames: true });
-  expect(postedParams().bilingual_names).toBe(true);
+test("rehydration discards the old bilingual opt-out without losing other preferences", async () => {
+  const previous = useSettings.getState();
+  try {
+    globalThis.localStorage.setItem("moru-settings", JSON.stringify({
+      state: { bilingualNames: false, speechLevel: "hage", termStyle: "transliterate" },
+      version: 0,
+    }));
+    await useSettings.persist.rehydrate();
+    expect(useSettings.getState()).not.toHaveProperty("bilingualNames");
+    expect(postedParams()).not.toHaveProperty("bilingual_names");
+    expect(postedParams().speech_level).toBe("hage");
+    expect(postedParams().term_style).toBe("transliterate");
+  } finally {
+    useSettings.setState(previous, true);
+  }
 });
 
-test("all three ride along together, and nothing else moves", () => {
+test("both style choices ride along together, and nothing else moves", () => {
   useSettings.setState({
     speechLevel: "polite",
     termStyle: "translate",
-    bilingualNames: true,
   });
   const params = postedParams();
   expect(params.speech_level).toBe("polite");
   expect(params.term_style).toBe("translate");
-  expect(params.bilingual_names).toBe(true);
   // The rest of the request is untouched by the style axes.
   expect(params.target_locale).toBe("ko_kr");
   expect(params.use_tm).toBe(true);

@@ -393,6 +393,8 @@ export function HistoryScreen(): React.JSX.Element {
           error: null,
           exportZipPath: s.export_zip_path ?? null,
           exportOverridesZipPath: s.export_overrides_zip_path ?? null,
+          exportBilingualZipPath: s.export_bilingual_zip_path ?? null,
+          exportBilingualOverridesZipPath: s.export_bilingual_overrides_zip_path ?? null,
           sharedUrl: null,
         };
         useSessions.getState().upsert(rec);

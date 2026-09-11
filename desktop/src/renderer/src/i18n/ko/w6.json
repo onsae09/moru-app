@@ -23,6 +23,8 @@
     "zipTitle": "리소스팩 (.zip)",
     "badgeRecommended": "추천",
     "zipDesc": "원본을 건드리지 않고 게임 안에서 리소스팩으로 켜서 사용. 안전하고 되돌리기 쉽습니다.",
+    "bilingual": "원문 병기",
+    "bilingualDesc": "아이템·블록·엔티티 이름 옆에 원문을 함께 표시합니다. 일반 팩 대신 이 팩을 적용하세요.",
     "fileName": "파일명",
     "target": "대상",
     "entries": "엔트리",
@@ -31,8 +33,8 @@
     "creating": "생성 중…",
     "savedTo": "저장 위치",
     "failed": "내보내기 실패",
-    "changePath": "경로 변경",
-    "changePathHint": "내보내기 경로는 번역 설정의 출력 폴더를 따릅니다",
+    "copyPath": "경로 복사",
+    "copied": "복사됨",
     "ovTitle": "덮어쓰기 파일 (.zip)",
     "badgeAdvanced": "고급",
     "ovDesc": "리소스팩이 못 담는 KubeJS · FTB Quests · config 번역입니다. 압축을 풀어 모드팩 폴더에 그대로 덮어쓰세요.",
@@ -60,6 +62,24 @@
     "uploadFailed": "업로드 실패",
     "done": "커뮤니티에 공유됐어요 — 교정 제안이 오면 알려드릴게요",
     "viewOnWeb": "웹에서 보기",
+    "buildBundle": "모드팩 페이지에서 합본 만들기",
+    "modsTitle": "모드별 리소스팩도 함께 공유",
+    "modsHint": "식별된 모드마다 일반·원문 병기 팩을 공유해 다른 모드팩에서도 재사용할 수 있게 합니다.",
+    "modsLoginHint": "모드별 팩 공유는 로그인 후 이용할 수 있어요. 모드팩 전체 팩은 익명으로 공유할 수 있습니다.",
+    "modSourcesPending": "CurseForge 모드 식별 준비 중…",
+    "modSourcesProgress": "CurseForge 모드 식별 {{resolved}}/{{total}}",
+    "modSourcesFailed": "CurseForge 모드 식별에 실패했어요 — 식별된 모드만 공유할 수 있습니다.",
+    "modsResult": "모드별 팩 {{shared}}개 공유됨 · 건너뜀 {{skipped}} · 실패 {{failed}}",
+    "modsSkipped": {
+      "login_required": "로그인하지 않아 모드별 팩 공유를 건너뛰었어요.",
+      "disabled": "모드별 팩 공유를 꺼서 건너뛰었어요.",
+      "unresolved": "일부 모드를 CurseForge에서 식별하지 못했어요."
+    },
+    "stages": {
+      "pack": "리소스팩 준비 중",
+      "upload": "모드팩 팩 업로드 중",
+      "mods": "모드별 팩 공유 중"
+    },
     "cfLabel": "커스포지 모드팩",
     "cfAutoDetected": "자동 감지됨",
     "cfChange": "변경",
@@ -71,7 +91,6 @@
     "cfVersionLabel": "버전",
     "cfVersionPlaceholder": "예: 1.2.0",
     "cfRequired": "커스포지 모드팩을 선택해야 업로드할 수 있어요",
-    "loginRequired": "업로드하려면 Discord 로그인이 필요해요",
     "anonUploadHint": "게스트로 업로드돼요 — 로그인하면 팩이 내 계정으로 등록되고 기여자 점수가 올라가요"
   },
   "actions": {

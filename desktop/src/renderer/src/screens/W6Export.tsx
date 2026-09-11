@@ -1,16 +1,22 @@
 /**
  * W6: export & community share.
- * One export job produces both installable artifacts: the resource pack
- * zip and the overrides zip (kubejs/config/ftbquests files a resource
- * pack cannot carry). Web upload runs an engine upload job against
+ * One export job produces plain and bilingual resource-pack and overrides
+ * zips (kubejs/config/ftbquests files a resource pack cannot carry).
+ * Web upload runs an engine upload job against
  * moru.gg; signed-in uploads are attributed to the moru.gg account,
  * anonymous uploads to no account (allowed for the desktop app only).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { JobEventFrame, PipelineStats, UploadParams } from "../../../shared/engine";
+import type {
+  JobEventFrame,
+  ModPackUploadResult,
+  ModSourcesResult,
+  PipelineStats,
+  UploadParams,
+} from "../../../shared/engine";
 import { api, openJobEvents } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatCompact, formatDuration, formatInt, formatUsd, packInitials } from "@/lib/format";
@@ -24,23 +30,41 @@ import { useWizard } from "@/stores/wizard";
 
 type UploadPhase =
   | { kind: "idle" }
-  | { kind: "running" }
-  | { kind: "done"; url: string | null }
+  | { kind: "running"; stage: string; current: number; total: number; message: string }
+  | {
+      kind: "done";
+      url: string | null;
+      modpackSlug: string | null;
+      modPacks: ModPackUploadResult | null;
+    }
   | { kind: "failed"; message: string };
 
 /**
- * Terminal-frame handler for an upload job. Exported for tests: the share
- * link must land on the session that STARTED the upload - by completion
- * time the wizard may have been reset or reopened onto another session.
+ * Upload-frame handler. Exported for tests: the share link must land on
+ * the session that STARTED the upload — by completion time the wizard may
+ * have been reset or reopened onto another session.
  */
 export function makeUploadFrameHandler(
   sourceSessionId: string | null,
   setUpload: (phase: UploadPhase) => void,
 ): (frame: JobEventFrame) => void {
   return (frame) => {
-    if (frame.type === "done") {
+    if (frame.type === "progress") {
+      setUpload({
+        kind: "running",
+        stage: frame.stage,
+        current: frame.current ?? frame.done ?? 0,
+        total: frame.total ?? 0,
+        message: frame.message ?? "",
+      });
+    } else if (frame.type === "done") {
       const url = frame.url ?? null;
-      setUpload({ kind: "done", url });
+      setUpload({
+        kind: "done",
+        url,
+        modpackSlug: frame.modpack_slug ?? null,
+        modPacks: frame.mod_packs ?? null,
+      });
       // Persist the share link so Home/History "share link" buttons stay
       // live after the wizard moves on.
       if (sourceSessionId !== null && url !== null) {
@@ -80,6 +104,47 @@ export function W6Export() {
   const account = useAccount();
   const pricingTable = usePricingTable();
   const [upload, setUpload] = useState<UploadPhase>({ kind: "idle" });
+  const [shareMods, setShareMods] = useState(true);
+  const [modSources, setModSources] = useState<ModSourcesResult | null>(null);
+  const [modSourcesError, setModSourcesError] = useState(false);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const closeUploadEvents = useRef<(() => void) | null>(null);
+  const uploadAttempt = useRef(0);
+  // Restored sessions can resolve their saved mod sources by translate job id.
+  const sourceJobId = wizard.scanJobId ?? wizard.translateJobId;
+
+  useEffect(() => {
+    return () => {
+      uploadAttempt.current += 1;
+      closeUploadEvents.current?.();
+      closeUploadEvents.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    setModSources(null);
+    setModSourcesError(false);
+    if (sourceJobId === null) return;
+    const jobId = sourceJobId;
+    let active = true;
+    let timer: number | undefined;
+    async function poll(): Promise<void> {
+      try {
+        const result = await api.modSources(jobId);
+        if (!active) return;
+        setModSources(result);
+        if (result.status === "done" || result.status === "failed") return;
+        timer = window.setTimeout(() => void poll(), 3000);
+      } catch {
+        if (active) setModSourcesError(true);
+      }
+    }
+    void poll();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [sourceJobId]);
 
   /* CurseForge identity gate: uploads must map to a real CF modpack, so a
      mis-detected pack can't be published under the wrong name. */
@@ -203,6 +268,11 @@ export function W6Export() {
     }
   }
 
+  async function copyExportPath(path: string): Promise<void> {
+    await navigator.clipboard.writeText(path);
+    setCopiedPath(path);
+  }
+
   /* ---- upload: engine job -> moru.gg (anonymous allowed; a signed-in
      account attributes the pack and earns contributor score) ---- */
   async function handleUpload(): Promise<void> {
@@ -215,7 +285,10 @@ export function W6Export() {
     // Pin attribution now: reopenSession/reset may switch the wizard's
     // session while the upload job runs.
     const sourceSessionId = wizard.sessionId;
-    setUpload({ kind: "running" });
+    closeUploadEvents.current?.();
+    closeUploadEvents.current = null;
+    const attempt = ++uploadAttempt.current;
+    setUpload({ kind: "running", stage: "pack", current: 0, total: 0, message: "" });
     try {
       const job = await api.startUpload({
         translate_job_id: wizard.translateJobId,
@@ -223,10 +296,21 @@ export function W6Export() {
         curseforge_id: confirmedPack.id,
         ...(version.trim() !== "" ? { modpack_version: version.trim() } : {}),
         web_url: WEB_URL,
+        share_mods: shareMods,
         ...(account.token !== null ? { api_token: account.token } : {}),
       } satisfies UploadParams);
-      openJobEvents(job.id, makeUploadFrameHandler(sourceSessionId, setUpload));
+      if (attempt !== uploadAttempt.current) return;
+      const onFrame = makeUploadFrameHandler(sourceSessionId, setUpload);
+      closeUploadEvents.current = openJobEvents(job.id, (frame) => {
+        if (attempt !== uploadAttempt.current) return;
+        onFrame(frame);
+        if (frame.type === "done" || frame.type === "failed" || frame.type === "cancelled") {
+          closeUploadEvents.current?.();
+          closeUploadEvents.current = null;
+        }
+      });
     } catch (error) {
+      if (attempt !== uploadAttempt.current) return;
       setUpload({
         kind: "failed",
         message: error instanceof Error ? error.message : String(error),
@@ -446,11 +530,15 @@ export function W6Export() {
                 )}
               </button>
               <button
-                className="cursor-not-allowed border border-edge bg-transparent p-[10px] text-xs font-semibold text-text2 opacity-40"
-                disabled
-                title={t("w6.export.changePathHint")}
+                className="border border-edge bg-transparent p-[10px] text-xs font-semibold text-text2 enabled:hover:border-edge2 enabled:hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={wizard.exportZipPath === null}
+                onClick={() => {
+                  if (wizard.exportZipPath !== null) void copyExportPath(wizard.exportZipPath);
+                }}
               >
-                {t("w6.export.changePath")}
+                {copiedPath !== null && copiedPath === wizard.exportZipPath
+                  ? t("w6.export.copied")
+                  : t("w6.export.copyPath")}
               </button>
             </div>
           </div>
@@ -515,14 +603,59 @@ export function W6Export() {
                 {t("common.action.openFolder")}
               </button>
               <button
-                className="cursor-not-allowed border border-edge bg-transparent p-[10px] text-xs font-semibold text-text2 opacity-40"
-                disabled
-                title={t("w6.export.changePathHint")}
+                className="border border-edge bg-transparent p-[10px] text-xs font-semibold text-text2 enabled:hover:border-edge2 enabled:hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={wizard.exportOverridesZipPath === null}
+                onClick={() => {
+                  if (wizard.exportOverridesZipPath !== null)
+                    void copyExportPath(wizard.exportOverridesZipPath);
+                }}
               >
-                {t("w6.export.changePath")}
+                {copiedPath !== null && copiedPath === wizard.exportOverridesZipPath
+                  ? t("w6.export.copied")
+                  : t("w6.export.copyPath")}
               </button>
             </div>
           </div>
+
+          {exportDone &&
+            [
+              { title: "w6.export.zipTitle", path: wizard.exportBilingualZipPath },
+              { title: "w6.export.ovTitle", path: wizard.exportBilingualOverridesZipPath },
+            ].map(({ title, path }) =>
+              path == null ? null : (
+                <div key={title} className="border border-line2 bg-raised p-5">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <div className="text-[15px] font-bold tracking-[-0.01em] text-text">
+                      {t(title)}
+                    </div>
+                    <span className="bg-[rgba(167,139,250,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-purple">
+                      {t("w6.export.bilingual")}
+                    </span>
+                  </div>
+                  <div className="text-xs leading-[1.5] text-text2">
+                    {t("w6.export.bilingualDesc")}
+                  </div>
+                  <div className="mb-3 mt-[14px] border border-accent-lo bg-tint px-3 py-2 font-mono text-[11px] leading-[1.5]">
+                    <span className="text-text3">{t("w6.export.savedTo")} </span>
+                    <span className="break-all text-accent">{path}</span>
+                  </div>
+                  <div className="grid grid-cols-[2fr_1fr] gap-[6px]">
+                    <button
+                      className="bg-line2 p-[10px] text-[13px] font-bold text-text hover:bg-edge"
+                      onClick={() => void moru.showItemInFolder(path)}
+                    >
+                      {t("common.action.openFolder")}
+                    </button>
+                    <button
+                      className="border border-edge bg-transparent p-[10px] text-xs font-semibold text-text2 hover:border-edge2 hover:text-text"
+                      onClick={() => void copyExportPath(path)}
+                    >
+                      {copiedPath === path ? t("w6.export.copied") : t("w6.export.copyPath")}
+                    </button>
+                  </div>
+                </div>
+              ),
+            )}
         </div>
 
         {/* Right: community share */}
@@ -739,6 +872,48 @@ export function W6Export() {
               )}
             </div>
 
+            <div className="relative mb-4">
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={shareMods}
+                aria-describedby="share-mods-hint"
+                disabled={account.token === null || upload.kind === "running" || upload.kind === "done"}
+                onClick={() => setShareMods((value) => !value)}
+                className="flex w-full items-start gap-[10px] border border-line2 bg-raised p-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {shareMods ? (
+                  <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center bg-accent">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" className="text-sel-ink">
+                      <path d="M1 5 L4 8 L9 2" />
+                    </svg>
+                  </span>
+                ) : (
+                  <span className="mt-px h-4 w-4 shrink-0 border border-edge bg-bar" />
+                )}
+                <span>
+                  <span className="mb-[2px] block text-[12px] font-bold text-text">
+                    {t("w6.share.modsTitle")}
+                  </span>
+                  <span id="share-mods-hint" className="block font-mono text-[11px] text-text3">
+                    {t(account.token === null ? "w6.share.modsLoginHint" : "w6.share.modsHint")}
+                  </span>
+                </span>
+              </button>
+              {sourceJobId !== null && (
+                <div className="mt-2 font-mono text-[11px] text-text3" role="status">
+                  {modSourcesError || modSources?.status === "failed"
+                    ? t("w6.share.modSourcesFailed")
+                    : modSources === null
+                      ? t("w6.share.modSourcesPending")
+                      : t("w6.share.modSourcesProgress", {
+                          resolved: formatInt(modSources.resolved),
+                          total: formatInt(modSources.total),
+                        })}
+                </div>
+              )}
+            </div>
+
             {/* Public stats preview */}
             <div className="relative mb-4">
               <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-text3">
@@ -788,6 +963,22 @@ export function W6Export() {
                 <div className="mb-2 text-xs font-semibold leading-[1.5] text-accent">
                   {t("w6.share.done")}
                 </div>
+                {upload.modPacks !== null && (
+                  <div className="mb-3 text-[11px] leading-[1.5] text-text2">
+                    <div>
+                      {t("w6.share.modsResult", {
+                        shared: formatInt(upload.modPacks.shared),
+                        skipped: formatInt(upload.modPacks.skipped),
+                        failed: formatInt(upload.modPacks.failed),
+                      })}
+                    </div>
+                    {upload.modPacks.skipped_reason !== undefined && (
+                      <div className="mt-1 text-text3">
+                        {t(`w6.share.modsSkipped.${upload.modPacks.skipped_reason}`)}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {upload.url !== null && (
                   <button
                     className="inline-flex items-center gap-[6px] border border-edge px-[10px] py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
@@ -801,9 +992,64 @@ export function W6Export() {
                     </svg>
                   </button>
                 )}
+                {upload.modpackSlug !== null && (
+                  <button
+                    className="mt-2 flex items-center gap-[6px] border border-edge px-[10px] py-[6px] text-left text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
+                    onClick={() =>
+                      void moru.openExternal(`${WEB_URL}/ko/modpack/${upload.modpackSlug}`)
+                    }
+                  >
+                    {t("w6.share.buildBundle")}
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+                      <path d="M2 8 L8 2 M4 2 H8 V6" />
+                    </svg>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="relative">
+                {upload.kind === "running" && (
+                  <div className="mb-3 border border-edge bg-card p-3" role="status">
+                    <div className="mb-2 flex items-center justify-between gap-2 font-mono text-[11px]">
+                      <span className="font-semibold text-purple">
+                        {t(
+                          upload.stage === "pack"
+                            ? "w6.share.stages.pack"
+                            : upload.stage === "mods"
+                              ? "w6.share.stages.mods"
+                              : "w6.share.stages.upload",
+                        )}
+                      </span>
+                      {upload.total > 0 && (
+                        <span className="text-text2">
+                          {formatInt(upload.current)}/{formatInt(upload.total)}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="h-2 overflow-hidden bg-line2"
+                      role="progressbar"
+                      aria-label={t("w6.share.uploading")}
+                      aria-valuemin={0}
+                      aria-valuemax={upload.total > 0 ? upload.total : undefined}
+                      aria-valuenow={upload.total > 0 ? Math.min(upload.total, Math.max(0, upload.current)) : undefined}
+                    >
+                      <div
+                        className={`h-full bg-purple transition-[width] ${upload.total > 0 ? "" : "animate-pulse"}`}
+                        style={{
+                          width: upload.total > 0
+                            ? `${Math.min(100, Math.max(0, (upload.current / upload.total) * 100))}%`
+                            : "100%",
+                        }}
+                      />
+                    </div>
+                    {upload.message !== "" && (
+                      <div className="mt-2 break-words font-mono text-[11px] text-text2">
+                        {upload.message}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {upload.kind === "failed" && (
                   <div className="mb-2 text-[11px] leading-[1.5]">
                     <span className="font-semibold text-red">{t("w6.share.uploadFailed")}</span>
@@ -821,10 +1067,7 @@ export function W6Export() {
                   onClick={() => void handleUpload()}
                 >
                   {upload.kind === "running" ? (
-                    <>
-                      <span className="inline-block h-3 w-3 animate-pxspin border-2 border-sel-ink border-t-transparent" />
-                      {t("w6.share.uploading")}
-                    </>
+                    t("w6.share.uploading")
                   ) : (
                     <>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8">

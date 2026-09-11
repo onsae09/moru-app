@@ -43,6 +43,8 @@ export interface SessionRecord {
   error: string | null;
   exportZipPath: string | null;
   exportOverridesZipPath: string | null;
+  exportBilingualZipPath: string | null;
+  exportBilingualOverridesZipPath: string | null;
   sharedUrl: string | null;
 }
 
@@ -84,6 +86,8 @@ export function migrateSessionsState(
           : (session.error ?? null),
         exportZipPath: session.exportZipPath ?? null,
         exportOverridesZipPath: session.exportOverridesZipPath ?? null,
+        exportBilingualZipPath: session.exportBilingualZipPath ?? null,
+        exportBilingualOverridesZipPath: session.exportBilingualOverridesZipPath ?? null,
         sharedUrl: session.sharedUrl ?? null,
       };
     }),

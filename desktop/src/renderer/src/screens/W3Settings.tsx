@@ -1277,12 +1277,6 @@ export function W3Settings() {
           sub={t("w3.options.placeholderSub")}
         />
         <OptionCheck
-          checked={settings.bilingualNames}
-          onToggle={() => settings.set({ bilingualNames: !settings.bilingualNames })}
-          title={t("w3.options.bilingualTitle")}
-          sub={t("w3.options.bilingualSub")}
-        />
-        <OptionCheck
           checked={false}
           disabled
           title={t("w3.options.shareTitle")}

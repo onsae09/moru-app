@@ -30,12 +30,15 @@ from .. import __version__
 from ..glossary.pair_harvester import is_untranslated_copy
 from ..handlers.base import create_default_registry
 from ..migration import MigrationCatalog, build_migration_catalog, logical_file_id
+from ..modsources import ModSources, resolve_mod_sources
 from ..output import (
     BILINGUAL_DIRNAME,
     OVERRIDES_DIRNAME,
     RESOURCEPACK_DIRNAME,
     create_zip_from_directory,
+    jar_name_for,
 )
+from ..output.per_mod import build_mod_packs
 from ..pipeline import (
     PipelineConfig,
     PipelineResult,
@@ -316,6 +319,9 @@ class JobRecord:
     #: Post-run graph rebuilt once from result.entries by the graph
     #: endpoint, cached here so repeated views stay O(1).
     graph_cache: TranslationGraph | None = None
+    #: Shared with its scan/translate consumers while discovery is running.
+    mod_sources: ModSources = field(default_factory=ModSources)
+    mod_sources_task: asyncio.Task[None] | None = None
 
     def to_public(self) -> dict[str, Any]:
         """Contract ``Job`` schema representation."""
@@ -655,6 +661,63 @@ class JobManager:
         """Adopt a record built outside the manager (session import)."""
         self._jobs[record.id] = record
 
+    def get_mod_sources(self, job_id: str) -> ModSources:
+        """Scan identities, including snapshots surviving a sidecar restart."""
+        try:
+            record = self.get(job_id)
+        except UnknownJobError:
+            saved = self._session_store.load_mod_sources(job_id)
+            if saved is not None:
+                return saved
+            raise
+        if record.type not in (JobType.SCAN, JobType.TRANSLATE):
+            raise JobStateError(f"job {job_id} has no mod sources")
+        if record.status is JobStatus.DONE and record.mod_sources.status == "pending":
+            self._start_mod_sources(record)
+        return record.mod_sources
+
+    def _start_mod_sources(self, record: JobRecord) -> None:
+        for related in self._jobs.values():
+            task = related.mod_sources_task
+            if related.mod_sources is record.mod_sources and task is not None and not task.done():
+                record.mod_sources_task = task
+                return
+        record.mod_sources.status = "running"
+        record.mod_sources_task = asyncio.create_task(
+            self._resolve_mod_sources(record), name=f"moru-mod-sources-{record.id}"
+        )
+
+    async def _resolve_mod_sources(self, record: JobRecord) -> None:
+        try:
+            await resolve_mod_sources(
+                Path(str(record.params["modpack_path"])), record.mod_sources
+            )
+        except asyncio.CancelledError:
+            record.mod_sources.status = "failed"
+            raise
+        except Exception:
+            record.mod_sources.status = "failed"
+            logger.exception("Mod identity lookup failed for %s", record.id)
+        finally:
+            try:
+                self._session_store.save_mod_sources(record.id, record.mod_sources)
+                for related in self._jobs.values():
+                    if related.finished and related.mod_sources is record.mod_sources:
+                        self._session_store.save_job_session(related)
+            except Exception:
+                logger.exception("Failed to persist mod sources for %s", record.id)
+
+    async def _await_mod_sources(self, source: JobRecord) -> ModSources:
+        if source.mod_sources.status in ("pending", "running"):
+            self._start_mod_sources(source)
+        task = source.mod_sources_task
+        if task is not None and not task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=120)
+            except TimeoutError:
+                logger.warning("Mod identity lookup timed out for upload of %s", source.id)
+        return source.mod_sources
+
     def forget_job(self, job_id: str) -> None:
         """Drop a record from memory; its session file is left alone."""
         self._jobs.pop(job_id, None)
@@ -685,6 +748,10 @@ class JobManager:
                 raise JobParamsError(f"invalid translate params: {exc}") from exc
             if config.glossary_store_dir is None:
                 config.glossary_store_dir = self._glossary_store_dir
+            scan_record = self._jobs.get(str(scan_job_id)) if scan_job_id else None
+            if scan_record is not None and scan_record.type is JobType.SCAN:
+                record.mod_sources = scan_record.mod_sources
+                record.mod_sources_task = scan_record.mod_sources_task
             self._attach_scan_payload(record)
             scan_source = self._resolve_scan_source(scan_job_id, config)
             runner = self._run_pipeline(record, config, scan_source)
@@ -980,11 +1047,12 @@ class JobManager:
 
     async def aclose(self) -> None:
         """Cancel every running job (server shutdown)."""
-        tasks = [
-            r.task
-            for r in self._jobs.values()
-            if r.task is not None and not r.task.done()
-        ]
+        tasks = {
+            task
+            for record in self._jobs.values()
+            for task in (record.task, record.mod_sources_task)
+            if task is not None and not task.done()
+        }
         for record in self._jobs.values():
             record.cancel_requested = True
         for task in tasks:
@@ -1175,6 +1243,12 @@ class JobManager:
                 terminal.update(record.done_payload)
         self._emit(record, terminal_type, terminal)
         record.finished = True
+        if (
+            record.status is JobStatus.DONE
+            and record.type in (JobType.SCAN, JobType.TRANSLATE)
+            and record.mod_sources.status == "pending"
+        ):
+            self._start_mod_sources(record)
         if record.type is JobType.TRANSLATE:
             try:
                 self._session_store.save_job_session(record)
@@ -1458,11 +1532,8 @@ class JobManager:
     ) -> dict[str, Any]:
         """Build the installable archives from the generated output trees.
 
-        Two artifacts: ``<name>.zip`` — the resource pack, droppable into
-        the game's ``resourcepacks/`` folder as-is — and
-        ``<name>_overrides.zip`` — files to merge over the modpack root
-        (kubejs/, config/, ftbquests/ …). Either is null when the run
-        produced no files for that tree.
+        Each translated tree has a bilingual sibling. Either variant's
+        resource pack or overrides path is null when that tree is empty.
 
         The archived entries come from ``resolve_result`` — a translate
         job's reviewed result (W6) or a source-text run (W3). Everything
@@ -1486,25 +1557,36 @@ class JobManager:
                 _default_export_dir() / f"{_export_stem(result, identity)}.zip"
             )
         overrides_zip = zip_path.with_name(f"{zip_path.stem}_overrides.zip")
+        bilingual_zip = zip_path.with_name(f"{zip_path.stem} (병기).zip")
+        bilingual_overrides_zip = zip_path.with_name(
+            f"{zip_path.stem} (병기)_overrides.zip"
+        )
+        archives = {
+            "zip_path": (pack_dir, zip_path),
+            "overrides_zip_path": (overrides_dir, overrides_zip),
+            "bilingual_zip_path": (
+                root / BILINGUAL_DIRNAME / RESOURCEPACK_DIRNAME, bilingual_zip
+            ),
+            "bilingual_overrides_zip_path": (
+                root / BILINGUAL_DIRNAME / OVERRIDES_DIRNAME, bilingual_overrides_zip
+            ),
+        }
 
         self._emit(
             record,
             "progress",
-            {"stage": "export", "current": 0, "total": 2},
+            {"stage": "export", "current": 0, "total": 4},
         )
 
         def build() -> dict[str, Any]:
             payload: dict[str, Any] = {
-                "zip_path": None,
-                "overrides_zip_path": None,
+                **dict.fromkeys(archives),
                 "file_count": len(result.output_files),
             }
-            if _tree_has_files(pack_dir):
-                create_zip_from_directory(pack_dir, zip_path)
-                payload["zip_path"] = str(zip_path)
-            if _tree_has_files(overrides_dir):
-                create_zip_from_directory(overrides_dir, overrides_zip)
-                payload["overrides_zip_path"] = str(overrides_zip)
+            for key, (tree, archive) in archives.items():
+                if _tree_has_files(tree):
+                    create_zip_from_directory(tree, archive)
+                    payload[key] = str(archive)
             return payload
 
         # Zip construction is blocking I/O; keep the loop responsive.
@@ -1512,28 +1594,22 @@ class JobManager:
         self._emit(
             record,
             "progress",
-            {"stage": "export", "current": 2, "total": 2},
+            {"stage": "export", "current": 4, "total": 4},
         )
         record.done_payload = dict(payload)
+        if record.params.get("translate_job_id") and not record.params.get("source_text"):
+            source = self.get(str(record.params["translate_job_id"]))
+            source.done_payload = {**(source.done_payload or {}), **payload}
+            try:
+                self._session_store.save_job_session(source)
+            except Exception:
+                logger.exception("Failed to persist export paths for %s", source.id)
         return payload
 
     async def _run_upload(
         self, record: JobRecord, source: JobRecord
     ) -> dict[str, Any]:
-        """Publish a completed translate job's pack to the moru web platform.
-
-        Sequence (contracts/web-api.yaml): build one reviewed zip per
-        output tree, request presigned upload slots, PUT each archive, then
-        register the pack. There are up to four trees — resource pack and
-        overrides, each in the plain and the bilingual display-name variant
-        — and the whole sequence below is keyed on the archive kind, so the
-        two extra slots flow through untouched. Empty trees are skipped, so
-        a run that produced no bilingual variant uploads exactly what it
-        always did. ``api_token`` is forwarded as a Bearer header when
-        present; without it the upload is anonymous (desktop-only - the
-        X-Moru-Client marker is what the web platform accepts in place of
-        an account).
-        """
+        """Publish the whole modpack first, then authenticated per-mod packs."""
         params = record.params
         web_url = str(params.get("web_url") or "https://moru.gg").rstrip("/")
         api_token = params.get("api_token") or None
@@ -1549,12 +1625,26 @@ class JobManager:
         }
 
         staging = Path(tempfile.mkdtemp(prefix="moru-upload-"))
+        build_task: asyncio.Task[Any] | None = None
+        mod_records: list[dict[str, Any]] = []
+        mod_count = len({
+            jar for entry in result.entries
+            if (jar := jar_name_for(entry.file)).lower().endswith(".jar")
+        })
+        mod_packs: dict[str, Any] = {"shared": 0, "skipped": 0, "failed": 0}
+        share_mods = params.get("share_mods", True)
+        if not share_mods or not api_token:
+            mod_packs.update(
+                skipped=mod_count,
+                skipped_reason="disabled" if not share_mods else "login_required",
+            )
+        identity: PackIdentity | None = None
         try:
             self._emit(
                 record, "progress", {"stage": "pack", "current": 0, "total": 1}
             )
 
-            def build() -> dict[str, Path]:
+            def build() -> tuple[dict[str, Path], dict[str, tuple[str, int]]]:
                 """One installable zip per non-empty tree, staged locally."""
                 archives: dict[str, Path] = {}
                 for kind, tree in trees.items():
@@ -1562,10 +1652,14 @@ class JobManager:
                         zip_path = staging / f"{kind}.zip"
                         create_zip_from_directory(tree, zip_path)
                         archives[kind] = zip_path
-                return archives
+                return archives, {
+                    kind: _sha256_and_size(archive)
+                    for kind, archive in archives.items()
+                }
 
             # Zip construction is blocking I/O; keep the loop responsive.
-            archives = await asyncio.to_thread(build)
+            build_task = asyncio.create_task(asyncio.to_thread(build))
+            archives, digests = await asyncio.shield(build_task)
             if not archives:
                 raise upload.WebUploadError(
                     "translate job produced no uploadable files"
@@ -1573,10 +1667,6 @@ class JobManager:
             self._emit(
                 record, "progress", {"stage": "pack", "current": 1, "total": 1}
             )
-            digests = {
-                kind: await asyncio.to_thread(_sha256_and_size, zip_path)
-                for kind, zip_path in archives.items()
-            }
 
             def step(current: int, message: str) -> None:
                 self._emit(
@@ -1602,22 +1692,78 @@ class JobManager:
             step(1, "uploading archives")
             for kind, zip_path in archives.items():
                 await upload.put_archive(str(slots[kind]["url"]), zip_path)
+            # Prepare the per-mod count before the one modpack announcement.
+            # No per-mod network upload/registration precedes the whole pack.
+            if share_mods and api_token:
+                try:
+                    sources = await self._await_mod_sources(source)
+                    identity = await asyncio.to_thread(
+                        detect_pack_identity, result.config.modpack_path
+                    )
+                    build_task = asyncio.create_task(asyncio.to_thread(
+                        build_mod_packs, result, sources, staging / "mods", identity
+                    ))
+                    mod_records = await asyncio.shield(build_task)
+                except Exception:
+                    logger.exception("Could not prepare per-mod packs for %s", source.id)
+                    mod_packs["failed"] = mod_count
+            pack_payload = self._pack_payload(
+                record, source, {kind: slots[kind] for kind in archives}
+            )
+            pack_payload["mod_pack_count"] = sum(
+                bool(mod["project_id"] and mod["game_versions"] and mod["zips"])
+                for mod in mod_records
+            )
             step(2, "registering pack")
             registered = await upload.register_pack(
                 web_url,
                 api_token,
-                self._pack_payload(
-                    record, source, {kind: slots[kind] for kind in archives}
-                ),
+                pack_payload,
             )
             step(3, "registered")
+            if mod_records:
+                def mod_progress(current: int, total: int, message: str) -> None:
+                    self._emit(record, "progress", {
+                        "stage": "mods", "current": current, "total": total,
+                        "message": message,
+                    })
+
+                metadata = {
+                    "modpack_name": str(params["modpack_name"]),
+                    "target_lang": result.config.target_locale,
+                    "source_lang": result.config.source_locale,
+                    "engine_version": __version__,
+                }
+                if params.get("curseforge_id"):
+                    metadata["modpack_curseforge_id"] = params["curseforge_id"]
+                if params.get("modpack_version"):
+                    metadata["modpack_version"] = str(params["modpack_version"])
+                if result.config.manual_seed:
+                    metadata["is_manual_translation"] = True
+                mod_progress(0, pack_payload["mod_pack_count"], "")
+                mod_packs = await upload.upload_mod_packs(
+                    web_url, api_token, mod_records, metadata,
+                    loader=identity.loader if identity else None,
+                    progress=mod_progress,
+                )
+                if mod_packs["skipped"] and not mod_packs["shared"] and not mod_packs["failed"]:
+                    mod_packs["skipped_reason"] = "unresolved"
         finally:
-            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                if build_task is not None and not build_task.done():
+                    # A cancelled to_thread await does not stop its writer.
+                    # Join it before deleting staging so it cannot recreate it.
+                    await build_task
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
 
         payload = {
             "pack_id": str(registered["pack_id"]),
             "url": str(registered["url"]),
+            "mod_packs": mod_packs,
         }
+        if registered.get("modpack_slug"):
+            payload["modpack_slug"] = str(registered["modpack_slug"])
         record.done_payload = dict(payload)
         return payload
 
@@ -1653,6 +1799,8 @@ class JobManager:
                 "duration_seconds": stats.duration_seconds,
             },
         }
+        if result.config.manual_seed:
+            payload["is_manual_translation"] = True
         if stats.categories:
             payload["stats"]["categories"] = stats.categories
         if result.artifact_id:

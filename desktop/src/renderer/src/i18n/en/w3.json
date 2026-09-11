@@ -118,8 +118,6 @@
     "tmError": "Could not load translation memory info",
     "placeholderTitle": "Preserve color codes (§) & placeholders",
     "placeholderSub": "%s, {player}, §e §r etc. kept as-is",
-    "bilingualTitle": "Also build a bilingual-names pack",
-    "bilingualSub": "철 곡괭이 (Iron Pickaxe) — item, block and entity names only; tooltips, quest prose and numbered lines never get it. An extra pack alongside the normal one, which is left untouched · reuses the same translation, so it costs nothing more",
     "shareTitle": "Auto-share with the community when done",
     "shareSub": "Discord sign-in required · coming soon"
   },

@@ -36,7 +36,7 @@ const LOGIN_TIMEOUT_MS = 5 * 60_000;
 
 const CALLBACK_HTML = `<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>moru</title></head>
-<body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0E1512;color:#EAF5EF;font-family:sans-serif">
+<body style='margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0E1512;color:#EAF5EF;font-family:Pretendard, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif'>
 <div style="text-align:center"><div style="font-size:18px;font-weight:700;margin-bottom:8px">로그인 완료</div>
 <div style="font-size:13px;color:#A2B3AB">moru 앱으로 돌아가세요. 이 창은 닫아도 됩니다.</div></div>
 </body></html>`;

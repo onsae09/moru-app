@@ -118,8 +118,6 @@
     "tmError": "번역 메모리 정보를 불러오지 못했어요",
     "placeholderTitle": "색코드(§)·플레이스홀더 보존",
     "placeholderSub": "%s, {player}, §e §r 등 원본 유지",
-    "bilingualTitle": "원문 병기 팩도 함께 만들기",
-    "bilingualSub": "철 곡괭이 (Iron Pickaxe) — 아이템·블록·엔티티 이름에만 붙고, 툴팁·퀘스트 문장·번호로 나뉜 줄에는 붙지 않아요. 기존 팩은 그대로 두고 추가로 하나 더 나옵니다 · 같은 번역을 재활용하니 추가 비용 없음",
     "shareTitle": "완료 후 자동으로 커뮤니티에 공유",
     "shareSub": "Discord 로그인 필요 · 준비 중"
   },

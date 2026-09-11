@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 from ..glossary.pair_harvester import is_untranslated_copy
 from ..handlers.base import HandlerRegistry, create_default_registry
+from ..modsources import _current_archive_files
 from ..scanner import ModpackScanner
 from ..scanner.modpack_scanner import LOCALE_CHUNK_RE
 
@@ -592,30 +593,6 @@ def _curseforge_files(metadata_root: Path) -> dict[int, int]:
     return {}
 
 
-def _current_archive_files(modpack_root: Path) -> dict[str, tuple[int, int]]:
-    """Map unmodified installed addon filenames to CurseForge identities."""
-    path = modpack_root / "minecraftinstance.json"
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError, UnicodeError):
-        return {}
-    result: dict[str, tuple[int, int]] = {}
-    for addon in payload.get("installedAddons", []):
-        if not isinstance(addon, dict):
-            continue
-        if addon.get("isModified") is True:
-            continue
-        installed = addon.get("installedFile")
-        if not isinstance(installed, dict):
-            continue
-        project = addon.get("addonID", installed.get("projectId"))
-        file_id = installed.get("id")
-        filename = addon.get("fileNameOnDisk") or installed.get("fileNameOnDisk") or installed.get("fileName")
-        if isinstance(project, int) and isinstance(file_id, int) and isinstance(filename, str):
-            result[filename.lower()] = (project, file_id)
-    return result
 
 
 def _source_archive_name(path: Path) -> str | None:

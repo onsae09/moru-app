@@ -204,10 +204,9 @@ class OutputConfig:
     target_locale: str = "ko_kr"
     pack_format: int = DEFAULT_PACK_FORMAT
     description: str = "§a모루§7로 번역됨 — §amoru.gg"
-    #: Also render the bilingual display-name variant into
-    #: ``output_dir/bilingual``. Off by default: callers that never upload
-    #: it should not pay for the second tree.
-    bilingual_names: bool = False
+    #: Every translated run renders a bilingual display-name sibling tree.
+    #: Source-text-only runs disable it because the values are unchanged.
+    bilingual_names: bool = True
     #: Optional previous font definitions/files/textures. The migration index
     #: has already removed translated files and pack metadata.
     resourcepack_seed_dir: Path | None = None

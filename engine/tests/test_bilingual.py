@@ -297,7 +297,7 @@ async def test_bilingual_pack_is_distinguishable_in_game(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_variant_is_off_by_default(tmp_path: Path) -> None:
+async def test_default_export_has_plain_and_bilingual_values(tmp_path: Path) -> None:
     modpack, source = _lang_modpack(tmp_path)
     generator = OutputGenerator(
         OutputConfig(modpack_root=modpack, output_dir=tmp_path / "out")
@@ -306,8 +306,11 @@ async def test_variant_is_off_by_default(tmp_path: Path) -> None:
         [FileOutput(source_path=source, fresh={"item.m.iron_pickaxe": KO}, full={})]
     )
 
-    assert result.bilingual is None
-    assert not (tmp_path / "out" / "bilingual").exists()
+    assert result.bilingual is not None
+    bilingual = json.loads(
+        (result.bilingual.resourcepack_dir / "assets/m/lang/ko_kr.json").read_text("utf-8")
+    )
+    assert bilingual["item.m.iron_pickaxe"] == f"{KO} ({EN})"
     plain = json.loads(
         (result.resourcepack_dir / "assets/m/lang/ko_kr.json").read_text("utf-8")
     )

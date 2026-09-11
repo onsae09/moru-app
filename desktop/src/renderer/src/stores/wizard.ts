@@ -157,6 +157,8 @@ interface WizardStore {
   exportState: "idle" | "running" | "done" | "failed";
   exportZipPath: string | null;
   exportOverridesZipPath: string | null;
+  exportBilingualZipPath: string | null;
+  exportBilingualOverridesZipPath: string | null;
   exportError: string | null;
 
   /* W3: export as source text. Its own slice, kept out of the W6 export
@@ -293,7 +295,6 @@ export function buildTranslateParams(
         ? settings.speechLevel
         : undefined,
     term_style: settings.termStyle !== "auto" ? settings.termStyle : undefined,
-    bilingual_names: settings.bilingualNames ? true : undefined,
     use_tm: settings.useTm,
     use_vanilla_glossary: settings.useVanillaGlossary,
     extract_glossary: settings.extractGlossary,
@@ -552,6 +553,8 @@ const initialJobState = {
   exportState: "idle" as const,
   exportZipPath: null,
   exportOverridesZipPath: null,
+  exportBilingualZipPath: null,
+  exportBilingualOverridesZipPath: null,
   exportError: null,
   sourceExportJobId: null,
   sourceExportState: "idle" as const,
@@ -727,9 +730,17 @@ export const useWizard = create<WizardStore>((set, get) => ({
       translationStartedAt: snapshot.translation_started_at,
       finishedAt: engineRunState === "running" ? null : record.finishedAt,
       stats: engineRunState === "running" ? null : record.stats,
-      exportState: record.exportZipPath !== null ? "done" : "idle",
+      exportState:
+        record.exportZipPath !== null ||
+        record.exportOverridesZipPath !== null ||
+        record.exportBilingualZipPath != null ||
+        record.exportBilingualOverridesZipPath != null
+          ? "done"
+          : "idle",
       exportZipPath: record.exportZipPath,
       exportOverridesZipPath: record.exportOverridesZipPath,
+      exportBilingualZipPath: record.exportBilingualZipPath ?? null,
+      exportBilingualOverridesZipPath: record.exportBilingualOverridesZipPath ?? null,
     };
     for (const frame of snapshot.events) {
       restored = { ...restored, ...translationFramePatch(restored, frame) };
@@ -972,6 +983,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       error: null,
       exportZipPath: null,
       exportOverridesZipPath: null,
+      exportBilingualZipPath: null,
+      exportBilingualOverridesZipPath: null,
       sharedUrl: null,
     });
     set({ sessionId });
@@ -1043,6 +1056,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       exportState: "idle",
       exportZipPath: null,
       exportOverridesZipPath: null,
+      exportBilingualZipPath: null,
+      exportBilingualOverridesZipPath: null,
       exportError: null,
     });
     const sessionId = get().sessionId;
@@ -1051,6 +1066,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
         stats,
         exportZipPath: null,
         exportOverridesZipPath: null,
+        exportBilingualZipPath: null,
+        exportBilingualOverridesZipPath: null,
       });
     }
   },
@@ -1067,16 +1084,22 @@ export const useWizard = create<WizardStore>((set, get) => ({
         if (frame.type === "done") {
           const zipPath = frame.zip_path ?? null;
           const overridesZipPath = frame.overrides_zip_path ?? null;
+          const bilingualZipPath = frame.bilingual_zip_path ?? null;
+          const bilingualOverridesZipPath = frame.bilingual_overrides_zip_path ?? null;
           set({
             exportState: "done",
             exportZipPath: zipPath,
             exportOverridesZipPath: overridesZipPath,
+            exportBilingualZipPath: bilingualZipPath,
+            exportBilingualOverridesZipPath: bilingualOverridesZipPath,
           });
           const sessionId = get().sessionId;
           if (sessionId !== null) {
             useSessions.getState().patch(sessionId, {
               exportZipPath: zipPath,
               exportOverridesZipPath: overridesZipPath,
+              exportBilingualZipPath: bilingualZipPath,
+              exportBilingualOverridesZipPath: bilingualOverridesZipPath,
             });
           }
         } else if (frame.type === "failed") {
@@ -1185,6 +1208,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       error: null,
       exportZipPath: null,
       exportOverridesZipPath: null,
+      exportBilingualZipPath: null,
+      exportBilingualOverridesZipPath: null,
       sharedUrl: null,
     });
     set({ sessionId });

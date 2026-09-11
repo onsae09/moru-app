@@ -16,6 +16,7 @@ import type {
   Job,
   JobEventFrame,
   JobSnapshot,
+  ModSourcesResult,
   PipelineStats,
   PlaceholderPattern,
   Provider,
@@ -90,6 +91,8 @@ export interface SessionSummary {
   stats: Record<string, unknown> | null;
   export_zip_path: string | null;
   export_overrides_zip_path: string | null;
+  export_bilingual_zip_path: string | null;
+  export_bilingual_overrides_zip_path: string | null;
 }
 
 /**
@@ -139,6 +142,8 @@ export const api = {
   cancelJob: (id: string) => request<{ id: string; status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
 
   scanResult: (jobId: string) => request<ScanResult>(`/scan/${jobId}/result`),
+  modSources: (scanJobId: string) =>
+    request<ModSourcesResult>(`/jobs/${scanJobId}/mod-sources`),
 
   entries: (
     jobId: string,

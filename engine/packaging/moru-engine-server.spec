@@ -43,6 +43,7 @@ datas += collect_data_files("litellm")
 datas += collect_data_files("dspy")
 
 hiddenimports = [
+    "moru_engine._embedded_keys",
     # tiktoken discovers encoding plugins via pkgutil — invisible to analysis.
     "tiktoken_ext",
     "tiktoken_ext.openai_public",

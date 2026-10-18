@@ -20,7 +20,8 @@
   "detected": {
     "label": "자동 감지됨",
     "empty": "설치된 런처에서 모드팩을 찾지 못했어요",
-    "emptyHint": "CurseForge · Modrinth · Prism 인스턴스를 자동으로 찾아요. 위에서 폴더를 직접 선택할 수도 있어요.",
+    "emptyHint": "CurseForge · Modrinth · Prism · MultiMC 인스턴스를 자동으로 찾아요. 인스턴스 폴더를 옮겼다면 런처 폴더 설정에서 바꾸고, 위에서 폴더를 직접 선택할 수도 있어요.",
+    "launcherFolders": "런처 폴더 설정",
     "error": "런처 인스턴스를 불러오지 못했어요"
   },
   "recent": {

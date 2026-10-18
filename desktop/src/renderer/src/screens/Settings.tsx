@@ -6,7 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api } from "@/lib/api";
@@ -23,12 +23,12 @@ import {
 import { LOCAL_PROVIDERS, modelDisplayName } from "@/lib/models";
 import { WEB_URL, WebApiError, web } from "@/lib/web";
 import { useAccount } from "@/stores/account";
-import { useRouter } from "@/stores/router";
+import { type SettingsTab, useRouter } from "@/stores/router";
 import { useSettings } from "@/stores/settings";
-import type { UpdateState } from "../../../shared/bridge";
+import type { LauncherId, UpdateState } from "../../../shared/bridge";
 import type { Provider } from "../../../shared/engine";
 
-type TabId = "models" | "general" | "account" | "about";
+type TabId = SettingsTab;
 
 const TAB_IDS: readonly TabId[] = ["models", "general", "account", "about"];
 
@@ -845,7 +845,101 @@ function GeneralTab() {
           </button>
         </SettingRow>
       </div>
+      <LauncherFolders />
     </>
+  );
+}
+
+/**
+ * Per-launcher instance folders for W1's auto-detect. A folder set here
+ * replaces the launcher's default; the count shows what detect finds there,
+ * so a wrong pick (the launcher's root instead of its instances folder) is
+ * visible right away.
+ */
+function LauncherFolders() {
+  const { t } = useTranslation();
+  const launcherPaths = useSettings((s) => s.launcherPaths);
+  const set = useSettings((s) => s.set);
+  const roots = useQuery({
+    queryKey: ["launcher-roots"],
+    queryFn: () => moru.launcherRoots(),
+    staleTime: Infinity,
+  });
+  const detected = useQuery({
+    queryKey: ["detected-instances", launcherPaths],
+    queryFn: () => moru.detectInstances(launcherPaths),
+  });
+  const counts = useMemo(() => {
+    const byLauncher: Partial<Record<LauncherId, number>> = {};
+    for (const inst of detected.data ?? []) {
+      byLauncher[inst.launcher] = (byLauncher[inst.launcher] ?? 0) + 1;
+    }
+    return byLauncher;
+  }, [detected.data]);
+
+  const pick = async (launcher: LauncherId) => {
+    const folder = await moru.pickFolder();
+    if (folder !== null) set({ launcherPaths: { ...launcherPaths, [launcher]: folder } });
+  };
+  const reset = (launcher: LauncherId) => {
+    const rest = { ...launcherPaths };
+    delete rest[launcher];
+    set({ launcherPaths: rest });
+  };
+
+  if (roots.data === undefined || roots.data.length === 0) return null;
+
+  return (
+    <div className="mt-6">
+      <div className="mb-2 px-1">
+        <div className="text-[13px] font-semibold text-text">{t("settings.general.launchers.title")}</div>
+        <div className="mt-[2px] font-mono text-[11px] text-text3">{t("settings.general.launchers.desc")}</div>
+      </div>
+      <div className="flex flex-col gap-[2px]">
+        {roots.data.map(({ launcher, defaultPath }) => {
+          const custom = launcherPaths[launcher];
+          const shown = custom ?? defaultPath;
+          const found = detected.isSuccess
+            ? t("settings.general.launchers.found", { n: formatInt(counts[launcher] ?? 0) })
+            : "";
+          const source =
+            custom !== undefined
+              ? t("settings.general.launchers.custom")
+              : defaultPath !== null
+                ? t("settings.general.launchers.default")
+                : t("settings.general.launchers.noDefault");
+          return (
+            <SettingRow
+              key={launcher}
+              title={launcher}
+              desc={found.length > 0 && shown !== null ? `${source} · ${found}` : source}
+            >
+              <div className="flex min-w-0 items-center gap-[6px]">
+                <div
+                  className={`max-w-[280px] truncate border border-edge bg-card px-[10px] py-[6px] font-mono text-[11px] ${custom !== undefined ? "text-text" : "text-text3"}`}
+                  title={shown ?? undefined}
+                >
+                  {shown ?? t("settings.general.launchers.unset")}
+                </div>
+                <button
+                  className="shrink-0 border border-edge bg-transparent px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
+                  onClick={() => void pick(launcher)}
+                >
+                  {t("settings.general.browse")}
+                </button>
+                <button
+                  className="shrink-0 border border-edge bg-transparent px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={custom === undefined}
+                  onClick={() => reset(launcher)}
+                >
+                  {t("settings.general.resetDefault")}
+                </button>
+              </div>
+            </SettingRow>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1083,7 +1177,7 @@ function AboutTab({
 
 export function SettingsScreen() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<TabId>("models");
+  const [tab, setTab] = useState<TabId>(() => useRouter.getState().settingsTab);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
 
   useEffect(() => {

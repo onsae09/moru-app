@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { LAUNCHER_IDS, type LauncherPaths } from "../../../shared/bridge";
 import type { SpeechLevel, TermStyle } from "../../../shared/engine";
 
 /**
@@ -99,6 +100,8 @@ interface SettingsStore {
   recentFolders: string[];
   /** Mod ids never translated; seeded from DEFAULT_MOD_BLACKLIST. */
   modBlacklist: string[];
+  /** Instance folders set per launcher in Settings; absent = the default. */
+  launcherPaths: LauncherPaths;
 
   set: (patch: Partial<SettingsStore>) => void;
   rememberFolder: (path: string) => void;
@@ -130,6 +133,7 @@ export const useSettings = create<SettingsStore>()(
       targetLocale: "ko_kr",
       recentFolders: [],
       modBlacklist: [...DEFAULT_MOD_BLACKLIST],
+      launcherPaths: {},
 
       set: (patch) => set(patch),
       rememberFolder: (path) =>
@@ -145,7 +149,20 @@ export const useSettings = create<SettingsStore>()(
         };
         // Both variants are always generated, regardless of the old setting.
         delete saved.bilingualNames;
-        return { ...current, ...saved };
+        // Hand-edited or older storage: keep only absolute folders (C:\…,
+        // \\server\…, /…), which is all the main process will scan, so the
+        // settings screen never shows a folder detect silently ignores.
+        const launcherPaths: LauncherPaths = {};
+        const storedPaths = saved.launcherPaths as unknown;
+        if (typeof storedPaths === "object" && storedPaths !== null) {
+          for (const launcher of LAUNCHER_IDS) {
+            const value = (storedPaths as Record<string, unknown>)[launcher];
+            if (typeof value === "string" && /^(?:[A-Za-z]:[\\/]|[\\/])/.test(value.trim())) {
+              launcherPaths[launcher] = value.trim();
+            }
+          }
+        }
+        return { ...current, ...saved, launcherPaths };
       },
     },
   ),

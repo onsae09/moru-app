@@ -4,6 +4,7 @@
  * (exists && isDirectory && hasMods) starts the wizard session.
  */
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +31,7 @@ const DASHED_RULE_STYLE: React.CSSProperties = {
   backgroundSize: "6px 1px",
 };
 
-function SectionHeader({ label, count }: { label: string; count?: number }) {
+function SectionHeader({ label, count, action }: { label: string; count?: number; action?: ReactNode }) {
   return (
     <div className="mb-3 flex items-center gap-[10px]">
       <div className="font-mono text-[11px] font-semibold tracking-[0.08em] text-text3 uppercase">
@@ -42,6 +43,7 @@ function SectionHeader({ label, count }: { label: string; count?: number }) {
         </div>
       )}
       <div className="h-px flex-1" style={DASHED_RULE_STYLE} />
+      {action}
     </div>
   );
 }
@@ -214,6 +216,7 @@ function MigrationInputRow({
 export function W1Select() {
   const { t } = useTranslation();
   const go = useRouter((s) => s.go);
+  const openSettings = useRouter((s) => s.openSettings);
   const modpackPath = useWizard((s) => s.modpackPath);
   const modpackName = useWizard((s) => s.modpackName);
   const probe = useWizard((s) => s.probe);
@@ -233,9 +236,10 @@ export function W1Select() {
   const [probing, setProbing] = useState<string | null>(null);
   const [probeError, setProbeError] = useState<{ kind: ProbeErrorKind; path: string } | null>(null);
 
+  const launcherPaths = useSettings((s) => s.launcherPaths);
   const detected = useQuery({
-    queryKey: ["detected-instances"],
-    queryFn: () => moru.detectInstances(),
+    queryKey: ["detected-instances", launcherPaths],
+    queryFn: () => moru.detectInstances(launcherPaths),
   });
 
   const translatedPaths = useMemo(
@@ -459,7 +463,19 @@ export function W1Select() {
       )}
 
       {/* Detected launchers */}
-      <SectionHeader label={t("w1.detected.label")} count={detected.data?.length} />
+      <SectionHeader
+        label={t("w1.detected.label")}
+        count={detected.data?.length}
+        action={
+          <button
+            type="button"
+            onClick={() => openSettings("general")}
+            className="shrink-0 font-mono text-[11px] text-text3 hover:text-accent"
+          >
+            {t("w1.detected.launcherFolders")} →
+          </button>
+        }
+      />
       {detected.isPending ? (
         <div className="flex flex-col gap-[6px]">
           <SkeletonRow />

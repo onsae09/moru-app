@@ -24,8 +24,25 @@ export interface ModpackProbe {
   modJarCount: number;
 }
 
+/** Launchers whose instance folders moru scans for modpacks. */
+export const LAUNCHER_IDS = ["CurseForge", "Modrinth", "Prism", "MultiMC"] as const;
+export type LauncherId = (typeof LAUNCHER_IDS)[number];
+
+/**
+ * Instance folders the user set per launcher in Settings. A launcher absent
+ * here is scanned at its default location.
+ */
+export type LauncherPaths = Partial<Record<LauncherId, string>>;
+
+export interface LauncherRoot {
+  launcher: LauncherId;
+  /** Where the launcher keeps instances on this OS; null when it has no
+   *  fixed place (a portable MultiMC lives wherever it was unzipped). */
+  defaultPath: string | null;
+}
+
 export interface DetectedInstance {
-  launcher: "CurseForge" | "Modrinth" | "Prism" | "MultiMC";
+  launcher: LauncherId;
   name: string;
   path: string;
 }
@@ -82,7 +99,9 @@ export interface MoruBridge {
   pickFile(filters?: { name: string; extensions: string[] }[]): Promise<string | null>;
   saveFile(defaultPath?: string): Promise<string | null>;
   probeModpack(path: string): Promise<ModpackProbe>;
-  detectInstances(): Promise<DetectedInstance[]>;
+  /** Instances under each launcher's folder: `paths` overrides the defaults. */
+  detectInstances(paths?: LauncherPaths): Promise<DetectedInstance[]>;
+  launcherRoots(): Promise<LauncherRoot[]>;
   pathForFile(file: File): string;
 
   openPath(path: string): Promise<void>;

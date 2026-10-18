@@ -76,7 +76,16 @@
     "resetDefault": "Reset to default",
     "tutorial": "Onboarding tutorial",
     "tutorialDesc": "Replay the first-run walkthrough from the beginning",
-    "tutorialReplay": "Replay tutorial"
+    "tutorialReplay": "Replay tutorial",
+    "launchers": {
+      "title": "Launcher instance folders",
+      "desc": "Where modpack auto-detect looks. If you moved a launcher's instance folder, change it here (e.g. CurseForge's …\\minecraft\\Instances).",
+      "default": "Default location",
+      "custom": "Custom",
+      "noDefault": "No default location — pick the instance folder yourself",
+      "unset": "Not set",
+      "found": "{{n}} modpacks"
+    }
   },
   "account": {
     "title": "Account",

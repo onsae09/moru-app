@@ -6,12 +6,12 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import http from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { BrowserWindow, app, dialog, ipcMain, safeStorage, shell } from "electron";
 
-import type { DetectedInstance, ModpackProbe, WebAccount, WebRequestInit, WebResponse } from "../shared/bridge";
+import type { ModpackProbe, WebAccount, WebRequestInit, WebResponse } from "../shared/bridge";
+import { detectInstances, launcherRoots } from "./launchers";
 import type { EngineSidecar } from "./sidecar";
 
 /* ---- secrets (API keys) ---- */
@@ -136,51 +136,6 @@ function probeModpack(target: string): ModpackProbe {
   };
 }
 
-function listInstanceDirs(
-  root: string,
-  launcher: DetectedInstance["launcher"],
-  gameSubdirs: string[],
-): DetectedInstance[] {
-  if (!existsSync(root)) return [];
-  try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => {
-        const base = path.join(root, d.name);
-        const gameDir = gameSubdirs.map((s) => path.join(base, s)).find(existsSync) ?? base;
-        return { launcher, name: d.name, path: gameDir };
-      })
-      .filter((inst) => existsSync(path.join(inst.path, "mods")));
-  } catch {
-    return [];
-  }
-}
-
-function detectInstances(): DetectedInstance[] {
-  const home = os.homedir();
-  const roots: [string, DetectedInstance["launcher"], string[]][] =
-    process.platform === "win32"
-      ? [
-          [path.join(home, "curseforge", "minecraft", "Instances"), "CurseForge", []],
-          [path.join(home, "AppData", "Roaming", "ModrinthApp", "profiles"), "Modrinth", []],
-          [
-            path.join(home, "AppData", "Roaming", "PrismLauncher", "instances"),
-            "Prism",
-            [".minecraft", "minecraft"],
-          ],
-        ]
-      : [
-          [path.join(home, ".local", "share", "ModrinthApp", "profiles"), "Modrinth", []],
-          [
-            path.join(home, ".local", "share", "PrismLauncher", "instances"),
-            "Prism",
-            [".minecraft", "minecraft"],
-          ],
-          [path.join(home, ".local", "share", "multimc", "instances"), "MultiMC", [".minecraft"]],
-        ];
-  return roots.flatMap(([root, launcher, subdirs]) => listInstanceDirs(root, launcher, subdirs));
-}
-
 /* ---- registration ---- */
 
 export function registerIpc(sidecar: EngineSidecar, getBusy: () => boolean): void {
@@ -222,7 +177,10 @@ export function registerIpc(sidecar: EngineSidecar, getBusy: () => boolean): voi
   });
 
   ipcMain.handle("fs:probe-modpack", (_event, target: string) => probeModpack(target));
-  ipcMain.handle("fs:detect-instances", () => detectInstances());
+  // The renderer passes its persisted per-launcher folders on every call, so
+  // a folder changed in Settings is scanned without a restart.
+  ipcMain.handle("fs:detect-instances", (_event, paths: unknown) => detectInstances(paths));
+  ipcMain.handle("fs:launcher-roots", () => launcherRoots());
 
   ipcMain.handle("shell:open-path", async (_event, target: string) => {
     await shell.openPath(target);

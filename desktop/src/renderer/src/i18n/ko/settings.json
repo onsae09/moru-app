@@ -76,7 +76,16 @@
     "resetDefault": "기본값으로",
     "tutorial": "온보딩 튜토리얼",
     "tutorialDesc": "첫 실행 안내를 처음부터 다시 봅니다",
-    "tutorialReplay": "튜토리얼 다시 보기"
+    "tutorialReplay": "튜토리얼 다시 보기",
+    "launchers": {
+      "title": "런처 인스턴스 폴더",
+      "desc": "모드팩 자동 감지가 찾는 위치입니다. 런처에서 인스턴스 폴더를 옮겼다면 여기서 바꾸세요 (예: CurseForge의 …\\minecraft\\Instances).",
+      "default": "기본 경로",
+      "custom": "직접 지정",
+      "noDefault": "기본 경로 없음 — 인스턴스 폴더를 직접 지정하세요",
+      "unset": "지정 안 됨",
+      "found": "모드팩 {{n}}개"
+    }
   },
   "account": {
     "title": "계정",

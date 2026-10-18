@@ -33,7 +33,8 @@ const bridge: MoruBridge = {
   pickFile: (filters) => ipcRenderer.invoke("dialog:pick-file", filters),
   saveFile: (defaultPath) => ipcRenderer.invoke("dialog:save-file", defaultPath),
   probeModpack: (path) => ipcRenderer.invoke("fs:probe-modpack", path),
-  detectInstances: () => ipcRenderer.invoke("fs:detect-instances"),
+  detectInstances: (paths) => ipcRenderer.invoke("fs:detect-instances", paths),
+  launcherRoots: () => ipcRenderer.invoke("fs:launcher-roots"),
   pathForFile: (file) => webUtils.getPathForFile(file),
 
   openPath: (path) => ipcRenderer.invoke("shell:open-path", path),

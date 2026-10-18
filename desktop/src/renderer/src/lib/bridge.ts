@@ -48,6 +48,7 @@ function makeBrowserShim(): MoruBridge {
       modJarCount: 0,
     }),
     detectInstances: async (): Promise<DetectedInstance[]> => [],
+    launcherRoots: async () => [],
     pathForFile: () => "",
     openPath: async () => undefined,
     showItemInFolder: async () => undefined,

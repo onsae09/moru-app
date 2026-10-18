@@ -20,7 +20,8 @@
   "detected": {
     "label": "Auto-detected",
     "empty": "No modpacks found in installed launchers",
-    "emptyHint": "We look for CurseForge · Modrinth · Prism instances. You can also pick a folder above.",
+    "emptyHint": "We look for CurseForge · Modrinth · Prism · MultiMC instances. If you moved an instance folder, change it in Launcher folders — or pick a folder above.",
+    "launcherFolders": "Launcher folders",
     "error": "Failed to load launcher instances"
   },
   "recent": {

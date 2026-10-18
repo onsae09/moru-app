@@ -181,7 +181,12 @@ export function W6Export() {
   );
 
   /* ---- empty state: nothing to export before the run finished ---- */
-  if (wizard.runState !== "done" && wizard.runState !== "cancelled") {
+  // An interrupted run the engine stopped gracefully keeps a partial result,
+  // exportable exactly like a cancelled one.
+  const partial =
+    wizard.runState === "cancelled" ||
+    (wizard.runState === "interrupted" && wizard.stats !== null);
+  if (wizard.runState !== "done" && !partial) {
     const toStart = wizard.runState === "idle";
     return (
       <div className="max-w-[1200px] animate-fade-in-up px-10 py-8">
@@ -218,7 +223,7 @@ export function W6Export() {
   }
 
   /* ---- derived run summary ---- */
-  const cancelled = wizard.runState === "cancelled";
+  const cancelled = partial;
   const price = priceForModel(pricingTable, model);
   const finalUsage =
     stats !== null

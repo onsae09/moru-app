@@ -25,7 +25,9 @@
     "retry": "Retry",
     "delete": "Delete",
     "failedFallback": "Stopped by an error",
-    "cancelledFallback": "Cancelled by user"
+    "cancelledFallback": "Cancelled by user",
+    "resumeTranslation": "Resume translation",
+    "interruptedFallback": "The translation was interrupted. Finished batches are saved."
   },
   "empty": {
     "title": "No jobs yet",

@@ -40,13 +40,16 @@ from ..output import (
 )
 from ..output.per_mod import build_mod_packs
 from ..pipeline import (
+    EntryStatus,
     PipelineConfig,
     PipelineResult,
+    ReviewEdit,
     apply_entry_edits,
     is_translatable_text,
     output_root,
     run_pipeline,
 )
+from ..pipeline.checkpoint import CheckpointStore, checkpoint_identity
 from ..scanner import ScanResult, scan_modpack
 from ..scanner.modpack_scanner import PACK_ROOTS
 from ..scanner.pack_identity import PackIdentity, detect_pack_identity
@@ -57,6 +60,7 @@ if TYPE_CHECKING:
     from ..graph import TranslationGraph
     from ..models import LanguageFilePair
     from ..pipeline import TranslationPipeline
+    from ..pipeline.checkpoint import TranslationCheckpoint
     from .sessions import SessionStore
 
     #: Deferred producer of the PipelineResult an export job archives.
@@ -248,9 +252,26 @@ def _mod_blacklist(params: Mapping[str, Any]) -> list[str]:
     return [entry.strip() for entry in raw if isinstance(entry, str) and entry.strip()]
 
 
+#: Translate params never written into a checkpoint. The api_key is a secret
+#: (the desktop re-sends it on resume); the rest are per-request hints a
+#: resumed run recomputes, because a resume always scans afresh.
+_CHECKPOINT_PARAM_EXCLUDES = frozenset(
+    {"api_key", "scan_job_id", "scan_result", "session_id", "resume"}
+)
+#: Connection settings a resume request may supply: where and as whom to
+#: reach the provider, never what or how to translate. Everything else comes
+#: from the checkpoint, so the resumed output matches an uninterrupted run.
+_RESUME_OVERRIDES = ("api_key", "api_base")
+#: Why a translate job the engine itself stopped (shutdown) is resumable.
+SHUTDOWN_INTERRUPTION_MESSAGE = (
+    "앱 또는 번역 엔진이 종료되어 번역이 중단되었습니다. 완료된 번역은 "
+    "저장되었으니 '이어서 번역'으로 계속할 수 있습니다."
+)
+
+
 #: Event types that end a job's stream; the manager emits exactly one of
 #: these as the final frame of every job.
-TERMINAL_EVENT_TYPES = frozenset({"done", "failed", "cancelled"})
+TERMINAL_EVENT_TYPES = frozenset({"done", "failed", "cancelled", "interrupted"})
 
 
 class JobError(Exception):
@@ -282,6 +303,10 @@ class JobStatus(str, Enum):
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    #: Stopped early but resumable: the provider ran out of capacity, or the
+    #: engine shut down mid-run. Partial results are kept like a cancel, and
+    #: the run's checkpoint stays on disk for "이어서 번역".
+    INTERRUPTED = "interrupted"
 
 
 @dataclass
@@ -322,6 +347,19 @@ class JobRecord:
     #: Shared with its scan/translate consumers while discovery is running.
     mod_sources: ModSources = field(default_factory=ModSources)
     mod_sources_task: asyncio.Task[None] | None = None
+    #: Durable per-batch record of a translate run. None for runs that make
+    #: no provider call (manual seed, source text) or when it could not be
+    #: opened. Execution-internal, never serialized.
+    checkpoint: TranslationCheckpoint | None = None
+    #: This run continues ``checkpoint`` instead of starting it over.
+    resume: bool = False
+    #: The engine itself stopped the job (shutdown): it ends interrupted and
+    #: resumable, not as a user cancel.
+    shutdown: bool = False
+    #: A resume's previous run of this session, when it was still in memory:
+    #: its partial result holds the review edits the resumed run must keep.
+    #: Released once read. Execution-internal, never serialized.
+    resume_base: PipelineResult | None = None
 
     def to_public(self) -> dict[str, Any]:
         """Contract ``Job`` schema representation."""
@@ -605,6 +643,7 @@ class JobManager:
         self,
         glossary_store_dir: Path | None = None,
         session_store: SessionStore | None = None,
+        checkpoint_store: CheckpointStore | None = None,
     ) -> None:
         self._jobs: dict[str, JobRecord] = {}
         #: Enriched scan results keyed by pack path, locales, and a cheap
@@ -622,6 +661,12 @@ class JobManager:
 
             session_store = _SessionStore()
         self._session_store: SessionStore = session_store
+        #: Per-session translate checkpoints. Beside the sessions directory by
+        #: default, so whichever root the session store uses — the app data
+        #: dir in production, a temp dir in tests — holds both.
+        self._checkpoints = checkpoint_store or CheckpointStore(
+            session_store.sessions_dir.parent / "checkpoints"
+        )
         #: Scratch dirs this process owns, wiped on shutdown. The migration
         #: asset paths are deterministic, so a re-scan re-registers the same
         #: entry instead of adding one per scan.
@@ -644,6 +689,11 @@ class JobManager:
     def session_store(self) -> SessionStore:
         """Persistent session store backing restore/export/import."""
         return self._session_store
+
+    @property
+    def checkpoints(self) -> CheckpointStore:
+        """Durable per-batch translate checkpoints (resume support)."""
+        return self._checkpoints
 
     # -- lookup --------------------------------------------------------------
 
@@ -722,6 +772,33 @@ class JobManager:
         """Drop a record from memory; its session file is left alone."""
         self._jobs.pop(job_id, None)
 
+    # -- checkpoints -----------------------------------------------------------
+
+    async def list_checkpoints(self) -> list[dict[str, Any]]:
+        """Resumable translate checkpoints; a run still live here is marked
+        ``running`` so a reloaded desktop reattaches instead of resuming."""
+        live = {
+            job_id
+            for job_id, record in self._jobs.items()
+            if record.type is JobType.TRANSLATE and not record.finished
+        }
+        # Reads every checkpoint file, so off-loop like GET /sessions.
+        summaries = await asyncio.to_thread(self._checkpoints.summaries)
+        for summary in summaries:
+            if summary["session_id"] in live:
+                summary["state"] = JobStatus.RUNNING.value
+        return summaries
+
+    async def delete_checkpoint(self, session_id: str) -> bool:
+        """Discard a session's checkpoint. A live run still writes to its
+        own, so that is refused rather than left half-deleted."""
+        record = self._jobs.get(session_id)
+        if record is not None and not record.finished:
+            raise JobStateError(f"job {session_id} is still running")
+        # Off-loop: a delete retries briefly while another reader holds the
+        # file (see TranslationCheckpoint.delete).
+        return await asyncio.to_thread(self._checkpoints.delete, session_id)
+
     # -- creation ------------------------------------------------------------
 
     def create_job(self, type_: str, params: Mapping[str, Any]) -> JobRecord:
@@ -739,6 +816,16 @@ class JobManager:
             self._require_migration_params(record.params)
             runner = self._run_scan(record)
         elif job_type is JobType.TRANSLATE:
+            record.resume = bool(record.params.pop("resume", False))
+            if record.resume:
+                record.params = self._resume_params(record)
+                previous = self._jobs.get(record.id)
+                if (
+                    previous is not None
+                    and previous.type is JobType.TRANSLATE
+                    and isinstance(previous.result, PipelineResult)
+                ):
+                    record.resume_base = previous.result
             self._require_modpack_path(record.params)
             config_params = dict(record.params)
             scan_job_id = config_params.pop("scan_job_id", None)
@@ -754,6 +841,9 @@ class JobManager:
                 record.mod_sources_task = scan_record.mod_sources_task
             self._attach_scan_payload(record)
             scan_source = self._resolve_scan_source(scan_job_id, config)
+            # Last, after every validation that can refuse the request: a
+            # rejected fresh run must not have discarded the checkpoint.
+            record.checkpoint = self._open_checkpoint(record, config)
             runner = self._run_pipeline(record, config, scan_source)
         elif job_type is JobType.EXPORT:
             runner = self._run_export(record, self._export_result_source(record))
@@ -835,6 +925,148 @@ class JobManager:
             raise JobStateError(f"job {job_id} is still running")
         return job_id
 
+    def _resume_params(self, record: JobRecord) -> dict[str, Any]:
+        """Params of the interrupted run a resume continues.
+
+        They come from the checkpoint, not the request: only connection
+        settings (``_RESUME_OVERRIDES``) may be re-supplied, because
+        everything that shapes the output has to be the original run's for
+        the resumed result to equal an uninterrupted one.
+        """
+        if not record.params.get("session_id"):
+            raise JobParamsError("params.session_id is required to resume")
+        header = self._checkpoints.for_session(record.id).read_header()
+        stored = header.get("params") if header is not None else None
+        if not isinstance(stored, dict):
+            raise UnknownJobError(f"session {record.id} has no resumable checkpoint")
+        overrides = {
+            key: record.params[key]
+            for key in _RESUME_OVERRIDES
+            if record.params.get(key) is not None
+        }
+        restored = {**stored, **overrides, "session_id": record.id}
+        # Kept beside the params (see _open_checkpoint). The scan cache is
+        # gone after a relaunch, and without this payload the resumed
+        # session would save no scan screen and lose its pack identity.
+        if header.get("scan_result"):
+            restored["scan_result"] = header["scan_result"]
+        return restored
+
+    def _open_checkpoint(
+        self, record: JobRecord, config: PipelineConfig
+    ) -> TranslationCheckpoint | None:
+        """Start (fresh run) or continue (resume) the run's checkpoint.
+
+        A fresh run replaces whatever an earlier run of this session left:
+        starting over is an explicit choice, and silently reusing old
+        translations under it would not be.
+        """
+        checkpoint = self._checkpoints.for_session(record.id)
+        if config.source_text_only or config.manual_seed:
+            # No provider call, so nothing paid for that could be lost. The
+            # run still replaces the session's work, so an earlier AI run's
+            # checkpoint must not stay behind and resurface as "이어서 번역".
+            try:
+                checkpoint.delete()
+            except OSError:
+                logger.exception(
+                    "Could not discard the checkpoint of session %s", record.id
+                )
+            return None
+        identity = checkpoint_identity(
+            config.modpack_path, config.source_locale, config.target_locale
+        )
+        if record.resume:
+            stored = checkpoint.read_header()
+            if stored is None or stored.get("identity") != identity:
+                raise JobStateError(
+                    f"the checkpoint of session {record.id} belongs to a "
+                    "different modpack or locale"
+                )
+        scan_payload = record.params.get("scan_result")
+        pack_identity = (
+            scan_payload.get("identity") if isinstance(scan_payload, dict) else None
+        )
+        pack_name = (
+            pack_identity.get("name") if isinstance(pack_identity, dict) else None
+        )
+        header = {
+            "session_id": record.id,
+            "identity": identity,
+            "modpack_path": str(config.modpack_path),
+            "modpack_name": pack_name or config.modpack_path.name,
+            "source_locale": config.source_locale,
+            "target_locale": config.target_locale,
+            "model": config.model,
+            "params": {
+                key: value
+                for key, value in record.params.items()
+                if key not in _CHECKPOINT_PARAM_EXCLUDES
+            },
+        }
+        if scan_payload and not record.resume:
+            # Beside the params, never in them: a resume replays params as
+            # pipeline config, and the first begin record is the one read.
+            header["scan_result"] = scan_payload
+        try:
+            if record.resume:
+                checkpoint.resume(header)
+            else:
+                checkpoint.start(header)
+        except OSError:
+            logger.exception("Could not open the checkpoint of job %s", record.id)
+            if not record.resume:
+                # A fresh run must never append under the header an earlier
+                # run left behind: a later resume would take that run's
+                # translations for this one's. Clear it and start once more;
+                # failing that, this run goes without a checkpoint.
+                try:
+                    checkpoint.delete()
+                    checkpoint.start(header)
+                except OSError:
+                    logger.exception("Job %s runs without a checkpoint", record.id)
+                    return None
+            # A resume degrades instead: its recorded batches are still on
+            # disk, and every later batch write retries the disk on its own.
+        return checkpoint
+
+    async def _review_edits(
+        self, record: JobRecord
+    ) -> dict[str, dict[str, ReviewEdit]]:
+        """What the user changed on the partial result a resume continues.
+
+        The checkpoint holds the model's text. Review edits made afterwards —
+        AI retranslations and hand commits — must win over it, or the resumed
+        run would ship the machine text again and its final save would
+        overwrite the session file that held them. The previous result comes
+        from memory, else from the session file (snapshot + journal replay).
+        """
+        previous = record.resume_base
+        record.resume_base = None  # read once; a large result is not kept
+        if previous is None:
+            restored = await asyncio.to_thread(
+                self._session_store.load_job_session, record.id
+            )
+            if restored is not None and isinstance(restored.result, PipelineResult):
+                previous = restored.result
+        edits: dict[str, dict[str, ReviewEdit]] = {}
+        if previous is not None:
+            for entry in previous.entries:
+                if (
+                    entry.status is EntryStatus.MODIFIED
+                    and entry.translated_text is not None
+                ):
+                    edits.setdefault(entry.file, {})[entry.key] = ReviewEdit(
+                        entry.translated_text, entry.source_text
+                    )
+        # Hand commits by provenance, exactly as seed_from_job_id adopts an
+        # earlier session's: the journal is the newest record of them.
+        if self._manual_resolver is not None:
+            for file, texts in self._manual_resolver(record.id).items():
+                for key, text in texts.items():
+                    edits.setdefault(file, {})[key] = ReviewEdit(text)
+        return edits
+
     def _attach_scan_payload(self, record: JobRecord) -> None:
         """Copy the scan-screen payload onto the translate record.
 
@@ -915,7 +1147,8 @@ class JobManager:
     def _resolve_translate_source(
         self, params: Mapping[str, Any], purpose: str
     ) -> JobRecord:
-        """Resolve a completed or user-cancelled translate job with results."""
+        """Resolve a completed, user-cancelled or interrupted translate job
+        with results (the latter two hold a reviewable partial result)."""
         translate_job_id = params.get("translate_job_id")
         if not translate_job_id:
             raise JobParamsError("params.translate_job_id is required")
@@ -924,7 +1157,11 @@ class JobManager:
             raise JobStateError(
                 f"job {source.id} is a {source.type.value} job, not translate"
             )
-        if source.status not in (JobStatus.DONE, JobStatus.CANCELLED) or not isinstance(
+        if source.status not in (
+            JobStatus.DONE,
+            JobStatus.CANCELLED,
+            JobStatus.INTERRUPTED,
+        ) or not isinstance(
             source.result, PipelineResult
         ):
             raise JobStateError(
@@ -1054,6 +1291,10 @@ class JobManager:
             if task is not None and not task.done()
         }
         for record in self._jobs.values():
+            if not record.finished:
+                # Not the user's choice: a running translation ends
+                # interrupted and resumable rather than cancelled.
+                record.shutdown = True
             record.cancel_requested = True
         for task in tasks:
             task.cancel()
@@ -1222,8 +1463,13 @@ class JobManager:
             result = await runner
         except asyncio.CancelledError:
             # Both task.cancel() and the pipeline's cancel_check land here.
-            record.status = JobStatus.CANCELLED
-            terminal_type, terminal = "cancelled", {"status": "cancelled"}
+            if record.shutdown and record.type is JobType.TRANSLATE:
+                terminal_type, terminal = self._interrupted(
+                    record, "shutdown", SHUTDOWN_INTERRUPTION_MESSAGE
+                )
+            else:
+                record.status = JobStatus.CANCELLED
+                terminal_type, terminal = "cancelled", {"status": "cancelled"}
             logger.info("Job %s (%s) cancelled", record.id, record.type.value)
         except Exception as exc:
             record.status = JobStatus.FAILED
@@ -1233,14 +1479,33 @@ class JobManager:
             logger.exception("Job %s (%s) failed", record.id, record.type.value)
         else:
             record.result = result
-            if record.cancel_requested:
-                record.status = JobStatus.CANCELLED
-                terminal_type, terminal = "cancelled", {"status": "cancelled"}
+            interruption = (
+                result.interruption if isinstance(result, PipelineResult) else None
+            )
+            if interruption is not None:
+                terminal_type, terminal = self._interrupted(
+                    record,
+                    interruption.reason,
+                    interruption.message,
+                    interruption.detail,
+                )
+            elif record.cancel_requested:
+                if record.shutdown and record.type is JobType.TRANSLATE:
+                    terminal_type, terminal = self._interrupted(
+                        record, "shutdown", SHUTDOWN_INTERRUPTION_MESSAGE
+                    )
+                else:
+                    record.status = JobStatus.CANCELLED
+                    terminal_type, terminal = "cancelled", {"status": "cancelled"}
             else:
                 record.status = JobStatus.DONE
                 terminal_type, terminal = "done", {"status": "done"}
             if record.done_payload:
                 terminal.update(record.done_payload)
+        if record.checkpoint is not None:
+            terminal["resumable"] = self._close_checkpoint(
+                record, terminal.get("reason")
+            )
         self._emit(record, terminal_type, terminal)
         record.finished = True
         if (
@@ -1250,12 +1515,65 @@ class JobManager:
         ):
             self._start_mod_sources(record)
         if record.type is JobType.TRANSLATE:
+            saved = False
             try:
-                self._session_store.save_job_session(record)
+                saved = self._session_store.save_job_session(record) is not None
             except Exception:
                 logger.exception("Failed to save session for job %s", record.id)
+            if (
+                saved
+                and record.status is JobStatus.DONE
+                and record.checkpoint is not None
+            ):
+                # Only now does the session file hold the complete result. A
+                # finished run's checkpoint must not be offered for resuming,
+                # but until the save landed it was the only durable copy.
+                try:
+                    await asyncio.to_thread(record.checkpoint.delete)
+                except OSError:
+                    logger.exception(
+                        "Failed to remove the checkpoint of job %s", record.id
+                    )
         for queue in record.subscribers:
             queue.put_nowait(None)  # stream-end sentinel for live listeners
+
+    @staticmethod
+    def _interrupted(
+        record: JobRecord, reason: str, message: str, detail: str = ""
+    ) -> tuple[str, dict[str, Any]]:
+        """Mark a job stopped-but-resumable; return its terminal frame."""
+        record.status = JobStatus.INTERRUPTED
+        record.error = message
+        frame: dict[str, Any] = {
+            "status": JobStatus.INTERRUPTED.value,
+            "reason": reason,
+            "error": message,
+        }
+        if detail:
+            frame["detail"] = detail
+        logger.info("Job %s interrupted (%s)", record.id, reason)
+        return JobStatus.INTERRUPTED.value, frame
+
+    @staticmethod
+    def _close_checkpoint(record: JobRecord, reason: object) -> bool:
+        """Settle a finished run's checkpoint; True while it stays resumable.
+
+        Every outcome but a completed run keeps it — a cancel, an
+        interruption and a failure all hold paid translations. A completed
+        run's is removed after its session file is saved (see ``_run``).
+        """
+        checkpoint = record.checkpoint
+        if checkpoint is None or record.status is JobStatus.DONE:
+            return False
+        try:
+            checkpoint.record_end(
+                record.status.value,
+                reason=reason if isinstance(reason, str) else None,
+                error=record.error,
+            )
+        except OSError:
+            logger.exception("Failed to close the checkpoint of job %s", record.id)
+        return checkpoint.exists()
 
     async def _run_scan(self, record: JobRecord) -> EnrichedScanResult:
         params = record.params
@@ -1495,6 +1813,14 @@ class JobManager:
             if config.seed_from_job_id and self._manual_resolver is not None
             else None
         )
+        # A resumed run replays everything its session already translated;
+        # off-loop, because a large pack's checkpoint is megabytes of JSON.
+        resume_from = (
+            await asyncio.to_thread(record.checkpoint.load)
+            if record.resume and record.checkpoint is not None
+            else None
+        )
+        review_edits = await self._review_edits(record) if record.resume else None
         try:
             result = await run_pipeline(
                 config,
@@ -1504,6 +1830,9 @@ class JobManager:
                 scan_result=reusable_scan,
                 migration=reusable_migration,
                 human_translations=human,
+                checkpoint=record.checkpoint,
+                resume_from=resume_from,
+                review_edits=review_edits,
             )
         finally:
             record.pipeline = None

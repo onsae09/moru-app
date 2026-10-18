@@ -7,6 +7,7 @@
 import { create } from "zustand";
 
 import type {
+  CheckpointSummary,
   JobEventFrame,
   JobSnapshot,
   PipelineStats,
@@ -14,11 +15,16 @@ import type {
   TranslateParams,
 } from "../../../shared/engine";
 import type { ModpackProbe } from "../../../shared/bridge";
-import { api, openJobEvents } from "../lib/api";
+import { api, EngineApiError, openJobEvents } from "../lib/api";
 import { providerIdOf } from "../lib/models";
 import { moru } from "../lib/bridge";
 import { WEB_URL } from "../lib/web";
-import { useSessions, type SessionScanTotals } from "./sessions";
+import {
+  reconcileCheckpoints,
+  useSessions,
+  type SessionRecord,
+  type SessionScanTotals,
+} from "./sessions";
 // Cycle-tolerant by construction: translationQueue imports this module too,
 // and both sides only dereference the other's store at call time.
 import { useTranslationQueue } from "./translationQueue";
@@ -103,6 +109,9 @@ export type ManualSeedOutcome =
   | "queueBusy"
   | "requestFailed";
 
+/** Why "이어서 번역" did or did not start; each refusal is shown on screen. */
+export type ResumeOutcome = "started" | "busy" | "gone" | "requestFailed";
+
 interface WizardStore {
   /* W1 */
   sessionId: string | null;
@@ -131,8 +140,16 @@ interface WizardStore {
   translateJobId: string | null;
   /** Model the run was started with; settings.model may drift afterwards. */
   model: string | null;
-  runState: "idle" | "running" | "done" | "failed" | "cancelled";
+  /**
+   * `interrupted`: stopped early but resumable (provider quota, app or engine
+   * shutdown). Like `cancelled`, any partial result stays reviewable.
+   */
+  runState: "idle" | "running" | "done" | "failed" | "cancelled" | "interrupted";
   runError: string | null;
+  /** The engine keeps this run's checkpoint: "이어서 번역" can continue it. */
+  resumable: boolean;
+  /** Why an `interrupted` run stopped (`quota` | `shutdown`), when known. */
+  interruptReason: string | null;
   startedAt: number | null;
   /** First provider batch start; excludes scan/glossary from live throughput. */
   translationStartedAt: number | null;
@@ -185,6 +202,13 @@ interface WizardStore {
   setCategories: (names: string[], included: boolean) => void;
   startScan: () => Promise<void>;
   startTranslate: (settingsOverride?: TranslationRunSettings) => Promise<void>;
+  /**
+   * Continue an interrupted, cancelled or failed session from the engine's
+   * checkpoint: already-translated entries are reused, so only the rest is
+   * sent (and billed). Only ever started by a user click — nothing resumes
+   * paid work on its own.
+   */
+  resumeTranslate: (sessionId: string) => Promise<ResumeOutcome>;
   /**
    * Seed a hand-translation session: a translate job flagged `manual_seed`,
    * which the engine settles as untranslated instead of calling a provider.
@@ -378,6 +402,51 @@ function attachTranslationEvents(jobId: string, sessionId: string, after?: numbe
   );
 }
 
+/** The engine's checkpoint for a session whose run is no longer live. */
+async function findCheckpoint(sessionId: string): Promise<CheckpointSummary | null> {
+  try {
+    const checkpoints = await api.checkpoints();
+    return (
+      checkpoints.find(
+        (checkpoint) => checkpoint.session_id === sessionId && checkpoint.state !== "running",
+      ) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fold the engine's resumable checkpoints into history once the engine is
+ * up — before the queue reattaches its rows — so a translation the app was
+ * closed or killed in reads as interrupted with its saved progress, never
+ * as a lost failure. Only marks rows resumable; resuming is always a click.
+ */
+export async function reconcileResumableSessions(): Promise<void> {
+  let checkpoints: CheckpointSummary[];
+  try {
+    checkpoints = await api.checkpoints();
+  } catch {
+    return; // history stays as it was; nothing is lost by skipping this
+  }
+  useSessions.setState((state) => ({
+    sessions: reconcileCheckpoints(state.sessions, checkpoints),
+  }));
+}
+
+/**
+ * Delete a history row everywhere it lives. The engine keeps the session
+ * file and its translation checkpoint, and the next reconcile re-adds a row
+ * for every checkpoint it still holds — dropping only the local record would
+ * bring a resumable session straight back.
+ */
+export async function deleteHistorySession(sessionId: string): Promise<void> {
+  const jobId = useSessionJobs.getState().jobs[sessionId] ?? sessionId;
+  useSessions.getState().remove(sessionId);
+  useSessionJobs.getState().unregister(sessionId);
+  await api.deleteSession(jobId).catch(() => undefined);
+}
+
 function withLog(
   log: LogLine[],
   level: LogLine["level"],
@@ -496,6 +565,8 @@ function translationFramePatch(
       return {
         runState: "done",
         runError: null,
+        resumable: false,
+        interruptReason: null,
         finishedAt: ts,
         activeBatches: {},
         stats: frame.stats ?? null,
@@ -506,6 +577,8 @@ function translationFramePatch(
       return {
         runState: "failed",
         runError: error,
+        resumable: frame.resumable ?? false,
+        interruptReason: null,
         finishedAt: ts,
         activeBatches: {},
         log: withLog(prev.log, "error", error, ts),
@@ -514,11 +587,31 @@ function translationFramePatch(
     case "cancelled":
       return {
         runState: "cancelled",
+        resumable: frame.resumable ?? false,
+        interruptReason: null,
         finishedAt: ts,
         activeBatches: {},
         stats: frame.stats ?? null,
         log: withLog(prev.log, "warn", "translate cancelled; partial result preserved", ts),
       };
+    case "interrupted": {
+      const error = frame.error ?? "translate interrupted";
+      return {
+        runState: "interrupted",
+        runError: error,
+        resumable: frame.resumable ?? false,
+        interruptReason: frame.reason ?? null,
+        finishedAt: ts,
+        activeBatches: {},
+        stats: frame.stats ?? null,
+        log: withLog(
+          prev.log,
+          "warn",
+          frame.detail !== undefined ? `${error} (${frame.detail})` : error,
+          ts,
+        ),
+      };
+    }
   }
 }
 
@@ -534,6 +627,8 @@ const initialJobState = {
   model: null,
   runState: "idle" as const,
   runError: null,
+  resumable: false,
+  interruptReason: null,
   startedAt: null,
   translationStartedAt: null,
   finishedAt: null,
@@ -643,7 +738,11 @@ export const useWizard = create<WizardStore>((set, get) => ({
       const value = await api.jobSnapshot(jobId);
       if (value.job.type !== "translate") throw new Error("not a translate job");
       // Review/export require an actual PipelineResult, not only metadata.
-      if (value.job.status === "done" || value.job.status === "cancelled") {
+      if (
+        value.job.status === "done" ||
+        value.job.status === "cancelled" ||
+        value.job.status === "interrupted"
+      ) {
         await api.entries(jobId, "all", 1, 1);
       }
       return value;
@@ -674,6 +773,25 @@ export const useWizard = create<WizardStore>((set, get) => ({
       useSessionJobs.getState().unregister(sessionId);
       useSessions.getState().patch(sessionId, { translateJobId: null });
       if (record.status === "running") {
+        // The job died with the engine (crash or restart). If its checkpoint
+        // survived, the session is interrupted and resumable — not lost.
+        const checkpoint = await findCheckpoint(sessionId);
+        if (checkpoint !== null) {
+          const [interrupted] = reconcileCheckpoints([record], [checkpoint]);
+          useSessions.getState().patch(sessionId, interrupted);
+          if (get().sessionId === sessionId) {
+            set({
+              runState: interrupted.status === "running" ? "interrupted" : interrupted.status,
+              runError: interrupted.error,
+              resumable: true,
+              interruptReason: checkpoint.reason,
+              finishedAt: interrupted.finishedAt,
+              activeBatches: {},
+            });
+            moru.setBusy(false);
+          }
+          return "gone";
+        }
         const error = "engine no longer holds this translation job";
         useSessions.getState().patch(sessionId, {
           status: "failed",
@@ -726,6 +844,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       model: record.model,
       runState: engineRunState,
       runError: snapshot.job.error,
+      // Terminal frames below refresh it from the engine.
+      resumable: record.resumable,
       startedAt: Number.isFinite(startedAt) ? startedAt : record.createdAt,
       translationStartedAt: snapshot.translation_started_at,
       finishedAt: engineRunState === "running" ? null : record.finishedAt,
@@ -759,6 +879,7 @@ export const useWizard = create<WizardStore>((set, get) => ({
       doneEntries: current.doneEntries,
       stats: current.stats,
       error: current.runError,
+      resumable: current.resumable,
     });
     moru.setBusy(current.runState === "running");
     if (current.runState === "running") {
@@ -986,6 +1107,9 @@ export const useWizard = create<WizardStore>((set, get) => ({
       exportBilingualZipPath: null,
       exportBilingualOverridesZipPath: null,
       sharedUrl: null,
+      // The engine discards the checkpoint only once it accepts this run: a
+      // refused request (409/422/offline) leaves it resumable.
+      resumable: sessions.sessions.find((s) => s.id === sessionId)?.resumable ?? false,
     });
     set({ sessionId });
 
@@ -1007,9 +1131,10 @@ export const useWizard = create<WizardStore>((set, get) => ({
 
     try {
       const job = await api.startTranslate(params);
-      set({ translateJobId: job.id });
+      // Accepted: this run starts the session over, its checkpoint replaced.
+      set({ translateJobId: job.id, resumable: false, interruptReason: null });
       useSessionJobs.getState().register(sessionId, job.id);
-      useSessions.getState().patch(sessionId, { translateJobId: job.id });
+      useSessions.getState().patch(sessionId, { translateJobId: job.id, resumable: false });
       lastSessionProgressPersistedAt = 0;
       attachTranslationEvents(job.id, sessionId);
     } catch (error) {
@@ -1023,7 +1148,10 @@ export const useWizard = create<WizardStore>((set, get) => ({
     set((prev) => translationFramePatch(prev, frame));
     const current = get();
     const terminal =
-      frame.type === "done" || frame.type === "failed" || frame.type === "cancelled";
+      frame.type === "done" ||
+      frame.type === "failed" ||
+      frame.type === "cancelled" ||
+      frame.type === "interrupted";
     if (terminal) moru.setBusy(false);
 
     const now = Date.now();
@@ -1035,7 +1163,99 @@ export const useWizard = create<WizardStore>((set, get) => ({
         doneEntries: current.doneEntries,
         stats: current.stats,
         error: current.runError,
+        ...(terminal ? { resumable: current.resumable } : {}),
       });
+    }
+  },
+
+  resumeTranslate: async (sessionId) => {
+    const state = get();
+    const queuePhase = useTranslationQueue.getState().phase;
+    if (
+      state.scanState === "running" ||
+      state.runState === "running" ||
+      state.exportState === "running" ||
+      state.sourceExportState === "running" ||
+      queuePhase === "running" ||
+      queuePhase === "pausing"
+    ) {
+      return "busy";
+    }
+    const record: SessionRecord | undefined = useSessions
+      .getState()
+      .sessions.find((session) => session.id === sessionId);
+    if (record === undefined || !record.resumable || record.status === "running") {
+      return "gone";
+    }
+
+    // The key is never written into the checkpoint, so it is re-read here. A
+    // local runtime's address is environment, not run semantics: current one.
+    const providerId = providerIdOf(record.model);
+    const apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
+    const settings = useSettings.getState();
+    const apiBase =
+      providerId === "ollama"
+        ? settings.ollamaBaseUrl
+        : providerId === "openai-compatible"
+          ? settings.openaiCompatBaseUrl
+          : undefined;
+
+    closeScanEvents?.();
+    closeTranslateEvents?.();
+    closeExportEvents?.();
+    closeSourceExportEvents?.();
+    set({
+      sessionId: record.id,
+      modpackPath: record.modpackPath,
+      modpackName: record.modpackName,
+      probe: null,
+      sourceLocale: record.sourceLocale,
+      targetLocale: record.targetLocale,
+      migrationEnabled: false,
+      previousModpackPath: null,
+      previousResourcepackPath: null,
+      previousOverridesPath: null,
+      ...initialJobState,
+      scanState: record.scanTotals !== null ? "done" : "idle",
+      scanTotals: record.scanTotals,
+      model: record.model,
+      runState: "running",
+      startedAt: Date.now(),
+    });
+    get().appendLog("info", `translate resume: ${record.modpackName} → ${record.targetLocale}`);
+    moru.setBusy(true);
+    useSessions.getState().patch(sessionId, { status: "running", finishedAt: null, error: null });
+
+    try {
+      const job = await api.resumeTranslate({
+        session_id: sessionId,
+        resume: true,
+        api_key: apiKey,
+        api_base: apiBase,
+      });
+      set({ translateJobId: job.id });
+      useSessionJobs.getState().register(sessionId, job.id);
+      useSessions.getState().patch(sessionId, { translateJobId: job.id });
+      lastSessionProgressPersistedAt = 0;
+      attachTranslationEvents(job.id, sessionId);
+      return "started";
+    } catch (error) {
+      // A refused resume leaves the checkpoint as it was; only a 404 means
+      // the engine no longer has one to continue.
+      const gone = error instanceof EngineApiError && error.status === 404;
+      const message = String(error);
+      get().appendLog("error", message);
+      moru.setBusy(false);
+      const finishedAt = Date.now();
+      const status = gone ? "failed" : record.status;
+      set({ runState: status, runError: message, resumable: !gone, finishedAt });
+      useSessions.getState().patch(sessionId, {
+        status,
+        finishedAt,
+        error: message,
+        resumable: !gone,
+      });
+      return "requestFailed";
     }
   },
 
@@ -1211,6 +1431,9 @@ export const useWizard = create<WizardStore>((set, get) => ({
       exportBilingualZipPath: null,
       exportBilingualOverridesZipPath: null,
       sharedUrl: null,
+      // Cleared only once the engine accepts the seed, as in startTranslate.
+      resumable:
+        useSessions.getState().sessions.find((s) => s.id === sessionId)?.resumable ?? false,
     });
     set({ sessionId });
 
@@ -1226,7 +1449,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       //    "nothing to translate" panel instead of the queue;
       //  * a dropped event stream was never re-established, so a missed
       //    terminal frame pinned `runState` at "running" forever.
-      useSessions.getState().patch(sessionId, { translateJobId: job.id });
+      useSessions.getState().patch(sessionId, { translateJobId: job.id, resumable: false });
+      set({ resumable: false, interruptReason: null });
       lastSessionProgressPersistedAt = 0;
       attachTranslationEvents(job.id, sessionId);
       return "started";

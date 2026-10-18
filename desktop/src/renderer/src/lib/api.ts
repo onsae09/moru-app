@@ -5,6 +5,7 @@
  */
 
 import type {
+  CheckpointSummary,
   CommunitySyncResult,
   Entry,
   EntryContext,
@@ -22,6 +23,7 @@ import type {
   Provider,
   ProviderModels,
   ProviderTestResult,
+  ResumeTranslateParams,
   ScanParams,
   ScanResult,
   SourceTextExportParams,
@@ -130,6 +132,9 @@ export const api = {
   startScan: (params: ScanParams) =>
     request<Job>("/jobs", { method: "POST", body: JSON.stringify({ type: "scan", params }) }),
   startTranslate: (params: TranslateParams) =>
+    request<Job>("/jobs", { method: "POST", body: JSON.stringify({ type: "translate", params }) }),
+  /** Continue an interrupted session from the engine's durable checkpoint. */
+  resumeTranslate: (params: ResumeTranslateParams) =>
     request<Job>("/jobs", { method: "POST", body: JSON.stringify({ type: "translate", params }) }),
   /** Both export entry points: W6 (translated) and W3 (source text). */
   startExport: (params: ExportParams | SourceTextExportParams) =>
@@ -327,6 +332,8 @@ export const api = {
     }),
   deleteSession: (sessionId: string) =>
     request<{ status: string; id: string }>(`/sessions/${sessionId}`, { method: "DELETE" }),
+  /** Sessions whose translation stopped early and can be resumed. */
+  checkpoints: () => request<CheckpointSummary[]>("/checkpoints"),
 };
 
 /**

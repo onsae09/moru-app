@@ -7,9 +7,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { PipelineStats } from "../../../shared/engine";
+import type { CheckpointSummary, PipelineStats } from "../../../shared/engine";
+import { parseTimestamp } from "../lib/format";
 
-export type SessionStatus = "running" | "done" | "failed" | "cancelled";
+/**
+ * `interrupted`: the run stopped early but resumably — the provider's quota
+ * or credit ran out, or the app/engine closed mid-run.
+ */
+export type SessionStatus = "running" | "done" | "failed" | "cancelled" | "interrupted";
 
 /** Compact W2 totals retained without persisting the full scan tree. */
 export interface SessionScanTotals {
@@ -46,6 +51,12 @@ export interface SessionRecord {
   exportBilingualZipPath: string | null;
   exportBilingualOverridesZipPath: string | null;
   sharedUrl: string | null;
+  /**
+   * The engine still holds this session's translation checkpoint, so
+   * "이어서 번역" continues it without paying for finished batches again.
+   * Owned by the engine: set from terminal frames and GET /checkpoints.
+   */
+  resumable: boolean;
 }
 
 interface SessionsStore {
@@ -89,9 +100,84 @@ export function migrateSessionsState(
         exportBilingualZipPath: session.exportBilingualZipPath ?? null,
         exportBilingualOverridesZipPath: session.exportBilingualOverridesZipPath ?? null,
         sharedUrl: session.sharedUrl ?? null,
+        resumable: session.resumable ?? false,
       };
     }),
   };
+}
+
+/**
+ * Fold the engine's resumable checkpoints (GET /checkpoints) into history.
+ *
+ * Only the engine knows whether a session's paid batches are still on disk,
+ * so it decides `resumable`. A row last seen running whose job died with the
+ * app or the engine becomes interrupted with the checkpoint's progress,
+ * instead of a zombie that later reads as a lost failure. A checkpoint with
+ * no row (its record was lost) gets one, so the work can still be resumed.
+ * Pure: the caller owns fetching and storing.
+ */
+export function reconcileCheckpoints(
+  sessions: SessionRecord[],
+  checkpoints: CheckpointSummary[],
+  now = Date.now(),
+): SessionRecord[] {
+  const known = new Set(sessions.map((session) => session.id));
+  // A lost record re-enters as a stale "running" row and is settled below
+  // exactly like one the app was closed on.
+  const orphans = checkpoints
+    .filter((checkpoint) => checkpoint.state !== "running" && !known.has(checkpoint.session_id))
+    .map(
+      (checkpoint): SessionRecord => ({
+        id: checkpoint.session_id,
+        modpackPath: checkpoint.modpack_path,
+        modpackName: checkpoint.modpack_name || checkpoint.modpack_path || "Modpack",
+        sourceLocale: checkpoint.source_locale,
+        targetLocale: checkpoint.target_locale,
+        model: checkpoint.model,
+        status: "running",
+        createdAt: parseTimestamp(checkpoint.created_at) ?? now,
+        finishedAt: null,
+        doneEntries: 0,
+        totalEntries: 0,
+        translateJobId: null,
+        scanTotals: null,
+        stats: null,
+        error: null,
+        exportZipPath: null,
+        exportOverridesZipPath: null,
+        exportBilingualZipPath: null,
+        exportBilingualOverridesZipPath: null,
+        sharedUrl: null,
+        resumable: false,
+      }),
+    );
+  const byId = new Map(checkpoints.map((checkpoint) => [checkpoint.session_id, checkpoint]));
+  return [...orphans, ...sessions].map((session) => {
+    const checkpoint = byId.get(session.id);
+    if (checkpoint === undefined) {
+      return session.resumable ? { ...session, resumable: false } : session;
+    }
+    // A live run reattaches through the normal restore path; a finished one
+    // already holds its full result.
+    if (checkpoint.state === "running" || session.status === "done") return session;
+    const progress = {
+      doneEntries: checkpoint.translated_entries,
+      totalEntries: checkpoint.total_entries ?? session.totalEntries,
+      resumable: true,
+    };
+    if (session.status !== "running") return { ...session, ...progress };
+    return {
+      ...session,
+      ...progress,
+      status:
+        checkpoint.state === "cancelled" || checkpoint.state === "failed"
+          ? checkpoint.state
+          : "interrupted",
+      finishedAt: parseTimestamp(checkpoint.updated_at) ?? now,
+      translateJobId: null,
+      error: checkpoint.error,
+    };
+  });
 }
 
 export const useSessions = create<SessionsStore>()(

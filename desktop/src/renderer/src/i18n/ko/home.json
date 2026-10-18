@@ -25,7 +25,9 @@
     "retry": "다시 시도",
     "delete": "삭제",
     "failedFallback": "오류로 작업이 중단되었습니다",
-    "cancelledFallback": "사용자가 작업을 중단했습니다"
+    "cancelledFallback": "사용자가 작업을 중단했습니다",
+    "resumeTranslation": "이어서 번역",
+    "interruptedFallback": "번역이 중단되었어요. 완료된 번역은 저장되어 있어요."
   },
   "empty": {
     "title": "아직 작업이 없어요",

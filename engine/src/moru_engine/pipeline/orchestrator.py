@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 import dspy
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -29,7 +29,12 @@ from ..community import (
     merge_extracted_terms,
 )
 from ..dspy_modules import GlossaryExtractor, build_lm, load_translator
-from ..dspy_modules.lm import context_window_filled, is_transport_error, token_usage
+from ..dspy_modules.lm import (
+    context_window_filled,
+    is_transport_error,
+    provider_limit,
+    token_usage,
+)
 from ..dspy_modules.signatures import (
     SpeechLevel,
     TermStyle,
@@ -60,11 +65,13 @@ from ..scanner import ModpackScanner, ScanResult
 from ..scanner.pack_identity import detect_pack_identity
 from ..tm import LocalTM
 from ..validator import TranslationValidator
+from .checkpoint import source_digest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from ..models import LanguageFilePair
+    from .checkpoint import CheckpointState, TranslationCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +94,22 @@ MAX_TRANSPORT_RETRIES = 2
 #: First backoff after a transport failure; doubles per consecutive one.
 TRANSPORT_BACKOFF_BASE = 2.0
 TRANSPORT_BACKOFF_MAX = 60.0
+#: How long a provider may refuse for capacity (429 / RESOURCE_EXHAUSTED)
+#: with not one call succeeding before the run stops resumably. Longer than
+#: a per-minute window, which reopens by itself; a spent daily quota never
+#: does. Per batch, the retry budget above cannot measure this: with dozens
+#: of batches queued behind one permit, a batch's three attempts were spread
+#: over many minutes while every queued batch kept hitting the provider.
+CAPACITY_GIVE_UP_SECONDS = 120.0
+
+#: Shown when a run stops because the provider account is out of capacity.
+#: Korean-first like the engine's other surfaced messages; the desktop renders
+#: its own localized copy from the interruption reason and falls back to this.
+QUOTA_INTERRUPTION_MESSAGE = (
+    "AI 제공자의 사용량 한도(할당량·크레딧)에 도달해 번역을 일시 중지했습니다. "
+    "완료된 번역은 저장되었으니 한도가 초기화된 뒤 '이어서 번역'으로 "
+    "계속할 수 있습니다."
+)
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9_./:-]+")
 _DOTTED_VERSION_RE = re.compile(r"\d+(?:\.\d+)+")
@@ -353,6 +376,42 @@ class PipelineConfig(BaseModel):
         return self
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewEdit:
+    """A translation the user settled on an earlier, interrupted partial
+    result of the same session: a hand commit or an AI retranslation.
+
+    A resumed run adopts it as MODIFIED — exactly what the entry was when the
+    run stopped — so it outranks the pack, the TM, migration and the
+    checkpoint's machine text, never reaches the model again, and ships like
+    any review edit.
+    """
+
+    text: str
+    #: Source text the edit was made against: it is reused only while that is
+    #: unchanged. None for a hand commit, adopted by provenance like
+    #: ``human_translations`` — its journal ``src_sha`` lets the review screen
+    #: flag it if the pack has since changed the string.
+    source_text: str | None = None
+
+
+class PipelineInterruption(BaseModel):
+    """Why a run stopped early in a resumable state rather than failing.
+
+    Partial results are kept exactly like a cancellation, and the run's
+    checkpoint stays on disk so the session can continue later without
+    re-sending what was already translated.
+    """
+
+    #: ``quota``: the provider account ran out of capacity (credit, daily
+    #: quota, or throttling that outlasted the retry/backoff budget).
+    reason: str
+    #: User-facing explanation (Korean-first).
+    message: str
+    #: Provider error excerpt, for logs and the desktop's live log.
+    detail: str = ""
+
+
 class PipelineResult(BaseModel):
     """Mutable across stages: retry mutates in place."""
 
@@ -379,6 +438,8 @@ class PipelineResult(BaseModel):
     #: silently land under ``minecraft``. Populated from ``scan_result`` when
     #: one exists, and persisted alongside the entries.
     namespaces: dict[str, str] = Field(default_factory=dict)
+    #: Set when the run stopped early but resumably (see PipelineInterruption).
+    interruption: PipelineInterruption | None = None
 
     @property
     def failed(self) -> list[EntryResult]:
@@ -436,6 +497,9 @@ class _PreparedFile:
     #: Keys whose value came from the run-scoped migration catalog, plus
     #: keys that borrowed such a value: they never reach the global TM.
     migrated_keys: set[str] = field(default_factory=set)
+    #: Keys whose one-shot unchanged-copy retry an earlier, interrupted run
+    #: of this session already spent (replayed from its checkpoint).
+    retried_keys: set[str] = field(default_factory=set)
     was_cancelled: bool = False
 
 
@@ -463,12 +527,22 @@ class _AdaptiveLimiter:
         self._active = 0
         self._successes = 0
         self._failures = 0
+        #: Monotonic time of the first transport failure since the last
+        #: success; None while calls are getting through.
+        self._failing_since: float | None = None
         self._cond = asyncio.Condition()
 
     @property
     def limit(self) -> int:
         """Permits currently admitted concurrently."""
         return self._limit
+
+    @property
+    def failing_for(self) -> float:
+        """Seconds every call has failed in transport, 0 after a success."""
+        if self._failing_since is None:
+            return 0.0
+        return time.monotonic() - self._failing_since
 
     async def __aenter__(self) -> None:
         async with self._cond:
@@ -484,6 +558,7 @@ class _AdaptiveLimiter:
     async def record_success(self) -> None:
         async with self._cond:
             self._failures = 0
+            self._failing_since = None
             if self._limit >= self._maximum:
                 return
             self._successes += 1
@@ -499,6 +574,8 @@ class _AdaptiveLimiter:
         async with self._cond:
             self._successes = 0
             self._failures += 1
+            if self._failing_since is None:
+                self._failing_since = time.monotonic()
             self._limit = max(self._floor, self._limit // 2)
             return min(
                 TRANSPORT_BACKOFF_BASE * 2 ** (self._failures - 1),
@@ -517,6 +594,9 @@ class TranslationPipeline:
         cancel_check: Callable[[], bool] | None = None,
         lm: object | None = None,
         human_translations: dict[str, dict[str, str]] | None = None,
+        checkpoint: TranslationCheckpoint | None = None,
+        resume_from: CheckpointState | None = None,
+        review_edits: Mapping[str, Mapping[str, ReviewEdit]] | None = None,
     ) -> None:
         self.config = config
         self.on_event = on_event
@@ -526,6 +606,24 @@ class TranslationPipeline:
         #: by provenance, so these keys never reach the model and can never be
         #: overwritten by it. Resolved by the caller, which owns the journal.
         self.human_translations = human_translations or {}
+        #: Durable per-batch record of this run's fresh translations, so an
+        #: interruption of any kind loses at most the batches in flight.
+        self.checkpoint = checkpoint
+        #: An earlier, interrupted run of the same session: its translations
+        #: settle matching entries at prepare time instead of the model.
+        self.resume_from = resume_from
+        #: Entries settled from ``resume_from`` (diagnostics and tests).
+        self.resumed_entries = 0
+        #: rel file path -> {entry key: edit} the user made on the partial
+        #: result this run resumes. Resolved by the caller, which owns the
+        #: session file and the edit journal.
+        self.review_edits = review_edits or {}
+        #: Set when the provider ran out of capacity mid-run. It stops every
+        #: further dispatch, like a cancel, and marks the result resumable.
+        self._interruption: PipelineInterruption | None = None
+        #: Quota exhaustion only interrupts a whole run(). The review paths
+        #: (retry_failed, retranslate_entry) keep reporting per-entry errors.
+        self._interruptible = False
         self.registry = create_default_registry()
         lm_extra: dict[str, object] = {}
         if config.reasoning_effort is not None:
@@ -612,8 +710,30 @@ class TranslationPipeline:
                 logger.exception("Event listener failed for %s", event)
 
     def _check_cancelled(self) -> None:
-        if self.cancel_check is not None and self.cancel_check():
+        if self._interruption is not None or (
+            self.cancel_check is not None and self.cancel_check()
+        ):
             raise asyncio.CancelledError("pipeline cancelled")
+
+    def _interrupt_for_quota(self, exc: BaseException) -> NoReturn:
+        """Stop the whole run resumably: the provider has no capacity left.
+
+        Continuing would only turn every remaining batch into a failed entry
+        (and, for split batches, multiply the doomed requests); stopping
+        keeps the completed batches, which the checkpoint already holds.
+        Raised as a cancellation so every wave unwinds through the same
+        partial-result path a user cancel takes.
+        """
+        if self._interruption is None:
+            detail = str(exc)[:500]
+            self._interruption = PipelineInterruption(
+                reason="quota", message=QUOTA_INTERRUPTION_MESSAGE, detail=detail
+            )
+            logger.warning(
+                "Provider capacity exhausted; interrupting the run resumably: %s",
+                detail,
+            )
+        raise asyncio.CancelledError("provider capacity exhausted")
 
     # -- glossary ----------------------------------------------------------
 
@@ -912,6 +1032,12 @@ class TranslationPipeline:
                     },
                 )
                 if skipped:
+                    # Curation has no backoff, so a bare throttling refusal
+                    # here is weak evidence; translation applies its own
+                    # backoff before deciding. An exhausted account, though,
+                    # cannot translate either.
+                    if self._interruptible and provider_limit(exc) == "quota":
+                        self._interrupt_for_quota(exc)
                     return []
                 # Full error text goes back to the model; pydantic messages
                 # name the offending index/field, which is exactly the fix
@@ -1002,6 +1128,11 @@ class TranslationPipeline:
                             entries=batch,
                         )
                 except Exception as exc:  # noqa: BLE001 — LLM/adapter errors
+                    if self._interruptible and provider_limit(exc) == "quota":
+                        # The account itself is out (spent credit, a daily
+                        # quota): every retry and every queued batch would be
+                        # refused alike, so stop now with the checkpoint kept.
+                        self._interrupt_for_quota(exc)
                     if is_transport_error(exc):
                         transport_error = exc
                     else:
@@ -1016,6 +1147,14 @@ class TranslationPipeline:
             if transport_error is None:
                 break
             delay = await self._llm_limiter.record_transport_failure()
+            if (
+                self._interruptible
+                and provider_limit(transport_error) is not None
+                and self._llm_limiter.failing_for >= CAPACITY_GIVE_UP_SECONDS
+            ):
+                # Throttled with nothing getting through for longer than a
+                # per-minute window lasts: the limit will not reopen soon.
+                self._interrupt_for_quota(transport_error)
             if attempt == MAX_TRANSPORT_RETRIES:
                 break
             logger.warning(
@@ -1029,6 +1168,9 @@ class TranslationPipeline:
             # Back off outside the limiter so the permit is free meanwhile.
             await asyncio.sleep(delay)
         if transport_error is not None:
+            # Throttling that has not yet outlasted CAPACITY_GIVE_UP_SECONDS
+            # (checked above on every refusal) fails this batch's entries like
+            # any transport error; "retry failed" or a resume retries them.
             # Never split a saturated server's work: that is the amplifier.
             logger.error(
                 "Provider unavailable for %d entries after %d retries: %s",
@@ -1151,8 +1293,27 @@ class TranslationPipeline:
                 work_total=len(source_data) - len(existing_keys),
             )
 
+            edits = self.review_edits.get(rel, {})
             protector = PlaceholderProtector()
             for key, text in source_data.items():
+                edit = edits.get(key)
+                if edit is not None and (
+                    edit.source_text is None or edit.source_text == text
+                ):
+                    # The user's own decision on the partial result this run
+                    # resumes: kept as it was, ahead of every other source.
+                    prepared.final[key] = edit.text
+                    prepared.known_translations[key] = edit.text
+                    prepared.file_entries.append(
+                        EntryResult(
+                            key=key,
+                            file=rel,
+                            source_text=text,
+                            translated_text=edit.text,
+                            status=EntryStatus.MODIFIED,
+                        )
+                    )
+                    continue
                 if key in existing_keys:
                     prepared.final[key] = existing[key]
                     prepared.known_translations[key] = existing[key]
@@ -1211,6 +1372,12 @@ class TranslationPipeline:
                         )
                     )
 
+            # Before the TM, deliberately: these are this session's own paid
+            # translations, and the uninterrupted run would have kept them
+            # even if the TM has since learned a different value.
+            if self.resume_from is not None and prepared.to_translate:
+                self._apply_checkpoint(prepared)
+
             # TM lookup on raw source text
             if self.tm is not None and prepared.to_translate:
                 raw = {k: source_data[k] for k in prepared.to_translate}
@@ -1247,7 +1414,14 @@ class TranslationPipeline:
                     {
                         "stage": "translate",
                         "file": rel,
-                        "done": len(prepared.final) - len(existing_keys),
+                        # Checkpointed entries are already settled too; a
+                        # fresh run has none here, so its numbers are as
+                        # before.
+                        "done": (
+                            len(prepared.final)
+                            - len(existing_keys)
+                            + len(prepared.translated_raw)
+                        ),
                         "total": prepared.work_total,
                     },
                 )
@@ -1306,6 +1480,85 @@ class TranslationPipeline:
             )
         prepared.to_translate.clear()
         prepared.protected_map.clear()
+
+    # -- checkpoint ----------------------------------------------------------
+
+    def _apply_checkpoint(self, prepared: _PreparedFile) -> None:
+        """Settle the entries an earlier, interrupted run already paid for.
+
+        Reused only while the source text is unchanged (digest match): a
+        string a modpack update rewrote must reach the model again. Values
+        re-enter as fresh model output (``translated_raw``), so validation,
+        duplicate canonicalization, the unchanged-copy retry, TM writes and
+        output generation treat them exactly as if this run produced them.
+        """
+        state = self.resume_from
+        assert state is not None  # caller checks
+        root = self.config.modpack_path
+        logical = logical_file_id(prepared.pair.source_path, root)
+
+        def logical_of(rel: str) -> str:
+            return logical_file_id(root / rel, root)
+
+        for key in list(prepared.to_translate):
+            hit = state.match(
+                prepared.rel,
+                key,
+                source_digest(prepared.source_data[key]),
+                logical_file=logical,
+                logical_of=logical_of,
+            )
+            if hit is None:
+                continue
+            del prepared.to_translate[key]
+            prepared.translated_raw[key] = hit.text
+            # Graph evidence, exactly as the wave that produced it recorded it.
+            prepared.known_translations[key] = hit.text
+            if hit.retried:
+                prepared.retried_keys.add(key)
+            self.resumed_entries += 1
+
+    async def _checkpoint_batch(
+        self,
+        prepared: _PreparedFile,
+        settled: Mapping[str, str],
+        *,
+        retried: bool = False,
+    ) -> None:
+        """Make one completed batch durable before its progress is reported.
+
+        A write failure is logged rather than raised: the results are still
+        held in memory and reach the session file at the end, so a full disk
+        costs resumability, never the paid run itself.
+        """
+        if self.checkpoint is None or not settled:
+            return
+        rows = [
+            (key, source_digest(prepared.source_data[key]), text)
+            for key, text in settled.items()
+        ]
+        try:
+            await asyncio.to_thread(
+                self.checkpoint.record_batch, prepared.rel, rows, retried=retried
+            )
+        except OSError:
+            logger.exception(
+                "Failed to checkpoint %d translations of %s", len(rows), prepared.rel
+            )
+
+    async def _checkpoint_plan(self, prepared_files: list[_PreparedFile]) -> None:
+        """Record the run's scope: the progress a relaunched app can show."""
+        if self.checkpoint is None:
+            return
+        total = sum(prepared.work_total for prepared in prepared_files)
+        settled = sum(
+            prepared.work_total - len(prepared.to_translate)
+            for prepared in prepared_files
+        )
+        try:
+            await asyncio.to_thread(self.checkpoint.record_plan, total, settled)
+        except OSError:
+            logger.exception("Failed to checkpoint the run plan")
 
     async def _translate_wave(
         self,
@@ -1380,6 +1633,8 @@ class TranslationPipeline:
                 batch = batching.expand_aliases(batch, aliases)
                 translations = batching.expand_aliases(translations, aliases)
                 failed = batching.expand_aliases(failed, aliases)
+                # This batch's usable translations, made durable below.
+                settled: dict[str, str] = {}
                 for key in batch:
                     prepared.to_translate.pop(key, None)
                     protected = prepared.protected_map[key]
@@ -1424,6 +1679,7 @@ class TranslationPipeline:
                         )
                         continue
                     prepared.translated_raw[key] = restored
+                    settled[key] = restored
                     if graph is not None:
                         graph.record_translation(rel, key, restored)
                     self._entry_counter += 1
@@ -1437,6 +1693,13 @@ class TranslationPipeline:
                                 "translated": restored[:TICKER_TEXT_LIMIT],
                             },
                         )
+                # Durable before it is reported: a crash after this point
+                # can no longer cost the batch, and progress the user saw
+                # is progress a resumed run keeps. Retry-wave results are
+                # marked so a resume does not pay for that retry twice.
+                await self._checkpoint_batch(
+                    prepared, settled, retried=retry_unchanged
+                )
                 if not retry_unchanged:
                     # Retry waves re-enter keys the file already reported as
                     # done; re-emitting would walk the bar backwards.
@@ -1542,7 +1805,9 @@ class TranslationPipeline:
             stashed = {
                 key: translated
                 for key, translated in prepared.translated_raw.items()
-                if is_untranslated_copy(prepared.source_data[key], translated)
+                # One retry per entry per session, even across a resume.
+                if key not in prepared.retried_keys
+                and is_untranslated_copy(prepared.source_data[key], translated)
             }
             if not stashed:
                 continue
@@ -1568,6 +1833,7 @@ class TranslationPipeline:
         # A retry that produced nothing must not destroy the value it was
         # retrying: the source-identical string still ships, and the retry's
         # FAILED entry would book it as a loss on top.
+        spent_retries: list[tuple[_PreparedFile, dict[str, str]]] = []
         for prepared, stashed in work:
             recovered = {
                 key: translated
@@ -1576,6 +1842,19 @@ class TranslationPipeline:
             }
             if not recovered:
                 continue
+            # Keys whose retry batch did complete, just without a usable
+            # answer (still in to_translate means it was never sent). Their
+            # one retry is spent; record that so a resume does not repeat it.
+            spent_retries.append(
+                (
+                    prepared,
+                    {
+                        key: translated
+                        for key, translated in recovered.items()
+                        if key not in prepared.to_translate
+                    },
+                )
+            )
             prepared.file_entries = [
                 entry
                 for entry in prepared.file_entries
@@ -1584,6 +1863,10 @@ class TranslationPipeline:
             for key, translated in recovered.items():
                 prepared.to_translate.pop(key, None)
                 prepared.translated_raw[key] = translated
+        # After every file is restored: an await inside the loop could be
+        # cancelled and leave later files without their recovered values.
+        for prepared, spent in spent_retries:
+            await self._checkpoint_batch(prepared, spent, retried=True)
         return count
 
     @staticmethod
@@ -1702,8 +1985,16 @@ class TranslationPipeline:
         result.entries.extend(file_entries)
 
         # Persist fresh translations into TM only on the normal path.
-        # Migration-derived values stay run-scoped.
-        if self.tm is not None and not prepared.was_cancelled:
+        # Migration-derived values stay run-scoped. An interrupted run is not
+        # finished either: its resume reuses these values from the checkpoint
+        # and stores them once, as an uninterrupted run would — a partial
+        # store here would turn the resume's other occurrences of the same
+        # text into TM hits the uninterrupted run never had.
+        if (
+            self.tm is not None
+            and not prepared.was_cancelled
+            and self._interruption is None
+        ):
             stored = [
                 (source_data[k], v)
                 for k, v in translated_raw.items()
@@ -1742,6 +2033,7 @@ class TranslationPipeline:
         started = time.monotonic()
         result = PipelineResult(config=self.config)
         cancelled = False
+        self._interruptible = True
 
         try:
             self._emit("progress", {"stage": "scan", "done": 0, "total": 1})
@@ -1854,6 +2146,15 @@ class TranslationPipeline:
                         if isinstance(prepared, _PreparedFile)
                     ]
                     raise
+
+                if self.resume_from is not None:
+                    logger.info(
+                        "Resume: %d checkpointed translations reused, %d entries "
+                        "left for the model",
+                        self.resumed_entries,
+                        sum(len(prepared.to_translate) for prepared in prepared_files),
+                    )
+                await self._checkpoint_plan(prepared_files)
 
                 graph: TranslationGraph | None = None
                 if self.config.use_translation_graph:
@@ -2019,7 +2320,10 @@ class TranslationPipeline:
         stats.translated_entries = sum(
             1
             for e in result.entries
-            if e.status in (EntryStatus.PASSED, EntryStatus.WARNING)
+            # MODIFIED: review edits a resumed run carried over (see
+            # ReviewEdit). A fresh run produces none.
+            if e.status
+            in (EntryStatus.PASSED, EntryStatus.WARNING, EntryStatus.MODIFIED)
         )
         stats.categories = category_stats(result)
         stats.prompt_tokens = usage["prompt_tokens"]
@@ -2040,6 +2344,8 @@ class TranslationPipeline:
                 stats.skipped_entries,
                 stats.duration_seconds,
             )
+        result.interruption = self._interruption
+        self._interruptible = False
         return result
 
     async def retry_failed(self, result: PipelineResult) -> PipelineResult:
@@ -2219,6 +2525,9 @@ async def run_pipeline(
     scan_result: ScanResult | None = None,
     migration: MigrationCatalog | None = None,
     human_translations: dict[str, dict[str, str]] | None = None,
+    checkpoint: TranslationCheckpoint | None = None,
+    resume_from: CheckpointState | None = None,
+    review_edits: Mapping[str, Mapping[str, ReviewEdit]] | None = None,
 ) -> PipelineResult:
     """Convenience wrapper: build, run, close.
 
@@ -2229,12 +2538,22 @@ async def run_pipeline(
     ``human_translations`` carries an earlier session's committed hand
     translations (``config.seed_from_job_id``). The caller resolves them,
     because the caller owns the edit journal that records who wrote what.
+
+    ``checkpoint`` receives every completed batch; ``resume_from`` is the
+    replayed checkpoint of an interrupted run of the same session, whose
+    translations are reused instead of being sent to the model again.
+
+    ``review_edits`` are the user's changes to that run's partial result
+    (hand commits, AI retranslations); they win over the checkpoint.
     """
     pipeline = TranslationPipeline(
         config,
         on_event=on_event,
         cancel_check=cancel_check,
         human_translations=human_translations,
+        checkpoint=checkpoint,
+        resume_from=resume_from,
+        review_edits=review_edits,
     )
     if on_pipeline is not None:
         on_pipeline(pipeline)

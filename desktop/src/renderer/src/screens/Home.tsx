@@ -13,7 +13,7 @@ import { useRouter } from "@/stores/router";
 import { aggregateStats, useSessions, type SessionRecord } from "@/stores/sessions";
 import { useSettings } from "@/stores/settings";
 import { selectQueueActive, useTranslationQueue } from "@/stores/translationQueue";
-import { useWizard } from "@/stores/wizard";
+import { deleteHistorySession, useWizard } from "@/stores/wizard";
 
 /**
  * TOKENS_PER_ENTRY: TM-savings heuristic. Each TM hit skips one LLM round
@@ -92,17 +92,24 @@ function StatusBadge({ record }: { record: SessionRecord }) {
       <div className={`${base} bg-accent/[0.12] text-accent`}>{t("common.status.done")}</div>
     );
   }
+  if (record.status === "interrupted") {
+    return (
+      <div className={`${base} bg-amber/[0.12] text-amber`}>{t("common.status.interrupted")}</div>
+    );
+  }
   return <div className={`${base} bg-red/[0.12] text-red`}>{t("common.status.cancelled")}</div>;
 }
 
 function RecentJobCard({
   record,
   onResume,
+  onResumeTranslation,
   onRetry,
   onRemove,
 }: {
   record: SessionRecord;
   onResume: () => void;
+  onResumeTranslation: () => void;
   onRetry: () => void;
   onRemove: () => void;
 }) {
@@ -125,7 +132,13 @@ function RecentJobCard({
         />
       ) : (
         <div
-          className={`absolute inset-x-0 top-0 h-0.5 ${record.status === "done" ? "bg-accent-lo" : "bg-red"}`}
+          className={`absolute inset-x-0 top-0 h-0.5 ${
+            record.status === "done"
+              ? "bg-accent-lo"
+              : record.status === "interrupted"
+                ? "bg-amber"
+                : "bg-red"
+          }`}
         />
       )}
 
@@ -228,27 +241,40 @@ function RecentJobCard({
         </>
       )}
 
-      {(record.status === "failed" || record.status === "cancelled") && (
+      {(record.status === "failed" ||
+        record.status === "cancelled" ||
+        record.status === "interrupted") && (
         <>
           <div className="mb-1.5 text-xs leading-[1.4] text-text2">
             {record.error !== null && record.error !== ""
               ? record.error
               : t(
-                  record.status === "cancelled"
-                    ? "home.recent.cancelledFallback"
-                    : "home.recent.failedFallback",
+                  record.status === "interrupted"
+                    ? "home.recent.interruptedFallback"
+                    : record.status === "cancelled"
+                      ? "home.recent.cancelledFallback"
+                      : "home.recent.failedFallback",
                 )}
           </div>
           <div className="mb-3 font-mono text-[11px] text-text3">
             {formatInt(record.doneEntries)} / {formatInt(record.totalEntries)} · {when}
           </div>
           <div className="grid grid-cols-2 gap-1">
-            <button
-              onClick={onRetry}
-              className="bg-line2 p-2 text-[11px] font-semibold text-text hover:bg-edge"
-            >
-              {t("home.recent.retry")}
-            </button>
+            {record.resumable ? (
+              <button
+                onClick={onResumeTranslation}
+                className="bg-accent p-2 text-[11px] font-bold text-bar hover:bg-accent-hi"
+              >
+                {t("home.recent.resumeTranslation")}
+              </button>
+            ) : (
+              <button
+                onClick={onRetry}
+                className="bg-line2 p-2 text-[11px] font-semibold text-text hover:bg-edge"
+              >
+                {t("home.recent.retry")}
+              </button>
+            )}
             <button
               onClick={onRemove}
               className="bg-line2 p-2 text-[11px] font-semibold text-text2 hover:bg-edge hover:text-text"
@@ -406,10 +432,10 @@ export function HomeScreen() {
   const { t } = useTranslation();
   const go = useRouter((s) => s.go);
   const sessions = useSessions((s) => s.sessions);
-  const removeSession = useSessions((s) => s.remove);
   const startSession = useWizard((s) => s.startSession);
   const resumeSession = useWizard((s) => s.resumeSession);
   const reopenSession = useWizard((s) => s.reopenSession);
+  const resumeTranslate = useWizard((s) => s.resumeTranslate);
   const recentFolders = useSettings((s) => s.recentFolders);
   const queueActive = useTranslationQueue(selectQueueActive);
   const [dragOver, setDragOver] = useState(false);
@@ -456,7 +482,36 @@ export function HomeScreen() {
       go("w4");
       return;
     }
-    setNotice(t(result === "busy" ? "history.reopen.busy" : "history.reopen.gone"));
+    const resumable =
+      useSessions.getState().sessions.find((s) => s.id === id)?.resumable === true;
+    setNotice(
+      t(
+        result === "busy"
+          ? "history.reopen.busy"
+          : resumable
+            ? "history.reopen.resumable"
+            : "history.reopen.gone",
+      ),
+    );
+  };
+
+  const handleResumeTranslation = async (id: string) => {
+    if (queueActive) {
+      go("queue");
+      return;
+    }
+    const outcome = await resumeTranslate(id);
+    if (outcome === "started") {
+      go("w4");
+      return;
+    }
+    setNotice(
+      outcome === "busy"
+        ? t("history.reopen.busy")
+        : outcome === "gone"
+          ? t("history.resume.gone")
+          : t("history.resume.failed", { error: useWizard.getState().runError ?? "" }),
+    );
   };
 
   const handleRetry = (id: string) => {
@@ -624,8 +679,9 @@ export function HomeScreen() {
                 key={record.id}
                 record={record}
                 onResume={() => void handleResume(record.id)}
+                onResumeTranslation={() => void handleResumeTranslation(record.id)}
                 onRetry={() => handleRetry(record.id)}
-                onRemove={() => removeSession(record.id)}
+                onRemove={() => void deleteHistorySession(record.id)}
               />
             ))}
           </div>

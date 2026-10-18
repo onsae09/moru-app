@@ -58,7 +58,14 @@ class FakeWebSocket {
 }
 globalThis.WebSocket = FakeWebSocket;
 
-const { buildTranslateParams, selectedScanTotals, useWizard, useSessionJobs } = await import("./wizard.ts");
+const {
+  buildTranslateParams,
+  deleteHistorySession,
+  reconcileResumableSessions,
+  selectedScanTotals,
+  useWizard,
+  useSessionJobs,
+} = await import("./wizard.ts");
 const { useSessions } = await import("./sessions.ts");
 const { useEngineStore } = await import("./engine.ts");
 const bridge = await import("../lib/bridge.ts");
@@ -524,4 +531,164 @@ test("a failed probe of an unrelated session leaves the live wizard alone", asyn
   expect(useWizard.getState().sessionId).toBe("live"); // untouched
   expect(useWizard.getState().failedKeys["block.x"]).toEqual(["schema"]);
   routeResponses.clear();
+});
+
+test("a quota interruption ends the run resumable, never as a failure", () => {
+  useSessions.getState().upsert(record("s1", "running", { translateJobId: "job-1", resumable: false }));
+  useWizard.setState({ sessionId: "s1", runState: "running", translateJobId: "job-1" });
+  useWizard.getState().handleTranslationFrame(
+    {
+      type: "interrupted",
+      status: "interrupted",
+      reason: "quota",
+      error: "AI 제공자의 사용량 한도에 도달해 번역을 일시 중지했습니다.",
+      detail: "429 RESOURCE_EXHAUSTED",
+      resumable: true,
+      stats,
+      seq: 5,
+      emitted_at: 3_000,
+    },
+    "s1",
+  );
+  const wizard = useWizard.getState();
+  expect(wizard.runState).toBe("interrupted");
+  expect(wizard.resumable).toBe(true);
+  expect(wizard.interruptReason).toBe("quota");
+  const stored = useSessions.getState().sessions.find((item) => item.id === "s1");
+  expect(stored.status).toBe("interrupted");
+  expect(stored.resumable).toBe(true);
+});
+
+test("resume sends only the session id and the flag, then streams the job", async () => {
+  useSessions.getState().upsert(record("s1", "interrupted", { resumable: true }));
+  // Another suite may have loaded the bridge first with a stub lacking secrets.
+  bridge.moru.secrets = { get: async () => null };
+  const posted = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    posted.push({ url: String(url), body: JSON.parse(init.body) });
+    return response(
+      { id: "s1", type: "translate", status: "pending", error: null, created_at: new Date(0).toISOString() },
+      201,
+    );
+  };
+  try {
+    expect(await useWizard.getState().resumeTranslate("s1")).toBe("started");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  // Everything that shapes the output comes from the engine's checkpoint.
+  expect(posted).toHaveLength(1);
+  expect(posted[0].url).toContain("/jobs");
+  expect(posted[0].body).toEqual({ type: "translate", params: { session_id: "s1", resume: true } });
+  expect(useWizard.getState().runState).toBe("running");
+  expect(useWizard.getState().translateJobId).toBe("s1");
+  expect(sockets).toHaveLength(1);
+  expect(useSessions.getState().sessions[0].status).toBe("running");
+});
+
+test("a session without a checkpoint is never resumed", async () => {
+  useSessions.getState().upsert(record("s2", "cancelled", { resumable: false }));
+  expect(await useWizard.getState().resumeTranslate("s2")).toBe("gone");
+  expect(fetchCalls).toHaveLength(0);
+  expect(useWizard.getState().runState).toBe("idle");
+});
+
+test("a lost running job with a surviving checkpoint reads as interrupted", async () => {
+  useSessions.getState().upsert(record("s1", "running", { translateJobId: "dead", resumable: false }));
+  useWizard.setState({ sessionId: "s1", runState: "running", translateJobId: "dead" });
+  routeResponses.set(
+    "/checkpoints",
+    response([
+      {
+        session_id: "s1",
+        modpack_path: "/packs/s1",
+        modpack_name: "Pack s1",
+        source_locale: "en_us",
+        target_locale: "ko_kr",
+        model: "openai/gpt-test",
+        created_at: null,
+        updated_at: null,
+        state: "interrupted",
+        reason: null,
+        error: null,
+        translated_entries: 30,
+        total_entries: 50,
+      },
+    ]),
+  );
+  nextResponse = notFound;
+
+  expect(await useWizard.getState().reopenSession("s1")).toBe("gone");
+  const stored = useSessions.getState().sessions.find((item) => item.id === "s1");
+  expect(stored.status).toBe("interrupted");
+  expect(stored.resumable).toBe(true);
+  expect(stored.doneEntries).toBe(30);
+  expect(useWizard.getState().runState).toBe("interrupted");
+  expect(useWizard.getState().resumable).toBe(true);
+});
+
+test("deleting a resumable session from Home keeps it gone after reconcile", async () => {
+  useSessions.getState().upsert(record("s1", "interrupted", { resumable: true }));
+  useSessionJobs.getState().register("s1", "s1");
+  // A stateful engine: the checkpoint lives until DELETE /sessions drops it.
+  let checkpoints = [
+    {
+      session_id: "s1",
+      modpack_path: "/packs/s1",
+      modpack_name: "Pack s1",
+      source_locale: "en_us",
+      target_locale: "ko_kr",
+      model: "openai/gpt-test",
+      created_at: null,
+      updated_at: null,
+      state: "interrupted",
+      reason: "quota",
+      error: null,
+      translated_entries: 30,
+      total_entries: 50,
+    },
+  ];
+  const deletes = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    if (init.method === "DELETE" && href.includes("/sessions/s1")) {
+      deletes.push(href);
+      checkpoints = [];
+      return response({ status: "ok", id: "s1" });
+    }
+    if (href.includes("/checkpoints")) return response(checkpoints);
+    throw new Error(`unexpected fetch: ${href}`);
+  };
+  try {
+    await deleteHistorySession("s1");
+    await reconcileResumableSessions();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect(deletes).toHaveLength(1);
+  expect(useSessions.getState().sessions).toEqual([]);
+  expect(useSessionJobs.getState().jobs.s1).toBeUndefined();
+});
+
+test("a refused fresh run leaves the interrupted session resumable", async () => {
+  bridge.moru.secrets = { get: async () => null };
+  useSessions.getState().upsert(record("s1", "interrupted", { resumable: true }));
+  useWizard.setState({
+    ...translateState,
+    sessionId: "s1",
+    modpackName: "Pack s1",
+    runState: "interrupted",
+    resumable: true,
+  });
+  routeResponses.set("/community/sync", response({ tm: null, glossary: null }));
+  routeResponses.set("/jobs", response({ detail: "job s1 is still running" }, 409));
+
+  await useWizard.getState().startTranslate(runSettings);
+
+  // The engine never accepted the run, so it never discarded the checkpoint.
+  expect(useWizard.getState().runState).toBe("failed");
+  expect(useWizard.getState().resumable).toBe(true);
+  expect(useSessions.getState().sessions.find((item) => item.id === "s1").resumable).toBe(true);
 });

@@ -253,6 +253,10 @@ export function W4Progress() {
   const {
     runState,
     runError,
+    resumable,
+    interruptReason,
+    sessionId,
+    translateJobId,
     startedAt,
     translationStartedAt,
     finishedAt,
@@ -275,6 +279,7 @@ export function W4Progress() {
     targetLocale,
     startTranslate,
     cancelTranslate,
+    resumeTranslate,
   } = wizard;
 
   const running = runState === "running";
@@ -403,7 +408,10 @@ export function W4Progress() {
   const activeFiles = fileList.filter((f) => !(f.total > 0 && f.done >= f.total));
   const doneFiles = fileList.filter((f) => f.total > 0 && f.done >= f.total);
   const totalFiles = totals.files > 0 ? totals.files : (stats?.total_files ?? fileList.length);
-  const pendingFiles = Math.max(0, totalFiles - fileList.length);
+  // Scanned files with nothing to translate never report progress (FTB
+  // Quests 26.1.2+ chapter data files, for one): once the run is done they
+  // are not pending, they had no work.
+  const pendingFiles = runState === "done" ? 0 : Math.max(0, totalFiles - fileList.length);
   const failedCount = Math.max(
     failedEntryCount,
     Object.keys(failedKeys).length,
@@ -448,14 +456,18 @@ export function W4Progress() {
 
   /* ---- state-dependent chrome ---- */
   const stepColor =
-    runState === "failed" ? "text-red" : runState === "cancelled" ? "text-amber" : "text-accent";
+    runState === "failed"
+      ? "text-red"
+      : runState === "cancelled" || runState === "interrupted"
+        ? "text-amber"
+        : "text-accent";
   const tickerLabelKey =
     runState === "done"
       ? "done"
       : runState === "failed"
         ? "failed"
-        : runState === "cancelled"
-          ? "cancelled"
+        : runState === "cancelled" || runState === "interrupted"
+          ? runState
           : running
             ? "live"
             : "idle";
@@ -465,13 +477,13 @@ export function W4Progress() {
       ? "bg-accent"
       : runState === "failed"
         ? "bg-red"
-        : runState === "cancelled"
+        : runState === "cancelled" || runState === "interrupted"
           ? "bg-amber"
           : "bg-edge";
   const tickerLabelClass =
     runState === "failed"
       ? "text-red"
-      : runState === "cancelled"
+      : runState === "cancelled" || runState === "interrupted"
         ? "text-amber"
         : running || runState === "done"
           ? "text-accent"
@@ -551,6 +563,14 @@ export function W4Progress() {
               {runError ?? t("w4.banner.failedFallback")}
             </div>
           </div>
+          {resumable && sessionId !== null && (
+            <button
+              onClick={() => void resumeTranslate(sessionId)}
+              className="shrink-0 bg-red px-4 py-2 text-[12px] font-bold text-sel-ink hover:bg-[#f58585]"
+            >
+              {t("w4.banner.resume")}
+            </button>
+          )}
           <button
             onClick={() => {
               void startTranslate();
@@ -572,12 +592,54 @@ export function W4Progress() {
             <div className="text-[13px] font-bold text-amber">{t("w4.banner.cancelledTitle")}</div>
             <div className="mt-0.5 text-[11.5px] text-text2">{t("w4.banner.cancelledBody")}</div>
           </div>
+          {resumable && sessionId !== null && (
+            <button
+              onClick={() => void resumeTranslate(sessionId)}
+              className="shrink-0 bg-amber px-4 py-2 text-[12px] font-bold text-sel-ink hover:opacity-90"
+            >
+              {t("w4.banner.resume")}
+            </button>
+          )}
           <button
             onClick={() => go("w5")}
             className="shrink-0 border border-amber px-4 py-2 text-[12px] font-bold text-amber hover:bg-amber hover:text-sel-ink"
           >
             {t("w4.banner.toReview")} →
           </button>
+        </div>
+      )}
+      {runState === "interrupted" && (
+        <div className="mb-4 flex items-center gap-3 border border-[rgba(245,180,84,0.4)] bg-[rgba(245,180,84,0.06)] px-4 py-3">
+          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-[rgba(245,180,84,0.16)]">
+            <svg width="8" height="8" viewBox="0 0 8 8" shapeRendering="crispEdges">
+              <rect x="1" y="1" width="2" height="6" fill="#F5B454" />
+              <rect x="5" y="1" width="2" height="6" fill="#F5B454" />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-bold text-amber">
+              {t(interruptReason === "quota" ? "w4.banner.quotaTitle" : "w4.banner.interruptedTitle")}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-text2">
+              {t(interruptReason === "quota" ? "w4.banner.quotaBody" : "w4.banner.interruptedBody")}
+            </div>
+          </div>
+          {resumable && sessionId !== null && (
+            <button
+              onClick={() => void resumeTranslate(sessionId)}
+              className="shrink-0 bg-amber px-4 py-2 text-[12px] font-bold text-sel-ink hover:opacity-90"
+            >
+              {t("w4.banner.resume")}
+            </button>
+          )}
+          {translateJobId !== null && stats !== null && (
+            <button
+              onClick={() => go("w5")}
+              className="shrink-0 border border-amber px-4 py-2 text-[12px] font-bold text-amber hover:bg-amber hover:text-sel-ink"
+            >
+              {t("w4.banner.toReview")} →
+            </button>
+          )}
         </div>
       )}
 

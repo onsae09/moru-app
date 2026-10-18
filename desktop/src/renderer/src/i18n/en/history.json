@@ -22,18 +22,21 @@
     "running": "Running",
     "done": "Done",
     "failed": "Failed",
-    "cancelled": "Cancelled"
+    "cancelled": "Cancelled",
+    "interrupted": "Paused"
   },
   "action": {
     "view": "View",
     "review": "Review",
     "export": "Export",
     "exportSession": "Save session (.moru)",
-    "more": "More"
+    "more": "More",
+    "resume": "Resume translation"
   },
   "reopen": {
     "busy": "Another job is still running. Try again once it finishes.",
-    "gone": "Session data could not be found or file is corrupted."
+    "gone": "Session data could not be found or file is corrupted.",
+    "resumable": "This translation was interrupted. Use \"Resume translation\" to translate only what is left."
   },
   "footer": {
     "summary": "{{count}} jobs",
@@ -49,5 +52,9 @@
   "confirm": {
     "title": "Delete history entry",
     "body": "Delete the record for \"{{name}}\"? This cannot be undone."
+  },
+  "resume": {
+    "gone": "There is no saved progress to resume. Retry to translate from scratch.",
+    "failed": "Could not resume the translation: {{error}}"
   }
 }

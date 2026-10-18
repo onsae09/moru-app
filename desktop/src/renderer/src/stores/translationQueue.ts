@@ -412,6 +412,7 @@ function ensureFailedSession(
     exportBilingualZipPath: null,
     exportBilingualOverridesZipPath: null,
     sharedUrl: null,
+    resumable: false,
   });
   return id;
 }
@@ -462,15 +463,19 @@ async function runQueueItem(
         state.sessionId !== sessionId ||
         state.runState === "done" ||
         state.runState === "failed" ||
-        state.runState === "cancelled",
+        state.runState === "cancelled" ||
+        state.runState === "interrupted",
     );
     if (translated.sessionId !== sessionId) return abandonOutcome(sessionId);
+    // An interrupted pack (spent quota, closed engine) settles as cancelled:
+    // the drain loop then pauses instead of spending on the next pack, and
+    // the History row offers "이어서 번역" — a click, never automatic.
     const status =
-      translated.runState === "done" ||
-      translated.runState === "failed" ||
-      translated.runState === "cancelled"
+      translated.runState === "done" || translated.runState === "failed"
         ? translated.runState
-        : "failed";
+        : translated.runState === "cancelled" || translated.runState === "interrupted"
+          ? "cancelled"
+          : "failed";
     return {
       status,
       sessionId: translated.sessionId,
@@ -590,9 +595,13 @@ export function initializeTranslationQueue(): Promise<void> {
         const session = useSessions
           .getState()
           .sessions.find((record) => record.id === item.sessionId);
+        // Its checkpoint survived the restart: paused work, not a failure.
+        const resumable = session?.resumable === true;
         useTranslationQueue.getState().patchItem(item.id, {
-          status: "failed",
-          error: session?.error ?? i18next.t("queue.error.lostTranslation"),
+          status: resumable ? "cancelled" : "failed",
+          error: resumable
+            ? i18next.t("queue.error.interruptedTranslation")
+            : (session?.error ?? i18next.t("queue.error.lostTranslation")),
           finishedAt: Date.now(),
         });
         continue;
@@ -603,11 +612,11 @@ export function initializeTranslationQueue(): Promise<void> {
           ? await waitForWizard((state) => state.runState !== "running")
           : useWizard.getState();
       const status =
-        restored.runState === "done" ||
-        restored.runState === "failed" ||
-        restored.runState === "cancelled"
+        restored.runState === "done" || restored.runState === "failed"
           ? restored.runState
-          : "failed";
+          : restored.runState === "cancelled" || restored.runState === "interrupted"
+            ? "cancelled"
+            : "failed";
       useTranslationQueue.getState().patchItem(item.id, {
         status,
         name: restored.modpackName || item.name,

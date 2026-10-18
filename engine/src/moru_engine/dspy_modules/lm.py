@@ -13,9 +13,12 @@ ride the CLI's own OAuth grant instead of an API key.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 import dspy
 import litellm
+from dspy.utils.exceptions import AdapterParseError
+from pydantic import ValidationError
 
 from ..cli_providers import CLI_PROVIDER_IDS, register_cli_providers, to_wire_model
 
@@ -191,6 +194,90 @@ def is_transport_error(exc: BaseException) -> bool:
         return True
     status = getattr(exc, "status_code", None)
     return isinstance(status, int) and status in _TRANSPORT_STATUS
+
+
+#: Phrases a provider uses when the ACCOUNT is out of capacity: spent prepaid
+#: credit, a daily request quota, a subscription usage window. Nothing inside
+#: one run can clear these — only time or a top-up can.
+_QUOTA_MARKERS = (
+    # OpenAI's out-of-credit code. LiteLLM's own message drops it ("You
+    # exceeded your current quota…", which Gemini also sends for per-minute
+    # limits); it survives on the SDK error LiteLLM wraps (_refusal_text).
+    "insufficient_quota",
+    "credit balance is too low",  # Anthropic (400)
+    "insufficient credit",  # OpenRouter "Insufficient credits" (402)
+    "insufficient balance",  # DeepSeek (402)
+    "insufficient_balance",
+    "payment required",  # any 402
+    "perday",  # Gemini quota ids: GenerateRequestsPerDayPerProjectPerModel
+    "per day",
+    "per_day",
+    "daily",
+    "usage limit",  # Claude / Codex subscription windows
+    "사용량 한도",  # the CLI providers' own 429 message (cli_providers/*)
+)
+#: Throttling phrases. The provider refused for capacity, but the window may
+#: reopen by itself: a per-minute limit and a daily one can look identical on
+#: the wire (Gemini answers both with 429 RESOURCE_EXHAUSTED).
+_RATE_MARKERS = (
+    "rate limit",
+    "rate_limit",
+    "too many requests",
+    "resource_exhausted",
+    "resource exhausted",
+    "quota",
+)
+
+
+def _refusal_text(exc: BaseException) -> str:
+    """Lower-cased text of a provider error and the errors it wraps.
+
+    LiteLLM re-raises the provider SDK's error under its own message and
+    keeps machine-readable fields only on the wrapped one (OpenAI's
+    ``code="insufficient_quota"``), so the cause chain is read too. Model
+    output failures in the chain are skipped: their text quotes the model's
+    response, where ``quest.daily_reward.title`` must not read as a quota.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen and len(seen) < 8:
+        seen.add(id(current))
+        if not isinstance(current, AdapterParseError | ValidationError):
+            parts.append(str(current))
+            parts.extend(
+                str(value)
+                for attr in ("code", "type", "body")
+                if (value := getattr(current, attr, None))
+            )
+        current = current.__cause__ or current.__context__
+    return " ".join(parts).lower()
+
+
+def provider_limit(exc: BaseException) -> Literal["quota", "rate"] | None:
+    """Whether a failed call means the provider refused for capacity.
+
+    ``"quota"``: the account is out of capacity (credit, daily quota, usage
+    window); retrying, splitting or continuing the run only burns requests,
+    so the run stops at once.
+    ``"rate"``: a throttling refusal that may clear by itself; the run stops
+    only once nothing got through for ``CAPACITY_GIVE_UP_SECONDS``.
+    None: not a capacity refusal at all — including model-output failures,
+    whose text quotes the model's response.
+    """
+    if isinstance(exc, AdapterParseError | ValidationError):
+        return None
+    message = _refusal_text(exc)
+    status = getattr(exc, "status_code", None)
+    if status == 402 or any(marker in message for marker in _QUOTA_MARKERS):
+        return "quota"
+    if (
+        status == 429
+        or isinstance(exc, litellm.exceptions.RateLimitError)
+        or any(marker in message for marker in _RATE_MARKERS)
+    ):
+        return "rate"
+    return None
 
 
 def _usage_value(usage: object, key: str) -> object:

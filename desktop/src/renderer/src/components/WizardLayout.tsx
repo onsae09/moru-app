@@ -41,12 +41,17 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
   // `w5m` (hand translation) is an alternate route through step 05, so it
   // shares the review step's rail entry rather than adding a seventh number.
   const onReviewStep = screen === "w5" || screen === "w5m";
+  // A cancelled run, or an interrupted one the engine finished gracefully
+  // (it reported stats), holds a reviewable partial result.
+  const partialResult =
+    wizard.runState === "cancelled" ||
+    (wizard.runState === "interrupted" && wizard.stats !== null);
 
   const stepDone: Record<Screen, boolean> = {
     w1: wizard.modpackPath !== null,
     w2: wizard.scanState === "done",
     w3: wizard.runState !== "idle",
-    w4: wizard.runState === "done" || wizard.runState === "cancelled",
+    w4: wizard.runState === "done" || partialResult,
     w5: wizard.runState === "done" && !onReviewStep && wizard.exportState !== "idle",
     w5m: false,
     w6: wizard.exportState === "done",
@@ -62,9 +67,9 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
     w2: wizard.modpackPath !== null,
     w3: wizard.scanState === "done",
     w4: wizard.runState !== "idle",
-    w5: wizard.runState === "done" || wizard.runState === "cancelled",
-    w5m: wizard.runState === "done" || wizard.runState === "cancelled",
-    w6: wizard.runState === "done" || wizard.runState === "cancelled",
+    w5: wizard.runState === "done" || partialResult,
+    w5m: wizard.runState === "done" || partialResult,
+    w6: wizard.runState === "done" || partialResult,
   };
   const doneCount = STEPS.filter((s) => stepDone[s.screen]).length;
 

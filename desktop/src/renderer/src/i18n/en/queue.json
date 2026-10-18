@@ -67,6 +67,7 @@
     "lostTranslation": "The translation job could not be restored after the app restarted.",
     "scanFailed": "The modpack scan failed.",
     "wizardBusy": "Another translation is already running. Finish or stop it before starting the queue.",
-    "recovery": "Could not restore the queue: {{error}}"
+    "recovery": "Could not restore the queue: {{error}}",
+    "interruptedTranslation": "The translation was interrupted. Continue it with \"Resume translation\" in History."
   }
 }

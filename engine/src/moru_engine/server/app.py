@@ -52,6 +52,7 @@ from ..pipeline import (
     RetranslateError,
     TranslationPipeline,
 )
+from ..pipeline.checkpoint import CheckpointStore
 from ..models.glossary import Glossary, is_key_scope_pattern
 from ..scanner.pack_identity import PackIdentity
 from ..tm import MANUAL_ORIGIN, SHARED_GLOSSARY_VERSION, LocalTM
@@ -363,7 +364,11 @@ def create_app(
     config_path = config_root / "engine.json"
     glossary_dir = config_root / "glossaries"
     session_store = SessionStore(sessions_dir=config_root / "sessions")
-    manager = JobManager(glossary_store_dir=glossary_dir, session_store=session_store)
+    manager = JobManager(
+        glossary_store_dir=glossary_dir,
+        session_store=session_store,
+        checkpoint_store=CheckpointStore(config_root / "checkpoints"),
+    )
     tm_holder: dict[str, LocalTM] = {}
 
     def get_tm() -> LocalTM:
@@ -934,9 +939,55 @@ def create_app(
     @api.delete("/sessions/{session_id}")
     async def delete_session(session_id: str) -> dict[str, str]:
         manager.forget_job(session_id)
-        if not manager.session_store.delete_session(session_id):
+        try:
+            # The checkpoint first: it belongs to the session too, and a
+            # deleted history row must not come back as a resumable one on
+            # the next launch. It empties itself when it cannot be unlinked.
+            removed = await asyncio.to_thread(manager.checkpoints.delete, session_id)
+            removed = (
+                await asyncio.to_thread(
+                    manager.session_store.delete_session, session_id
+                )
+                or removed
+            )
+        except OSError as exc:
+            # Windows refuses to unlink a file another request is reading.
+            logger.warning("Could not delete session %s: %s", session_id, exc)
+            raise HTTPException(
+                status_code=409, detail=f"session {session_id} is in use; try again"
+            ) from exc
+        if not removed:
             raise HTTPException(
                 status_code=404, detail=f"session {session_id} not found"
+            )
+        return {"status": "ok", "id": session_id}
+
+    # -- checkpoints ----------------------------------------------------------------
+
+    @api.get("/checkpoints")
+    async def list_checkpoints() -> list[dict[str, Any]]:
+        """Translate runs that stopped early and can be resumed.
+
+        Listed from disk, so a session interrupted by a quit, crash or killed
+        engine is still offered after the next launch.
+        """
+        return await manager.list_checkpoints()
+
+    @api.delete("/checkpoints/{session_id}")
+    async def delete_checkpoint(session_id: str) -> dict[str, str]:
+        try:
+            removed = await manager.delete_checkpoint(session_id)
+        except JobStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            logger.warning("Could not delete checkpoint %s: %s", session_id, exc)
+            raise HTTPException(
+                status_code=409,
+                detail=f"the checkpoint of session {session_id} is in use; try again",
+            ) from exc
+        if not removed:
+            raise HTTPException(
+                status_code=404, detail=f"no checkpoint for session {session_id}"
             )
         return {"status": "ok", "id": session_id}
 

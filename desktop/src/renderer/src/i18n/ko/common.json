@@ -62,7 +62,8 @@
     "migrated": "이전 번역 재사용",
     "skipped": "건너뜀",
     "untranslated": "미번역",
-    "shared": "공유됨"
+    "shared": "공유됨",
+    "interrupted": "일시 중지"
   },
   "action": {
     "next": "다음",

@@ -38,7 +38,7 @@ _UNSAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 #: finished=True, so a non-terminal status would advertise a reopenable job
 #: with no task behind it.
 _TERMINAL_STATUSES = frozenset(
-    {JobStatus.DONE, JobStatus.CANCELLED, JobStatus.FAILED}
+    {JobStatus.DONE, JobStatus.CANCELLED, JobStatus.FAILED, JobStatus.INTERRUPTED}
 )
 
 

@@ -57,7 +57,9 @@ paths:
         "404": { description: unknown job }
   /jobs/{jobId}/cancel:
     post:
-      summary: Cancel a running job (partial results preserved)
+      summary: >-
+        Cancel a running job (partial results preserved; a translate job's
+        checkpoint is kept, so the session stays resumable)
       parameters: [{ $ref: "#/components/parameters/JobId" }]
       responses:
         "202": { description: cancellation requested }
@@ -122,12 +124,22 @@ paths:
         schema-invalid LLM response is being retried with the error fed
         back, skipped=true when a chunk gave up after retries),
         glossary_extracted {new_terms},
-        and a single terminal frame {type: done|failed|cancelled, status}
-        after which the socket closes with code 1000. Done and user-cancelled
-        translate frames carry {stats}; stats.migration_hits counts exact
+        and a single terminal frame {type: done|failed|cancelled|interrupted,
+        status} after which the socket closes with code 1000. Done,
+        user-cancelled and interrupted translate frames carry {stats};
+        stats.migration_hits counts exact
         A/B/C matches reused from a previous translation, and stats.categories
         maps web-facing category keys to non-failed entry counts (an empty map
-        means none);
+        means none). Every terminal frame of a checkpointed translate job
+        (any run that calls a provider) carries {resumable}: true while the
+        session's checkpoint is kept for POST /jobs {resume: true} - every
+        outcome except done. interrupted frames also carry {reason, error,
+        detail?}: reason is quota (the provider reported spent credit or an
+        exhausted daily quota, which stops the run at once, or kept refusing
+        for capacity (429) with no call succeeding for 120 s; the run stops
+        instead of failing every remaining batch) or
+        shutdown (the engine stopped mid-run); error is a user-facing message
+        and detail the provider's own error excerpt;
         done export frames carry {zip_path, overrides_zip_path,
         bilingual_zip_path, bilingual_overrides_zip_path, file_count}.
         Each path is null when its output tree is empty. Bilingual archive
@@ -583,7 +595,9 @@ paths:
         "422": { description: invalid session file format }
   /sessions/{sessionId}:
     delete:
-      summary: Delete a persisted session from local disk store
+      summary: >-
+        Delete a persisted session from local disk store, together with its
+        translate checkpoint (a deleted session is never offered for resuming)
       parameters:
         - name: sessionId
           in: path
@@ -599,7 +613,57 @@ paths:
                 properties:
                   status: { type: string }
                   id: { type: string }
-        "404": { description: session not found }
+        "404": { description: neither a session file nor a checkpoint exists }
+        "409":
+          description: >-
+            the session file is in use (Windows: another request is reading
+            it); retry. The checkpoint is removed first - or emptied in place
+            when it cannot be unlinked - so the session is never offered for
+            resuming again either way.
+  /checkpoints:
+    get:
+      summary: Translate sessions that stopped early and can be resumed
+      description: >-
+        Listed from the per-session checkpoint files on disk, so a session
+        interrupted by an app quit, a crash, a killed engine, a user cancel,
+        a failure or an exhausted provider quota is still offered after the
+        next launch. Each translate run that calls a provider appends every
+        completed batch to its checkpoint (fsync per batch), so at most the
+        in-flight batches are lost. A completed run removes its checkpoint;
+        a fresh run with the same session_id replaces it. A run still live in
+        this engine process is listed with state running. Resume with
+        POST /jobs {type: translate, params: {session_id, resume: true,
+        api_key?, api_base?}}.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CheckpointSummary" }
+  /checkpoints/{sessionId}:
+    delete:
+      summary: Discard a session's checkpoint (it can no longer be resumed)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, id]
+                properties:
+                  status: { type: string }
+                  id: { type: string }
+        "404": { description: no checkpoint for this session }
+        "409":
+          description: >-
+            the session's translate job is still running, or the checkpoint
+            file can neither be unlinked nor emptied right now (retry)
   /glossary:
     get:
       summary: Glossary for a language pair
@@ -886,7 +950,28 @@ components:
             (positive integer; null removes the candidate limit),
             include_categories?, manual_seed?, seed_from_job_id?,
             scan_job_id?, previous_modpack_path?,
-            previous_resourcepack_path?, previous_overrides_path?}.
+            previous_resourcepack_path?, previous_overrides_path?,
+            session_id?, resume?}.
+            session_id (UUID) becomes the job id, so a session keeps one id
+            across runs; a live job with that id is refused (409). A run
+            that calls a provider checkpoints every completed batch under
+            its session id (see GET /checkpoints). Without resume a run
+            starts over and discards that session's checkpoint. resume: true
+            continues the session's checkpoint instead (404 when there is
+            none): every other param comes from the checkpoint - only
+            session_id, api_key and api_base are read from the request - the
+            modpack is scanned afresh, translations whose source text is
+            unchanged are reused without a provider call, only the remaining
+            entries are sent, and the run then validates, writes the TM and
+            generates outputs exactly like an uninterrupted run. Review edits
+            made on the interrupted partial result - hand commits (PATCH
+            .../entries/{key}) and AI retranslations - win over the
+            checkpoint: they are kept as status modified and never re-sent
+            (an AI retranslation only while its source text is unchanged).
+            The session's scan-screen payload is kept with the checkpoint, so
+            GET /scan/{jobId}/result still works for a session resumed after
+            a relaunch. The checkpoint never stores api_key. A
+            manual_seed run on the session discards its checkpoint as well.
             scan_job_id reuses a completed matching scan and its run-scoped
             migration index; it is only a hint - an unknown, unfinished or
             non-matching id is ignored and the run scans afresh.
@@ -906,8 +991,9 @@ components:
             (origin=human) as already-settled, so an automatic run over a
             partially hand-translated pack never re-translates and never
             overwrites the human work.
-            export: {translate_job_id, output_zip?}; accepts a completed or
-            user-cancelled translate job whose partial result is available.
+            export: {translate_job_id, output_zip?}; accepts a completed,
+            user-cancelled or interrupted translate job whose partial result
+            is available.
             Or, for the W3 "export as source text" action,
             {source_text: true, modpack_path, source_locale?,
             target_locale?, include_categories?, output_dir?, output_zip?} -
@@ -980,7 +1066,13 @@ components:
       properties:
         id: { type: string }
         type: { type: string, enum: [scan, translate, export, upload] }
-        status: { type: string, enum: [pending, running, done, failed, cancelled] }
+        status:
+          type: string
+          enum: [pending, running, done, failed, cancelled, interrupted]
+          description: >-
+            interrupted (translate only): stopped early but resumable - the
+            provider ran out of capacity, or the engine shut down mid-run.
+            Partial results stay reviewable like cancelled ones.
         error: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
     JobSnapshot:
@@ -1488,5 +1580,42 @@ components:
         export_overrides_zip_path: { type: string, nullable: true }
         export_bilingual_zip_path: { type: string, nullable: true }
         export_bilingual_overrides_zip_path: { type: string, nullable: true }
+    CheckpointSummary:
+      type: object
+      required: [session_id, modpack_path, modpack_name, source_locale, target_locale, model, created_at, updated_at, state, reason, error, translated_entries, total_entries]
+      properties:
+        session_id: { type: string }
+        modpack_path: { type: string }
+        modpack_name: { type: string }
+        source_locale: { type: string }
+        target_locale: { type: string }
+        model: { type: string }
+        created_at: { type: string, nullable: true, description: first run start (ISO 8601) }
+        updated_at: { type: string, nullable: true, description: last record written (ISO 8601) }
+        state:
+          type: string
+          enum: [running, interrupted, cancelled, failed]
+          description: >-
+            running: the job is live in this engine process. interrupted
+            with reason null: the process stopped (quit, crash, kill) before
+            the run could record why.
+        reason:
+          type: string
+          nullable: true
+          enum: [quota, shutdown, null]
+        error: { type: string, nullable: true }
+        translated_entries:
+          type: integer
+          minimum: 0
+          description: >-
+            Entries already settled for the run - reused at prepare time (TM,
+            previous translation, earlier checkpoint) or translated by a
+            checkpointed batch. A resume does not send these to the provider.
+        total_entries:
+          type: integer
+          nullable: true
+          description: >-
+            Entries needing a translation in the run's scope; null until a
+            run of the session finished preparing its files.
 security:
   - sessionToken: []

@@ -85,7 +85,7 @@ app.on("before-quit", (event) => {
       title: "moru",
       message: "번역 작업이 진행 중입니다 / A translation job is running",
       detail:
-        "지금 종료하면 진행 중인 작업이 취소됩니다. 부분 결과는 보존됩니다.\nQuitting now cancels the job; partial results are kept.",
+        "지금 종료하면 번역이 중단됩니다. 완료된 번역은 저장되어 다음 실행 때 '이어서 번역'으로 계속할 수 있습니다.\nQuitting now interrupts the job; finished batches are saved and can be resumed on the next launch.",
     });
     if (clicked === 0) {
       quitConfirmed = true;

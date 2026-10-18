@@ -12,7 +12,26 @@ globalThis.localStorage ??= localStorageStub;
 const win = (globalThis.window ??= {});
 win.localStorage ??= localStorageStub;
 
-const { migrateSessionsState, useSessions } = await import("./sessions.ts");
+const { migrateSessionsState, reconcileCheckpoints, useSessions } = await import("./sessions.ts");
+
+function checkpoint(sessionId, overrides = {}) {
+  return {
+    session_id: sessionId,
+    modpack_path: "C:/packs/tensura",
+    modpack_name: "Tensura Neo Otherworld",
+    source_locale: "en_us",
+    target_locale: "ko_kr",
+    model: "gemini/gemini-3.1-pro-preview",
+    created_at: "2026-10-17T10:00:00+00:00",
+    updated_at: "2026-10-17T11:00:00+00:00",
+    state: "interrupted",
+    reason: null,
+    error: null,
+    translated_entries: 1200,
+    total_entries: 5000,
+    ...overrides,
+  };
+}
 
 function legacyRecord(status) {
   return {
@@ -73,4 +92,49 @@ test("a running record with no job id is de-zombified on every hydration", async
   expect(record.status).toBe("failed");
   expect(record.finishedAt).not.toBe(null);
   expect(typeof useSessions.getState().upsert).toBe("function"); // actions survive merge
+});
+
+test("a row the app was closed on becomes interrupted with its saved progress", () => {
+  const [record] = reconcileCheckpoints(
+    [{ ...legacyRecord("running"), id: "s1", translateJobId: "stale-job", resumable: false }],
+    [checkpoint("s1")],
+    9_000,
+  );
+  expect(record.status).toBe("interrupted");
+  expect(record.resumable).toBe(true);
+  expect(record.doneEntries).toBe(1200);
+  expect(record.totalEntries).toBe(5000);
+  expect(record.translateJobId).toBe(null);
+  expect(record.finishedAt).toBe(Date.parse("2026-10-17T11:00:00+00:00"));
+});
+
+test("reconcile keeps live and finished runs and drops resume once the checkpoint is gone", () => {
+  const live = { ...legacyRecord("running"), id: "live", translateJobId: "job", resumable: false };
+  const stale = { ...legacyRecord("cancelled"), id: "old", resumable: true };
+  const quota = { ...legacyRecord("interrupted"), id: "quota", resumable: false };
+  const reconciled = reconcileCheckpoints(
+    [live, stale, quota],
+    [
+      checkpoint("live", { state: "running" }),
+      checkpoint("quota", { reason: "quota", translated_entries: 7, total_entries: 9 }),
+    ],
+  );
+  const byId = Object.fromEntries(reconciled.map((record) => [record.id, record]));
+  // A live engine job reattaches through the normal restore path instead.
+  expect(byId.live).toBe(live);
+  expect(byId.old.resumable).toBe(false);
+  expect(byId.quota).toMatchObject({ status: "interrupted", resumable: true, doneEntries: 7 });
+});
+
+test("a checkpoint whose history row was lost is listed again", () => {
+  const reconciled = reconcileCheckpoints([], [checkpoint("lost", { state: "cancelled" })], 5);
+  expect(reconciled).toHaveLength(1);
+  expect(reconciled[0]).toMatchObject({
+    id: "lost",
+    modpackName: "Tensura Neo Otherworld",
+    status: "cancelled",
+    resumable: true,
+    doneEntries: 1200,
+    totalEntries: 5000,
+  });
 });

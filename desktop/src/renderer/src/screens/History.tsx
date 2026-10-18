@@ -16,7 +16,7 @@ import { useRouter } from "@/stores/router";
 import { useSessions, type SessionRecord } from "@/stores/sessions";
 import { useSettings } from "@/stores/settings";
 import { selectQueueActive, useTranslationQueue } from "@/stores/translationQueue";
-import { useSessionJobs, useWizard } from "@/stores/wizard";
+import { deleteHistorySession, useSessionJobs, useWizard } from "@/stores/wizard";
 
 type StatusFilter = "all" | "done" | "running" | "stopped";
 
@@ -72,6 +72,15 @@ function StatusBadge({ status }: { status: SessionRecord["status"] }): React.JSX
       </div>
     );
   }
+  if (status === "interrupted") {
+    return (
+      <div>
+        <span className="font-mono text-[11px] font-bold text-amber">
+          ⏸ {t("history.status.interrupted")}
+        </span>
+      </div>
+    );
+  }
   return (
     <div>
       <span className="font-mono text-[11px] font-bold text-red">
@@ -87,8 +96,11 @@ interface SessionRowProps {
   canView: boolean;
   /** Finished run: the job id is probed on click, never gated here. */
   canReopen: boolean;
+  /** The engine keeps this session's checkpoint: "이어서 번역". */
+  canResume: boolean;
   lang: "ko" | "en";
   onView: () => void;
+  onResume: () => void;
   onReview: () => void;
   onExport: () => void;
   onExportSession: () => void;
@@ -100,8 +112,10 @@ function SessionRow({
   s,
   canView,
   canReopen,
+  canResume,
   lang,
   onView,
+  onResume,
   onReview,
   onExport,
   onExportSession,
@@ -114,7 +128,7 @@ function SessionRow({
   const packName = s.modpackName || s.modpackPath || "Modpack";
   const initials = packInitials(packName);
   const running = s.status === "running";
-  const stopped = s.status === "failed" || s.status === "cancelled";
+  const stopped = s.status === "failed" || s.status === "cancelled" || s.status === "interrupted";
   const entryCount = s.stats?.translated_entries ?? s.doneEntries;
   const rate = passRatePercent(s);
 
@@ -183,6 +197,14 @@ function SessionRow({
           menuOpen ? "opacity-100" : "opacity-0"
         }`}
       >
+        {canResume && (
+          <button
+            className={`${actionBase} border-accent bg-[rgba(61,220,132,0.08)] text-accent hover:bg-[rgba(61,220,132,0.15)]`}
+            onClick={onResume}
+          >
+            {t("history.action.resume")}
+          </button>
+        )}
         {running && canView && (
           <button
             className={`${actionBase} border-accent bg-[rgba(61,220,132,0.08)] text-accent hover:bg-[rgba(61,220,132,0.15)]`}
@@ -301,9 +323,9 @@ export function HistoryScreen(): React.JSX.Element {
   const { t } = useTranslation();
   const go = useRouter((s) => s.go);
   const sessions = useSessions((s) => s.sessions);
-  const remove = useSessions((s) => s.remove);
   const resumeSession = useWizard((s) => s.resumeSession);
   const reopenSession = useWizard((s) => s.reopenSession);
+  const resumeTranslate = useWizard((s) => s.resumeTranslate);
   const sessionJobs = useSessionJobs((s) => s.jobs);
   const lang = useSettings((s) => s.uiLanguage);
   const pricingTable = usePricingTable();
@@ -334,7 +356,12 @@ export function HistoryScreen(): React.JSX.Element {
       .filter((s) => {
         if (filter === "done" && s.status !== "done") return false;
         if (filter === "running" && s.status !== "running") return false;
-        if (filter === "stopped" && s.status !== "failed" && s.status !== "cancelled")
+        if (
+          filter === "stopped" &&
+          s.status !== "failed" &&
+          s.status !== "cancelled" &&
+          s.status !== "interrupted"
+        )
           return false;
         return q === "" || s.modpackName.toLowerCase().includes(q);
       });
@@ -365,7 +392,36 @@ export function HistoryScreen(): React.JSX.Element {
       go(screen);
       return;
     }
-    setNotice(t(result === "busy" ? "history.reopen.busy" : "history.reopen.gone"));
+    const resumable =
+      useSessions.getState().sessions.find((s) => s.id === sessionId)?.resumable === true;
+    setNotice(
+      t(
+        result === "busy"
+          ? "history.reopen.busy"
+          : resumable
+            ? "history.reopen.resumable"
+            : "history.reopen.gone",
+      ),
+    );
+  };
+
+  const resume = async (sessionId: string): Promise<void> => {
+    if (queueActive) {
+      go("queue");
+      return;
+    }
+    const outcome = await resumeTranslate(sessionId);
+    if (outcome === "started") {
+      go("w4");
+      return;
+    }
+    setNotice(
+      outcome === "busy"
+        ? t("history.reopen.busy")
+        : outcome === "gone"
+          ? t("history.resume.gone")
+          : t("history.resume.failed", { error: useWizard.getState().runError ?? "" }),
+    );
   };
 
   const handleImportSession = async (): Promise<void> => {
@@ -382,7 +438,10 @@ export function HistoryScreen(): React.JSX.Element {
           sourceLocale: s.source_locale || "en_us",
           targetLocale: s.target_locale || "ko_kr",
           model: s.model || "",
-          status: s.status === "cancelled" || s.status === "failed" ? s.status : "done",
+          status:
+            s.status === "cancelled" || s.status === "failed" || s.status === "interrupted"
+              ? s.status
+              : "done",
           createdAt: parseTimestamp(s.created_at) ?? Date.now(),
           finishedAt: parseTimestamp(s.finished_at),
           doneEntries: s.done_entries ?? 0,
@@ -396,6 +455,7 @@ export function HistoryScreen(): React.JSX.Element {
           exportBilingualZipPath: s.export_bilingual_zip_path ?? null,
           exportBilingualOverridesZipPath: s.export_bilingual_overrides_zip_path ?? null,
           sharedUrl: null,
+          resumable: false,
         };
         useSessions.getState().upsert(rec);
         useSessionJobs.getState().register(rec.id, res.job.id);
@@ -544,7 +604,11 @@ export function HistoryScreen(): React.JSX.Element {
                   s.status === "running" &&
                   (s.translateJobId !== null || sessionJobs[s.id] !== undefined)
                 }
-                canReopen={s.status === "done" || s.status === "cancelled"}
+                canReopen={
+                  s.status === "done" || s.status === "cancelled" || s.status === "interrupted"
+                }
+                canResume={s.resumable && s.status !== "running" && s.status !== "done"}
+                onResume={() => void resume(s.id)}
                 lang={lang}
                 onView={() => void reopen(s.id, "w4")}
                 onReview={() => void reopen(s.id, "w5")}
@@ -606,13 +670,9 @@ export function HistoryScreen(): React.JSX.Element {
               <button
                 className="bg-red px-3.5 py-2 text-[12px] font-bold text-[#0A100D] hover:bg-[#f58585]"
                 onClick={() => {
-                  const id = confirmTarget.id;
-                  const jobId = useSessionJobs.getState().jobs[id] ?? id;
-                  remove(id);
-                  useSessionJobs.getState().unregister(id);
-                  // Drop the .moru file too, or the engine keeps serving a
-                  // session the history screen no longer lists.
-                  void api.deleteSession(jobId).catch(() => undefined);
+                  // Also drops the engine's session file and checkpoint, or
+                  // the next reconcile would list the session again.
+                  void deleteHistorySession(confirmTarget.id);
                   setConfirmId(null);
                 }}
               >

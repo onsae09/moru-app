@@ -4,7 +4,8 @@
     "running": "In progress",
     "done": "Done",
     "failed": "Failed",
-    "cancelled": "Cancelled"
+    "cancelled": "Cancelled",
+    "interrupted": "Paused"
   },
   "controls": {
     "pause": "Pause",
@@ -23,7 +24,8 @@
     "cancelled": "Translation cancelled",
     "idle": "Standby",
     "waiting": "Waiting for translations…",
-    "empty": "Results will stream here once translation starts"
+    "empty": "Results will stream here once translation starts",
+    "interrupted": "Translation paused"
   },
   "concurrent": {
     "title": "Concurrent translation requests",
@@ -78,7 +80,12 @@
     "failedFallback": "Stopped by an unknown error. Check the log for details.",
     "retry": "Retry",
     "cancelledTitle": "Translation cancelled",
-    "cancelledBody": "Partial results were preserved · you can inspect them in review"
+    "cancelledBody": "Partial results were preserved · you can inspect them in review",
+    "quotaTitle": "Paused: the AI provider's usage limit was reached",
+    "quotaBody": "Finished translations are saved. Once your quota or credit resets, \"Resume translation\" translates only what is left.",
+    "interruptedTitle": "Translation interrupted",
+    "interruptedBody": "Finished translations are saved. \"Resume translation\" translates only what is left.",
+    "resume": "Resume translation"
   },
   "cancelDialog": {
     "title": "Cancel this translation?",

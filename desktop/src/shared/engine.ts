@@ -5,7 +5,18 @@
 
 export type JobType = "scan" | "translate" | "export" | "upload";
 
-export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
+/**
+ * `interrupted` (translate only): stopped early but resumable — the provider
+ * ran out of capacity, or the engine shut down mid-run. Its partial result
+ * stays reviewable like a cancelled one.
+ */
+export type JobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 
 export interface Job {
   id: string;
@@ -545,6 +556,40 @@ export interface TranslateParams {
   previous_overrides_path?: string;
 }
 
+/**
+ * Params for POST /jobs {type: "translate"} that continue an interrupted
+ * session from its engine-side checkpoint. Everything that shapes the output
+ * comes from the checkpoint; only connection settings are re-sent, because
+ * the api_key is never written to disk.
+ */
+export interface ResumeTranslateParams {
+  session_id: string;
+  resume: true;
+  api_key?: string;
+  api_base?: string;
+}
+
+/** GET /checkpoints — a translate session that can be resumed. */
+export interface CheckpointSummary {
+  session_id: string;
+  modpack_path: string;
+  modpack_name: string;
+  source_locale: string;
+  target_locale: string;
+  model: string;
+  created_at: string | null;
+  updated_at: string | null;
+  /** `running`: live in this engine process — reattach, never resume. */
+  state: "running" | "interrupted" | "cancelled" | "failed";
+  /** Why an interrupted run stopped; null when the process died first. */
+  reason: "quota" | "shutdown" | null;
+  error: string | null;
+  /** Entries a resume will not send to the provider again. */
+  translated_entries: number;
+  /** Entries needing a translation; null until a run finished preparing. */
+  total_entries: number | null;
+}
+
 export interface ScanParams {
   modpack_path: string;
   source_locale?: string;
@@ -698,9 +743,18 @@ export interface GlossaryProgressFrame extends JobEventMeta {
 }
 
 export interface TerminalFrame extends JobEventMeta {
-  type: "done" | "failed" | "cancelled";
+  type: "done" | "failed" | "cancelled" | "interrupted";
   status: JobStatus;
   error?: string;
+  /**
+   * Translate jobs that call a provider: the session's checkpoint is kept,
+   * so "이어서 번역" can continue it. True for every outcome except done.
+   */
+  resumable?: boolean;
+  /** interrupted: `quota` (provider capacity spent) or `shutdown`. */
+  reason?: "quota" | "shutdown";
+  /** interrupted: the provider's own error excerpt, for the live log. */
+  detail?: string;
   stats?: PipelineStats;
   /** export terminal payload — each zip is null when its tree is empty */
   zip_path?: string | null;

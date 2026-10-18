@@ -62,7 +62,8 @@
     "migrated": "Previous translation",
     "skipped": "Skipped",
     "untranslated": "Untranslated",
-    "shared": "Shared"
+    "shared": "Shared",
+    "interrupted": "Paused"
   },
   "action": {
     "next": "Next",

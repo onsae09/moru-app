@@ -2,6 +2,7 @@
 
 from .base import BaseParser, DumpError, ParseError, ParserError
 from .js import JSParser
+from .json5_parser import JSON5Parser
 from .json_parser import JSONParser
 from .lang import LangParser
 from .nbt import NBTParser
@@ -15,6 +16,7 @@ __all__ = [
     "ParseError",
     "DumpError",
     "JSONParser",
+    "JSON5Parser",
     "LangParser",
     "SNBTParser",
     "NBTParser",

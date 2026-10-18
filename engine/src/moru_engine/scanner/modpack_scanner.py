@@ -560,7 +560,10 @@ class ModpackScanner:
     ) -> None:
         """Load translation files from ftbquests folder."""
         search_paths = [modpack_path / "config" / "ftbquests"]
-        ftbquests_extensions = (".snbt", ".nbt")
+        # FTB Quests 26.1.2+ writes every quest and lang file as .json5,
+        # with lang as a directory tree per locale (lang/en_us/chapters/x.json5)
+        # that pairs with its target-locale mirror through the locale chunk.
+        ftbquests_extensions = (".snbt", ".nbt", ".json5")
 
         for path in search_paths:
             if not await asyncio.to_thread(path.is_dir):
@@ -575,7 +578,7 @@ class ModpackScanner:
                         break
 
                     try:
-                        # Only accept .snbt and .nbt files for ftbquests
+                        # Only accept quest-book formats for ftbquests
                         ext = os.path.splitext(file_path)[1].lower()
                         if ext in ftbquests_extensions and self._is_translation_file(
                             file_path
@@ -593,7 +596,9 @@ class ModpackScanner:
                 logger.error("FTB Quests scan failed: %s", e)
 
         count = len([f for f in result.translation_files if f.file_type == "ftbquests"])
-        logger.info("Found %d files in ftbquests folder (.snbt, .nbt)", count)
+        logger.info(
+            "Found %d files in ftbquests folder (.snbt, .nbt, .json5)", count
+        )
 
     async def _load_the_vault_quest_files(
         self, modpack_path: Path, result: ScanResult

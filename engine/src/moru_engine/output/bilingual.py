@@ -119,6 +119,7 @@ _NAME_HEAD_SEGMENTS = frozenset(
 _PROSE_FIELDS = frozenset(
     {
         "body",
+        "chapter_subtitle",
         "comment",
         "desc",
         "descr",

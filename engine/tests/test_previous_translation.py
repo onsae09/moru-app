@@ -364,6 +364,66 @@ async def test_catalog_indexes_target_locale_patchouli_files(
 
 
 @pytest.mark.asyncio
+async def test_catalog_indexes_target_locale_ftbquests_json5_tree(
+    tmp_path: Path,
+) -> None:
+    """FTB Quests 26.1.2+ lang is a per-locale directory of JSON5 files."""
+    old = tmp_path / "old"
+    current = tmp_path / "current"
+    overrides = tmp_path / "overrides"
+    lang = Path("config/ftbquests/quests/lang")
+    source = (
+        "{\n"
+        '  "quest.66ECC26BC81D0093.title": "Tier: &bBasic",\n'
+        '  "quest.33816AF0E699F19F.quest_desc": [\n'
+        '    "This block will drain FE from any charged item.",\n'
+        "  ],\n"
+        "}"
+    )
+    for root in (old, current):
+        path = root / lang / "en_us/chapters/powah.json5"
+        path.parent.mkdir(parents=True)
+        path.write_text(source, encoding="utf-8")
+    previous = overrides / lang / "ko_kr/chapters/powah.json5"
+    previous.parent.mkdir(parents=True)
+    previous.write_text(
+        "{\n"
+        '  "quest.66ECC26BC81D0093.title": "티어: &b기본",\n'
+        '  "quest.33816AF0E699F19F.quest_desc": [\n'
+        '    "이 블록은 충전된 모든 아이템에서 FE를 배수합니다.",\n'
+        "  ],\n"
+        "}",
+        encoding="utf-8",
+    )
+
+    scan = await scan_modpack(current)
+    catalog = await build_migration_catalog(
+        previous_modpack_path=old,
+        previous_resourcepack_path=None,
+        previous_overrides_path=overrides,
+        current_modpack_root=current,
+        current_scan=scan,
+        source_locale="en_us",
+        target_locale="ko_kr",
+        asset_cache_dir=tmp_path / "assets",
+    )
+
+    logical = "override:config/ftbquests/quests/lang/{locale}/chapters/powah.json5"
+    assert (
+        catalog.match(logical, "quest.66ECC26BC81D0093.title", "Tier: &bBasic")
+        == "티어: &b기본"
+    )
+    assert (
+        catalog.match(
+            logical,
+            "quest.33816AF0E699F19F.quest_desc[0]",
+            "This block will drain FE from any charged item.",
+        )
+        == "이 블록은 충전된 모든 아이템에서 FE를 배수합니다."
+    )
+
+
+@pytest.mark.asyncio
 async def test_pipeline_emits_resourcepack_when_migration_has_only_assets(
     tmp_path: Path,
 ) -> None:

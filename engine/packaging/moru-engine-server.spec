@@ -54,6 +54,9 @@ hiddenimports += collect_submodules("dspy")
 hiddenimports += collect_submodules("litellm")
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("ftb_snbt_lib")
+# Compiled JSON5 codec (FTB Quests 26.1.2+ quest files); its package
+# re-exports a binary submodule, collected explicitly like ftb_snbt_lib.
+hiddenimports += collect_submodules("pyjson5")
 hiddenimports += collect_submodules("aiofiles")
 
 a = Analysis(

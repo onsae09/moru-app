@@ -51,8 +51,8 @@ uv run pytest
 ## 구조
 
 - `src/moru_engine/scanner/` — 모드팩 스캔·파일 페어링, 팩 식별
-- `src/moru_engine/parsers/` — 포맷별 파서 (JSON, lang, SNBT, NBT, XML 등)
-- `src/moru_engine/handlers/` — 콘텐츠별 핸들러 (FTB Quests, Patchouli, Origins 등)
+- `src/moru_engine/parsers/` — 포맷별 파서 (JSON, JSON5, lang, SNBT, NBT, XML 등)
+- `src/moru_engine/handlers/` — 콘텐츠별 핸들러 (FTB Quests SNBT·JSON5, Patchouli, Origins 등)
 - `src/moru_engine/dspy_modules/` — DSPy 번역 모듈, LM 팩토리, 컴파일 아티팩트 로딩
 - `src/moru_engine/pipeline/` — 오케스트레이터: 스캔 → TM/용어집 → 번역 → 검증 → 출력
 - `src/moru_engine/validator/` — 플레이스홀더·용어집·포맷 검증

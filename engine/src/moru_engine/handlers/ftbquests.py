@@ -20,6 +20,23 @@ logger = logging.getLogger(__name__)
 #: of that description string.
 _JSONSEG = "::jsonseg["
 
+#: Key segment holding an item stack's data components. FTB Quests 26.1.2+
+#: JSON5 serializes components as structured JSON, so an item's custom name
+#: is a raw-JSON-text OBJECT whose ``text`` leaves pass the key filter like
+#: quest text. They are item data, not quest text: ATM-11 spells one rainbow
+#: item name a letter per ``text`` leaf, which would reach the model as
+#: single-letter "sentences". 1.21.1-era SNBT kept the same components as
+#: JSON strings under keys the filter never matches.
+_ITEM_COMPONENTS_SEGMENT = "components"
+
+
+def _in_item_components(key: str) -> bool:
+    """True when ``key`` runs through an item stack's ``components`` map."""
+    return any(
+        segment.split("[", 1)[0] == _ITEM_COMPONENTS_SEGMENT
+        for segment in key.split(".")[:-1]
+    )
+
 
 def _collect_segment_refs(
     node: object, refs: list[tuple[list[object] | dict[str, object], int | str]]
@@ -49,13 +66,23 @@ def _collect_segment_refs(
 
 
 class FTBQuestsHandler(ContentHandler):
-    """Handler for FTBQuests SNBT/NBT files.
+    """Handler for FTBQuests SNBT/NBT/JSON5 files.
 
     Extracts only translatable keys from FTBQuests files:
     - title, name: Quest/chapter names
     - description, text: Descriptions
     - subtitle: Subtitles
+    - quest_desc, quest_subtitle, chapter_subtitle: Lang-file entries
     - Lore, Name: Item display components
+
+    FTB Quests 26.1.2+ stores everything as JSON5: quest text lives in
+    ``quests/lang/<locale>/`` (``chapters/<chapter>.json5`` for quests,
+    tasks and quest links, ``<object_type>.json5`` for the rest), keyed
+    ``<object_type>.<id>.<field>``. The game merges every file of a locale
+    tree into one table, so translated files mirror the source tree under
+    the target locale. JSON5 quest data keeps no inline quest text beyond
+    reward fields such as a toast ``description``; its item components are
+    never extracted (see ``_ITEM_COMPONENTS_SEGMENT``).
 
     Strings that embed a Minecraft raw-JSON-text component (single object
     or component array) are split into per-segment entries keyed with the
@@ -74,7 +101,7 @@ class FTBQuestsHandler(ContentHandler):
         "\\config\\ftbquests\\",
     )
 
-    extensions: ClassVar[tuple[str, ...]] = (".snbt", ".nbt")
+    extensions: ClassVar[tuple[str, ...]] = (".snbt", ".nbt", ".json5")
 
     # Keys that should be translated
     TRANSLATABLE_KEYS: ClassVar[frozenset[str]] = frozenset(
@@ -86,6 +113,7 @@ class FTBQuestsHandler(ContentHandler):
             "subtitle",
             "quest_desc",
             "quest_subtitle",
+            "chapter_subtitle",
             "Lore",
             "Name",
         }
@@ -190,6 +218,14 @@ class FTBQuestsHandler(ContentHandler):
 
         entries: dict[str, str] = {}
         self._extract_recursive(dict(raw_data), entries, "")
+        if path.suffix.lower() == ".json5":
+            # Scoped to JSON5 (see _ITEM_COMPONENTS_SEGMENT); SNBT item data
+            # keeps the extraction it always had.
+            entries = {
+                key: value
+                for key, value in entries.items()
+                if not _in_item_components(key)
+            }
 
         logger.debug(
             "Extracted %d entries from FTBQuests file: %s", len(entries), path.name

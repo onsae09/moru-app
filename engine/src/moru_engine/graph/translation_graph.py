@@ -70,6 +70,7 @@ SIBLING_FIELDS = frozenset(
         "summary",
         "quest_desc",
         "quest_subtitle",
+        "chapter_subtitle",
     }
 )
 

@@ -13,6 +13,7 @@ import { persist } from "zustand/middleware";
 
 import type { DesktopPlatform, ModpackProbe } from "../../../shared/bridge";
 import { moru } from "../lib/bridge";
+import { engineGeneration } from "./engine";
 import { useSessions } from "./sessions";
 import {
   snapshotTranslationSettings,
@@ -556,10 +557,19 @@ export function pauseTranslationQueue(): void {
 }
 
 let initializationPromise: Promise<void> | null = null;
+let initializedFor: string | null = null;
 
-/** Reattach a live translate job after renderer reload, but never advance it. */
+/**
+ * Reattach a live translate job after renderer reload, but never advance it.
+ * Runs again for every new engine process: a restarted engine no longer
+ * holds the jobs the last reconciliation saw.
+ */
 export function initializeTranslationQueue(): Promise<void> {
-  if (initializationPromise !== null) return initializationPromise;
+  const generation = engineGeneration();
+  if (initializationPromise !== null && initializedFor === generation) {
+    return initializationPromise;
+  }
+  initializedFor = generation;
   initializationPromise = (async () => {
     const queue = useTranslationQueue.getState();
     const settings = queue.settingsSnapshot ?? snapshotTranslationSettings();
@@ -607,22 +617,27 @@ export function initializeTranslationQueue(): Promise<void> {
         continue;
       }
 
-      const restored =
-        useWizard.getState().runState === "running"
-          ? await waitForWizard((state) => state.runState !== "running")
-          : useWizard.getState();
-      const status =
-        restored.runState === "done" || restored.runState === "failed"
-          ? restored.runState
-          : restored.runState === "cancelled" || restored.runState === "interrupted"
-            ? "cancelled"
-            : "failed";
-      useTranslationQueue.getState().patchItem(item.id, {
-        status,
-        name: restored.modpackName || item.name,
-        error: restored.runError,
-        finishedAt: Date.now(),
-      });
+      const settle = (restored: WizardState): void => {
+        const status =
+          restored.runState === "done" || restored.runState === "failed"
+            ? restored.runState
+            : restored.runState === "cancelled" || restored.runState === "interrupted"
+              ? "cancelled"
+              : "failed";
+        useTranslationQueue.getState().patchItem(item.id, {
+          status,
+          name: restored.modpackName || item.name,
+          error: restored.runError,
+          finishedAt: Date.now(),
+        });
+      };
+      if (useWizard.getState().runState === "running") {
+        // Still translating after the reattach: settle it when it ends, but
+        // do not hold the queue's `ready` hostage for the hours it may run.
+        void waitForWizard((state) => state.runState !== "running").then(settle);
+        continue;
+      }
+      settle(useWizard.getState());
     }
 
     const state = useTranslationQueue.getState();
@@ -630,7 +645,10 @@ export function initializeTranslationQueue(): Promise<void> {
     // Only an interrupted or explicitly paused run may resume with the locked
     // snapshot; a queue restored with pending items it never started reads as
     // idle so startTranslationQueue re-snapshots the current settings.
-    const resumable = remaining && state.phase === "paused";
+    // A reattached item still running owns the wizard: the queue waits for
+    // it, paused, instead of reading as idle beside a live run.
+    const live = state.items.some((item) => ownsWizard(item.status));
+    const resumable = remaining && (state.phase === "paused" || live);
     const phase: TranslationQueuePhase = resumable
       ? "paused"
       : remaining || state.items.length === 0

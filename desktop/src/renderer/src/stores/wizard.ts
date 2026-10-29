@@ -28,6 +28,7 @@ import {
 } from "./sessions";
 // Cycle-tolerant by construction: translationQueue imports this module too,
 // and both sides only dereference the other's store at call time.
+import { waitForEngineReady } from "./engine";
 import { useTranslationQueue } from "./translationQueue";
 import {
   snapshotTranslationSettings,
@@ -389,14 +390,20 @@ function attachTranslationEvents(jobId: string, sessionId: string, after?: numbe
       }
       state.appendLog("warn", "event stream disconnected; restoring current engine state");
       window.setTimeout(() => {
-        const current = useWizard.getState();
-        if (
-          current.sessionId === sessionId &&
-          current.translateJobId === jobId &&
-          current.runState === "running"
-        ) {
-          void current.reopenSession(sessionId);
-        }
+        // A crashed engine is restarting: every probe would fail meanwhile
+        // and settle a resumable run as "failed". Ask once it answers; if it
+        // never comes back, leave the row for the next launch to reconcile.
+        void waitForEngineReady(ENGINE_RECOVERY_TIMEOUT_MS).then((ready) => {
+          const current = useWizard.getState();
+          if (
+            ready &&
+            current.sessionId === sessionId &&
+            current.translateJobId === jobId &&
+            current.runState === "running"
+          ) {
+            void current.reopenSession(sessionId);
+          }
+        });
       }, 500);
     },
     after,
@@ -426,6 +433,9 @@ async function resumeModel(
   if (disabled(current)) return original;
   return interruptReason === "auth" || disabled(original) ? current : original;
 }
+
+/** How long a dropped event stream waits for a restarting engine. */
+const ENGINE_RECOVERY_TIMEOUT_MS = 90_000;
 
 /** A start or resume is between its checks and `runState: "running"`. */
 let translateLaunching = false;

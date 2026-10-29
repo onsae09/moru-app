@@ -353,7 +353,16 @@ export function openJobEvents(
   const ws = new WebSocket(url);
   let manuallyClosed = false;
   ws.onmessage = (event) => {
-    onFrame(JSON.parse(event.data as string) as JobEventFrame);
+    let frame: JobEventFrame;
+    try {
+      frame = JSON.parse(event.data as string) as JobEventFrame;
+    } catch {
+      // One unreadable frame must not throw out of the socket handler and
+      // stop the rest of the stream from being processed.
+      console.warn(`[engine] dropped an unparseable event frame for job ${jobId}`);
+      return;
+    }
+    onFrame(frame);
   };
   ws.onclose = (event) => onClose?.(event, manuallyClosed);
   return () => {

@@ -17,10 +17,11 @@ import { useTranslation } from "react-i18next";
 import type { Entry, EntryStatus } from "../../../shared/engine";
 import {
   McText,
-  STATUS_COLOR,
   STATUS_LABEL_KEY,
+  STATUS_TOKEN,
   StatusIcon,
   TokenText,
+  tint,
   tokenColorMap,
   useTokenPatterns,
 } from "@/components/EntryText";
@@ -51,8 +52,15 @@ const PAGE_SIZE = 100;
 /** Table columns: reviewed check, status, key, source, translation, status text. */
 const ROW_GRID = "grid-cols-[16px_20px_200px_1fr_1fr_80px]";
 
-/** Matches `--color-purple`; a hex literal because chips append alpha to it. */
-const REVIEWED_COLOR = "#A78BFA";
+/*
+ * Colors are theme tokens (var()), never hex: the light theme redefines
+ * them. Translucent fills go through `tint`, since a var() cannot take a
+ * hex alpha suffix.
+ */
+const REVIEWED_COLOR = "var(--color-purple)";
+const GLOSSARY_COLOR = "var(--color-sky)";
+const WARNING_COLOR = STATUS_TOKEN.warning;
+const FAILED_COLOR = STATUS_TOKEN.failed;
 
 /**
  * The review screen's chip set: a subset of the engine's `EntryFilter`
@@ -69,18 +77,16 @@ type ReviewFilter =
   | "unreviewed"
   | "reviewed";
 const STATUS_FILTERS: readonly ReviewFilter[] = ["all", "failed", "warning", "glossary", "modified"];
-
-const GLOSSARY_COLOR = "#5BC8D6";
 const REVIEW_FILTERS: readonly ReviewFilter[] = ["unreviewed", "reviewed"];
 const FILTERS: readonly ReviewFilter[] = [...STATUS_FILTERS, ...REVIEW_FILTERS];
 
 const FILTER_COLOR: Record<ReviewFilter, string> = {
-  all: "#3DDC84",
-  failed: "#F26B6B",
-  warning: "#F5B454",
+  all: "var(--color-accent)",
+  failed: FAILED_COLOR,
+  warning: WARNING_COLOR,
   glossary: GLOSSARY_COLOR,
-  modified: "#6BB3F5",
-  unreviewed: "#8A9A93",
+  modified: STATUS_TOKEN.modified,
+  unreviewed: "var(--color-text3)",
   reviewed: REVIEWED_COLOR,
 };
 
@@ -509,7 +515,9 @@ export function W5Review() {
   }
 
   const remaining = Math.max(0, total - page * PAGE_SIZE);
-  const selColor = selected === null ? "#6A7C74" : STATUS_COLOR[selected.status];
+  const selColor = selected === null ? "var(--color-text4)" : STATUS_TOKEN[selected.status];
+  // Validation problems: red when the entry will not ship, amber otherwise.
+  const issueColor = selected?.status === "failed" ? FAILED_COLOR : WARNING_COLOR;
   const detailColors =
     selected === null
       ? new Map<string, number>()
@@ -530,7 +538,7 @@ export function W5Review() {
         className={`flex items-center gap-1 border px-[10px] py-[6px] text-[11px] font-semibold ${
           active ? "" : "border-edge text-text2 hover:border-edge2 hover:text-text"
         }`}
-        style={active ? { background: `${c}14`, borderColor: c, color: c } : undefined}
+        style={active ? { background: tint(c, 8), borderColor: c, color: c } : undefined}
       >
         <div className="h-[5px] w-[5px]" style={{ background: c }} />
         {t(`w5.filter.${f}`)}
@@ -602,17 +610,17 @@ export function W5Review() {
           <SummaryBox
             value={passRate !== null ? `${passRate.toFixed(1)}%` : "—"}
             label={t("w5.summary.passRate")}
-            color="#3DDC84"
+            color="var(--color-accent)"
           />
           <SummaryBox
             value={counts.warning !== null ? formatInt(counts.warning) : "—"}
             label={t("w5.summary.warnings")}
-            color="#F5B454"
+            color={WARNING_COLOR}
           />
           <SummaryBox
             value={formatInt(failedTotal)}
             label={t("w5.summary.failed")}
-            color="#F26B6B"
+            color={FAILED_COLOR}
             alert={failedTotal > 0}
           />
         </div>
@@ -621,7 +629,7 @@ export function W5Review() {
       {/* Toolbar */}
       <div className="flex items-center gap-2 border border-b-0 border-line2 bg-raised px-[14px] py-[10px]">
         <div className="flex max-w-[320px] flex-1 items-center gap-[6px] border border-edge bg-card px-[10px] py-[6px]">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#6A7C74" strokeWidth="1.5">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--color-text4)" strokeWidth="1.5">
             <circle cx="5" cy="5" r="3.5" />
             <path d="M8 8 L11 11" />
           </svg>
@@ -826,7 +834,7 @@ export function W5Review() {
                   </button>
                 )}
                 {rows.map((e) => {
-                  const c = STATUS_COLOR[e.status];
+                  const c = STATUS_TOKEN[e.status];
                   const isSel = selected !== null && selected.key === e.key && selected.file === e.file;
                   return (
                     <div
@@ -843,7 +851,7 @@ export function W5Review() {
                       style={
                         isSel
                           ? {
-                              background: `linear-gradient(90deg, ${c}0F 0%, transparent 100%)`,
+                              background: `linear-gradient(90deg, ${tint(c, 6)} 0%, transparent 100%)`,
                               borderLeft: `3px solid ${c}`,
                             }
                           : undefined
@@ -965,7 +973,7 @@ export function W5Review() {
                   {selected.errors.length > 0 && (
                     <div
                       className="max-w-[220px] overflow-hidden font-mono text-[10px] text-ellipsis whitespace-nowrap"
-                      style={{ color: selected.status === "failed" ? "#F26B6B" : "#F5B454" }}
+                      style={{ color: issueColor }}
                     >
                       {selected.errors.join(" · ")}
                     </div>
@@ -998,20 +1006,17 @@ export function W5Review() {
                 <div
                   className="flex flex-col gap-[6px] border px-3 py-[10px]"
                   style={{
-                    background: `${selected.status === "failed" ? "#F26B6B" : "#F5B454"}0F`,
-                    borderColor: selected.status === "failed" ? "#F26B6B" : "#F5B454",
+                    background: tint(issueColor, 6),
+                    borderColor: issueColor,
                   }}
                 >
                   {selected.errors.map((err, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-[6px] font-mono text-[11px]"
-                      style={{ color: selected.status === "failed" ? "#F26B6B" : "#F5B454" }}
+                      style={{ color: issueColor }}
                     >
-                      <div
-                        className="h-1 w-1 shrink-0"
-                        style={{ background: selected.status === "failed" ? "#F26B6B" : "#F5B454" }}
-                      />
+                      <div className="h-1 w-1 shrink-0" style={{ background: issueColor }} />
                       <span>{err}</span>
                     </div>
                   ))}
@@ -1022,7 +1027,7 @@ export function W5Review() {
               {selected.glossary_missing !== undefined && selected.glossary_missing.length > 0 && (
                 <div
                   className="flex flex-col gap-[6px] border px-3 py-[10px]"
-                  style={{ background: `${GLOSSARY_COLOR}0F`, borderColor: GLOSSARY_COLOR }}
+                  style={{ background: tint(GLOSSARY_COLOR, 6), borderColor: GLOSSARY_COLOR }}
                 >
                   <div className="font-mono text-[10px] font-bold tracking-[0.06em] uppercase" style={{ color: GLOSSARY_COLOR }}>
                     {t("w5.detail.glossaryTitle")}
@@ -1051,7 +1056,7 @@ export function W5Review() {
                 style={
                   selected.reviewed === true
                     ? {
-                        background: `${REVIEWED_COLOR}14`,
+                        background: tint(REVIEWED_COLOR, 8),
                         borderColor: REVIEWED_COLOR,
                         color: REVIEWED_COLOR,
                       }

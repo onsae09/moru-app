@@ -772,6 +772,15 @@ class JobManager:
         """Drop a record from memory; its session file is left alone."""
         self._jobs.pop(job_id, None)
 
+    def forget_finished_job(self, job_id: str) -> None:
+        """:meth:`forget_job`, refused for a live run: forgetting one would
+        orphan it — it keeps spending tokens and its next checkpoint append
+        recreates the file the caller is about to delete."""
+        record = self._jobs.get(job_id)
+        if record is not None and not record.finished:
+            raise JobStateError(f"job {job_id} is still running")
+        self.forget_job(job_id)
+
     # -- checkpoints -----------------------------------------------------------
 
     async def list_checkpoints(self) -> list[dict[str, Any]]:

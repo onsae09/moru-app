@@ -938,7 +938,10 @@ def create_app(
 
     @api.delete("/sessions/{session_id}")
     async def delete_session(session_id: str) -> dict[str, str]:
-        manager.forget_job(session_id)
+        try:
+            manager.forget_finished_job(session_id)
+        except JobStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
             # The checkpoint first: it belongs to the session too, and a
             # deleted history row must not come back as a resumable one on

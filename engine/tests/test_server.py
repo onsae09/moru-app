@@ -2492,3 +2492,13 @@ def test_a_downloaded_pack_alone_cannot_start_a_migration_scan(
     )
     assert response.status_code == 422
     assert "previous_modpack_path" in response.json()["detail"]
+
+
+def test_deleting_a_running_session_is_refused(
+    client: TestClient, done_translate_job: JobRecord
+) -> None:
+    # A live run must not be orphaned: it would keep spending tokens.
+    done_translate_job.finished = False
+    res = client.delete(f"/sessions/{done_translate_job.id}", headers=AUTH)
+    assert res.status_code == 409
+    assert client.app.state.job_manager.get(done_translate_job.id) is done_translate_job

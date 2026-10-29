@@ -52,8 +52,17 @@ const REVIEWED_COLOR = "#A78BFA";
  * run produces plus the reviewer's own sign-off; `pending`/`flagged`/
  * `stale_source` belong to hand translation and live on W5Manual.
  */
-type ReviewFilter = "all" | "failed" | "warning" | "modified" | "unreviewed" | "reviewed";
-const STATUS_FILTERS: readonly ReviewFilter[] = ["all", "failed", "warning", "modified"];
+type ReviewFilter =
+  | "all"
+  | "failed"
+  | "warning"
+  | "glossary"
+  | "modified"
+  | "unreviewed"
+  | "reviewed";
+const STATUS_FILTERS: readonly ReviewFilter[] = ["all", "failed", "warning", "glossary", "modified"];
+
+const GLOSSARY_COLOR = "#5BC8D6";
 const REVIEW_FILTERS: readonly ReviewFilter[] = ["unreviewed", "reviewed"];
 const FILTERS: readonly ReviewFilter[] = [...STATUS_FILTERS, ...REVIEW_FILTERS];
 
@@ -61,6 +70,7 @@ const FILTER_COLOR: Record<ReviewFilter, string> = {
   all: "#3DDC84",
   failed: "#F26B6B",
   warning: "#F5B454",
+  glossary: GLOSSARY_COLOR,
   modified: "#6BB3F5",
   unreviewed: "#8A9A93",
   reviewed: REVIEWED_COLOR,
@@ -753,6 +763,11 @@ export function W5Review() {
                         }`}
                       >
                         {colorPreview ? <McText text={e.translated_text} /> : e.translated_text}
+                        {e.glossary_missing !== undefined && e.glossary_missing.length > 0 && (
+                          <div className="mt-[3px] font-mono text-[10px]" style={{ color: GLOSSARY_COLOR }}>
+                            {t("w5.glossaryMissing", { terms: e.glossary_missing.join(", ") })}
+                          </div>
+                        )}
                       </div>
                       <div
                         className="overflow-hidden text-right font-mono text-[10px] font-bold text-ellipsis whitespace-nowrap"
@@ -878,6 +893,30 @@ export function W5Review() {
                       <span>{err}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Glossary terms the translation should carry but does not */}
+              {selected.glossary_missing !== undefined && selected.glossary_missing.length > 0 && (
+                <div
+                  className="flex flex-col gap-[6px] border px-3 py-[10px]"
+                  style={{ background: `${GLOSSARY_COLOR}0F`, borderColor: GLOSSARY_COLOR }}
+                >
+                  <div className="font-mono text-[10px] font-bold tracking-[0.06em] uppercase" style={{ color: GLOSSARY_COLOR }}>
+                    {t("w5.detail.glossaryTitle")}
+                  </div>
+                  <div className="flex flex-wrap gap-[6px]">
+                    {selected.glossary_missing.map((term) => (
+                      <span
+                        key={term}
+                        className="border px-[6px] py-px font-mono text-[11px]"
+                        style={{ borderColor: GLOSSARY_COLOR, color: GLOSSARY_COLOR }}
+                      >
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-text3">{t("w5.detail.glossaryHint")}</div>
                 </div>
               )}
 

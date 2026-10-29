@@ -227,6 +227,7 @@ def test_counts_returns_every_bucket_in_one_call(manual_session):
         "stale_source",
         "reviewed",
         "unreviewed",
+        "glossary",
     }
     assert counts["all"] == 2
     assert counts["modified"] == 1

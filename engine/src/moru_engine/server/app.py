@@ -75,6 +75,8 @@ from .jobs import (
     scan_result_payload,
 )
 from .live_models import LIVE_MODEL_PROVIDERS, fetch_live_models
+from .glossary_check import GlossaryMissIndex
+from .manual_journal import entry_ref
 from .manual_state import EntryBucket, ManualStore
 from .sessions import SessionStore
 
@@ -418,6 +420,7 @@ def create_app(
     #: keystroke must reuse the instance rather than rebuild it.
     assist_holder: dict[str, Glossary] = {}
     validator_holder: dict[str, TranslationValidator] = {}
+    miss_index_holder: dict[str, GlossaryMissIndex] = {}
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -646,6 +649,27 @@ def create_app(
             assist_holder[cache_key] = cached
         return cached
 
+    def _glossary_misses(result: PipelineResult) -> dict[str, tuple[str, ...]]:
+        """Entries missing a required glossary term, by journal ref."""
+        config = result.config
+        cache_key = f"{config.source_locale}\u0000{config.target_locale}"
+        index = miss_index_holder.get(cache_key)
+        if index is None:
+            index = GlossaryMissIndex(_assist_glossary(result))
+            miss_index_holder[cache_key] = index
+        return index.for_entries(result.entries)
+
+    def _drop_glossary_caches() -> None:
+        """Forget every glossary-derived cache after the glossary changed.
+
+        Without this the aid panel, live validation and the review screen's
+        glossary filter keep answering from the glossary as it was when they
+        first looked, until the sidecar restarts.
+        """
+        assist_holder.clear()
+        validator_holder.clear()
+        miss_index_holder.clear()
+
     def _assist_validator(result: PipelineResult) -> TranslationValidator:
         config = result.config
         cache_key = f"{config.source_locale}\u0000{config.target_locale}"
@@ -697,7 +721,8 @@ def create_app(
     ) -> dict[str, int]:
         """Every bucket's size in one pass over the result."""
         _, result = _get_pipeline_result(job_id)
-        return manual.counts(job_id, result.entries, search)
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        return manual.counts(job_id, result.entries, search, misses)
 
     @api.post("/translate/{job_id}/entries/reviewed")
     async def mark_reviewed(job_id: str, body: ReviewMark) -> dict[str, int]:
@@ -730,18 +755,23 @@ def create_app(
         `search` filters across the WHOLE result set before paginating, so
         the review screen can find an entry that lives on any page — a
         client-side filter would only ever see the 100 rows it fetched.
+
+        `glossary_missing` lists the glossary target terms an entry's
+        translation lacks, on entries that lack any.
         """
         _, result = _get_pipeline_result(job_id)
-        entries = manual.select(job_id, result.entries, filter, search)
+        # Cached per entry: after the first call this is a dict walk.
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        entries = manual.select(job_id, result.entries, filter, search, misses)
         start = (page - 1) * page_size
-        return {
-            "total": len(entries),
-            "page": page,
-            "entries": [
-                manual.enrich(_entry_payload(e), job_id, e)
-                for e in entries[start : start + page_size]
-            ],
-        }
+        rows: list[dict[str, Any]] = []
+        for e in entries[start : start + page_size]:
+            payload = manual.enrich(_entry_payload(e), job_id, e)
+            missing = misses.get(entry_ref(e.file, e.key))
+            if missing:
+                payload["glossary_missing"] = list(missing)
+            rows.append(payload)
+        return {"total": len(entries), "page": page, "entries": rows}
 
     @api.get("/translate/{job_id}/graph")
     async def translate_graph(
@@ -1140,6 +1170,7 @@ def create_app(
         path = _glossary_path(body.source_lang, body.target_lang)
         data = body.model_dump()
         _atomic_write_json(path, data)
+        _drop_glossary_caches()
         return data
 
     # -- tm / community / providers / config --------------------------------------------
@@ -1158,6 +1189,9 @@ def create_app(
             raise HTTPException(
                 status_code=502, detail=f"community sync failed: {exc}"
             ) from exc
+        finally:
+            # The sync writes community terms into the glossary store.
+            _drop_glossary_caches()
 
     @api.get("/community/translation")
     async def community_translation(

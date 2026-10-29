@@ -51,7 +51,8 @@ export type EntryFilter =
   | "flagged"
   | "stale_source"
   | "reviewed"
-  | "unreviewed";
+  | "unreviewed"
+  | "glossary";
 
 /** Who produced `translated_text`. Absent on entries written before it existed. */
 export type EntryOrigin = "machine" | "human" | "tm" | "community";
@@ -67,6 +68,11 @@ export interface Entry {
   flagged?: boolean;
   /** Signed off on the review screen. Absent means not yet. */
   reviewed?: boolean;
+  /**
+   * Agreed glossary target terms the translation lacks although its source
+   * names them. Only on `/entries` rows that lack any.
+   */
+  glossary_missing?: string[];
   /**
    * The entry holds a human translation whose recorded source hash no longer
    * matches the scanned source: the pack changed the string underneath it.

@@ -24,7 +24,7 @@ from .manual_journal import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from ..pipeline import EntryResult
     from .sessions import SessionStore
@@ -33,7 +33,8 @@ if TYPE_CHECKING:
 #: Every bucket ``GET /entries`` accepts, and every key ``/entries/counts``
 #: returns. ``flagged``, ``stale_source``, ``reviewed`` and ``unreviewed`` are
 #: views over journal state, not entry statuses, so they cannot be answered by
-#: comparing ``status.value``.
+#: comparing ``status.value``. ``glossary`` (a required glossary term is
+#: missing from the translation) is computed against the user glossary.
 #:
 #: Declared as a Literal so FastAPI can validate the query parameter, with the
 #: tuple derived from it — one definition, not two that can drift.
@@ -47,6 +48,7 @@ EntryBucket = Literal[
     "stale_source",
     "reviewed",
     "unreviewed",
+    "glossary",
 ]
 ENTRY_BUCKETS: tuple[str, ...] = get_args(EntryBucket)
 
@@ -135,10 +137,19 @@ class ManualStore:
         entries: Sequence[EntryResult],
         bucket: str,
         search: str,
+        glossary: Mapping[str, object] | None = None,
     ) -> list[EntryResult]:
-        """Entries in one bucket, narrowed by search."""
+        """Entries in one bucket, narrowed by search.
+
+        ``glossary`` holds the refs of entries missing a glossary term (see
+        ``GlossaryMissIndex``); it is computed by the caller because the
+        glossary lives with the app, not with the editing session.
+        """
         selected: Sequence[EntryResult] = entries
-        if bucket in ("flagged", "stale_source"):
+        if bucket == "glossary":
+            misses = glossary or {}
+            selected = [e for e in entries if entry_ref(e.file, e.key) in misses]
+        elif bucket in ("flagged", "stale_source"):
             state = self.state(job_id)
             want_stale = bucket == "stale_source"
             picked: list[EntryResult] = []
@@ -179,7 +190,11 @@ class ManualStore:
         ]
 
     def counts(
-        self, job_id: str, entries: Sequence[EntryResult], search: str
+        self,
+        job_id: str,
+        entries: Sequence[EntryResult],
+        search: str,
+        glossary: Mapping[str, object] | None = None,
     ) -> dict[str, int]:
         """Every bucket's size.
 
@@ -188,7 +203,7 @@ class ManualStore:
         full scan of the result each time — paid again on every commit.
         """
         return {
-            bucket: len(self.select(job_id, entries, bucket, search))
+            bucket: len(self.select(job_id, entries, bucket, search, glossary))
             for bucket in ENTRY_BUCKETS
         }
 

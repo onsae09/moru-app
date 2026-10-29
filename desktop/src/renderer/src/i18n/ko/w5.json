@@ -13,11 +13,13 @@
     "all": "전체",
     "failed": "실패",
     "warning": "경고",
+    "glossary": "용어집 위반",
     "modified": "수정됨",
     "unreviewed": "검수 안 함",
     "reviewed": "검수 완료"
   },
-  "markPage": "이 페이지 {{n}}건 검수 완료",
+  "glossaryMissing": "용어집: {{terms}} 누락",
+  "markPage":"이 페이지 {{n}}건 검수 완료",
   "unmarkPage": "이 페이지 {{n}}건 검수 해제",
   "colorPreview": "§색코드 미리보기",
   "handRefine": "손으로 다듬기",
@@ -48,6 +50,8 @@
     "file": "파일:",
     "model": "모델:",
     "noSelection": "왼쪽 목록에서 항목을 선택하세요",
+    "glossaryTitle": "용어집 용어 누락",
+    "glossaryHint": "원문에 용어집 단어가 있는데 번역에 정해 둔 표현이 없어요.",
     "markReviewed": "검수 완료로 표시",
     "unmarkReviewed": "검수 완료 · 해제하기"
   },

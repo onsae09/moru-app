@@ -191,8 +191,11 @@ paths:
             Entry status buckets, plus views over editing-session state that
             are not statuses: `flagged` (bookmarked by a hand translator),
             `stale_source` (hand-translated, then the source string changed
-            under it on a later scan), and `reviewed` / `unreviewed` (signed
-            off on the review screen, or not yet).
+            under it on a later scan), `reviewed` / `unreviewed` (signed
+            off on the review screen, or not yet), and `glossary` (the source
+            contains a user-glossary term — honouring its key_scope — whose
+            agreed target text is missing from the translation; entries with
+            no translation yet are never in it).
           schema:
             type: string
             enum:
@@ -206,6 +209,7 @@ paths:
                 stale_source,
                 reviewed,
                 unreviewed,
+                glossary,
               ]
         - name: page
           in: query
@@ -1370,6 +1374,12 @@ components:
           type: boolean
           default: false
           description: Signed off on the review screen.
+        glossary_missing:
+          type: array
+          items: { type: string }
+          description: >-
+            Agreed glossary target terms the translation lacks although its
+            source names them. Present only on /entries rows that lack any.
         stale_source:
           type: boolean
           default: false

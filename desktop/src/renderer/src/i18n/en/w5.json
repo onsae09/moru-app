@@ -13,11 +13,13 @@
     "all": "All",
     "failed": "Failed",
     "warning": "Warning",
+    "glossary": "Glossary",
     "modified": "Modified",
     "unreviewed": "Unreviewed",
     "reviewed": "Reviewed"
   },
-  "markPage": "Mark {{n}} on this page reviewed",
+  "glossaryMissing": "Glossary: missing {{terms}}",
+  "markPage":"Mark {{n}} on this page reviewed",
   "unmarkPage": "Unmark {{n}} on this page",
   "colorPreview": "§ color preview",
   "handRefine": "Translate by hand",
@@ -48,6 +50,8 @@
     "file": "File:",
     "model": "Model:",
     "noSelection": "Select an entry from the list",
+    "glossaryTitle": "Glossary term missing",
+    "glossaryHint": "The source uses a glossary term, but the translation lacks its agreed wording.",
     "markReviewed": "Mark as reviewed",
     "unmarkReviewed": "Reviewed · undo"
   },

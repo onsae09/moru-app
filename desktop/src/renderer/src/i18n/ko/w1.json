@@ -6,16 +6,16 @@
     "hintPre": "폴더 안에 ",
     "hintPost": " 가 있으면 자동으로 인식합니다",
     "pickFolder": "폴더 선택...",
-    "fromZip": ".zip 파일에서",
-    "zipFilter": "모드팩 zip"
+    "fromZip": ".zip · .mrpack 파일에서",
+    "zipFilter": "모드팩 내보내기 파일"
   },
   "probing": "폴더 확인 중",
   "error": {
     "noMods": "mods/ 폴더를 찾지 못했어요",
     "notFound": "폴더를 찾을 수 없어요",
     "notDirectory": "폴더가 아니에요 — 모드팩 폴더를 선택해 주세요",
-    "zip": ".zip 가져오기는 준비 중이에요 — 압축을 풀고 폴더를 선택해 주세요",
-    "probeFailed": "폴더를 확인하지 못했어요 — 다시 시도해 주세요"
+    "probeFailed": "폴더를 확인하지 못했어요 — 다시 시도해 주세요",
+    "importFailed": "압축 파일을 열지 못했어요 — CurseForge·Modrinth에서 내보낸 모드팩 .zip/.mrpack인지 확인해 주세요"
   },
   "detected": {
     "label": "자동 감지됨",
@@ -49,5 +49,9 @@
   },
   "jarCount": "{{n}} mods",
   "selectedStatus": "{{name}} 선택됨",
-  "next": "다음: 스캔"
+  "next": "다음: 스캔",
+  "import": {
+    "noModsTitle": "이 파일에는 모드 JAR가 들어 있지 않아요",
+    "noModsBody": "CurseForge·Modrinth에서 내보낸 파일은 모드 목록만 담고 있어서, 설정·퀘스트·스크립트·리소스팩만 번역돼요. 모드 안의 텍스트까지 번역하려면 런처의 인스턴스 폴더를 선택해 주세요."
+  }
 }

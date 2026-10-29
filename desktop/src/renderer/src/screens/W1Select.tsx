@@ -9,6 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 
+import { ErrorDetails } from "@/components/ErrorDetails";
+import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatInt, packInitials } from "@/lib/format";
 import { useRouter } from "@/stores/router";
@@ -17,7 +19,10 @@ import { useSettings } from "@/stores/settings";
 import { useWizard } from "@/stores/wizard";
 import type { DetectedInstance, ModpackProbe } from "../../../shared/bridge";
 
-type ProbeErrorKind = "noMods" | "notFound" | "notDirectory" | "zip" | "probeFailed";
+type ProbeErrorKind = "noMods" | "notFound" | "notDirectory" | "importFailed" | "probeFailed";
+
+/** Launcher exports the engine can unpack into a modpack folder. */
+const ARCHIVE_RE = /\.(zip|mrpack)$/i;
 
 const LAUNCHER_CLASS: Record<DetectedInstance["launcher"], string> = {
   CurseForge: "text-purple",
@@ -234,7 +239,14 @@ export function W1Select() {
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
   const [probing, setProbing] = useState<string | null>(null);
-  const [probeError, setProbeError] = useState<{ kind: ProbeErrorKind; path: string } | null>(null);
+  const [probeError, setProbeError] = useState<{
+    kind: ProbeErrorKind;
+    path: string;
+    raw?: string;
+  } | null>(null);
+  /* Set when the imported archive shipped no mod JARs (CurseForge/Modrinth
+     exports list mods instead of bundling them). */
+  const [importWithoutMods, setImportWithoutMods] = useState(false);
 
   const launcherPaths = useSettings((s) => s.launcherPaths);
   const detected = useQuery({
@@ -262,8 +274,29 @@ export function W1Select() {
   const selectPath = useCallback(
     async (path: string) => {
       setProbeError(null);
-      if (/\.zip$/i.test(path)) {
-        setProbeError({ kind: "zip", path });
+      setImportWithoutMods(false);
+      if (ARCHIVE_RE.test(path)) {
+        setProbing(path);
+        try {
+          const imported = await api.importModpack(path);
+          const probe = await moru.probeModpack(imported.modpack_path);
+          if (!probe.exists || !probe.isDirectory) {
+            setProbeError({ kind: "importFailed", path });
+            return;
+          }
+          // An export without JARs is still worth translating (configs,
+          // quests, scripts, resource packs), so it is not rejected as noMods.
+          startSession(imported.modpack_path, probe);
+          setImportWithoutMods(!imported.has_mods);
+        } catch (error) {
+          setProbeError({
+            kind: "importFailed",
+            path,
+            raw: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          setProbing(null);
+        }
         return;
       }
       setProbing(path);
@@ -288,9 +321,11 @@ export function W1Select() {
   }, [selectPath]);
 
   const handlePickZip = useCallback(async () => {
-    const path = await moru.pickFile([{ name: t("w1.drop.zipFilter"), extensions: ["zip"] }]);
-    if (path !== null && path !== "") setProbeError({ kind: "zip", path });
-  }, [t]);
+    const path = await moru.pickFile([
+      { name: t("w1.drop.zipFilter"), extensions: ["zip", "mrpack"] },
+    ]);
+    if (path !== null && path !== "") await selectPath(path);
+  }, [selectPath, t]);
 
   const handleNext = useCallback(() => {
     if (modpackPath === null || !migrationReady) return;
@@ -438,6 +473,7 @@ export function W1Select() {
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-semibold text-red">{t(`w1.error.${probeError.kind}`)}</div>
             <div className="truncate font-mono text-[11px] text-text3">{probeError.path}</div>
+            <ErrorDetails raw={probeError.raw} className="mt-1" />
           </div>
           <button
             type="button"
@@ -446,6 +482,14 @@ export function W1Select() {
           >
             {t("common.action.close")}
           </button>
+        </div>
+      )}
+
+      {/* Imported launcher export without mod JARs */}
+      {importWithoutMods && modpackPath !== null && (
+        <div role="status" className="mb-5 border border-amber/40 bg-amber/6 px-4 py-3">
+          <div className="text-[13px] font-semibold text-amber">{t("w1.import.noModsTitle")}</div>
+          <div className="mt-1 text-[12px] leading-relaxed text-text2">{t("w1.import.noModsBody")}</div>
         </div>
       )}
 

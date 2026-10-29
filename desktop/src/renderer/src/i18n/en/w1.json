@@ -6,16 +6,16 @@
     "hintPre": "If the folder contains ",
     "hintPost": ", it is detected automatically",
     "pickFolder": "Choose folder...",
-    "fromZip": "From .zip file",
-    "zipFilter": "Modpack zip"
+    "fromZip": "From .zip / .mrpack",
+    "zipFilter": "Modpack export"
   },
   "probing": "Checking folder",
   "error": {
     "noMods": "Couldn't find a mods/ folder",
     "notFound": "Folder not found",
     "notDirectory": "That's not a folder — please pick a modpack folder",
-    "zip": ".zip import is coming soon — extract it and pick the folder instead",
-    "probeFailed": "Couldn't inspect the folder — please try again"
+    "probeFailed": "Couldn't inspect the folder — please try again",
+    "importFailed": "Couldn't open this archive — make sure it's a modpack .zip/.mrpack exported from CurseForge or Modrinth"
   },
   "detected": {
     "label": "Auto-detected",
@@ -49,5 +49,9 @@
   },
   "jarCount": "{{n}} mods",
   "selectedStatus": "{{name}} selected",
-  "next": "Next: Scan"
+  "next": "Next: Scan",
+  "import": {
+    "noModsTitle": "This file doesn't include mod JARs",
+    "noModsBody": "CurseForge/Modrinth exports only list the mods, so only configs, quests, scripts and resource packs get translated. To translate the text inside mods too, select the launcher's instance folder instead."
+  }
 }

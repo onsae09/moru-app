@@ -427,6 +427,9 @@ async function resumeModel(
   return interruptReason === "auth" || disabled(original) ? current : original;
 }
 
+/** A start or resume is between its checks and `runState: "running"`. */
+let translateLaunching = false;
+
 async function findCheckpoint(sessionId: string): Promise<CheckpointSummary | null> {
   try {
     const checkpoints = await api.checkpoints();
@@ -1045,13 +1048,22 @@ export const useWizard = create<WizardStore>((set, get) => ({
 
   startTranslate: async (settingsOverride) => {
     const state = get();
-    if (state.modpackPath === null || state.runState === "running") return;
+    if (state.modpackPath === null || state.runState === "running" || translateLaunching) return;
     const settings = settingsOverride ?? snapshotTranslationSettings();
     const scanTotals = selectedScanTotals(state);
     closeTranslateEvents?.();
 
     const providerId = providerIdOf(settings.model);
-    const apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
+    let apiKey: string | undefined;
+    // Claimed before the first await: a second click landing while the key
+    // is read would otherwise pass the runState check too and start (and
+    // bill) a second session.
+    translateLaunching = true;
+    try {
+      apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
+    } finally {
+      translateLaunching = false;
+    }
     const sessionId = state.sessionId ?? crypto.randomUUID();
     const params: TranslateParams = {
       ...buildTranslateParams(
@@ -1201,7 +1213,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       state.exportState === "running" ||
       state.sourceExportState === "running" ||
       queuePhase === "running" ||
-      queuePhase === "pausing"
+      queuePhase === "pausing" ||
+      translateLaunching
     ) {
       return "busy";
     }
@@ -1216,11 +1229,19 @@ export const useWizard = create<WizardStore>((set, get) => ({
     // provider has since been switched off, could never finish on that
     // model: it continues on the model currently chosen in settings.
     const settings = useSettings.getState();
-    const model = await resumeModel(record.model, state.interruptReason, settings.model);
-    // The key is never written into the checkpoint, so it is re-read here. A
-    // local runtime's address is environment, not run semantics: current one.
-    const providerId = providerIdOf(model);
-    const apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
+    let model: string;
+    let providerId: string;
+    let apiKey: string | undefined;
+    translateLaunching = true; // see startTranslate
+    try {
+      model = await resumeModel(record.model, state.interruptReason, settings.model);
+      // The key is never written into the checkpoint, so it is re-read here.
+      // A local runtime's address is environment, not run semantics: current.
+      providerId = providerIdOf(model);
+      apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
+    } finally {
+      translateLaunching = false;
+    }
     const apiBase =
       providerId === "ollama"
         ? settings.ollamaBaseUrl

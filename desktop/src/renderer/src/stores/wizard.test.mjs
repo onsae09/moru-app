@@ -692,3 +692,14 @@ test("a refused fresh run leaves the interrupted session resumable", async () =>
   expect(useWizard.getState().resumable).toBe(true);
   expect(useSessions.getState().sessions.find((item) => item.id === "s1").resumable).toBe(true);
 });
+
+test("a double click on start launches one translation, not two", async () => {
+  routeResponses.set("/community/sync", response({ tm: null, glossary: null }));
+  routeResponses.set("/jobs", response({ id: "job-x", type: "translate", status: "running" }));
+  useWizard.setState({ ...translateState, modpackName: "Pack" });
+  await Promise.all([
+    useWizard.getState().startTranslate(runSettings),
+    useWizard.getState().startTranslate(runSettings),
+  ]);
+  expect(fetchCalls.filter((url) => url.endsWith("/jobs")).length).toBe(1);
+});

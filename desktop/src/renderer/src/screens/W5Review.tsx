@@ -36,7 +36,14 @@ import { useRouter } from "@/stores/router";
 import { useSettings } from "@/stores/settings";
 import { useSessionJobs, useWizard } from "@/stores/wizard";
 
-import { type EntryRef, entryId, nextRowId, reviewedPercent } from "./w5ReviewModel";
+import {
+  type EntryRef,
+  entryId,
+  fileLabel,
+  nextRowId,
+  reviewedPercent,
+  sortFiles,
+} from "./w5ReviewModel";
 
 const PAGE_SIZE = 100;
 
@@ -165,6 +172,9 @@ export function W5Review() {
   const queryClient = useQueryClient();
 
   const [filter, setFilter] = useState<ReviewFilter>("all");
+  // One source file to narrow the list to, picked from the side list.
+  const [fileFilter, setFileFilter] = useState<string | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   // Debounced copy of `search`; drives the query so typing stays snappy.
@@ -192,21 +202,31 @@ export function W5Review() {
   useEffect(() => {
     setPage(1);
     setSelectedKey(null);
-  }, [query]);
+  }, [query, fileFilter]);
 
   const pageQuery = useQuery({
-    queryKey: ["w5", translateJobId, "entries", filter, page, query] as const,
-    queryFn: () => api.entries(translateJobId as string, filter, page, PAGE_SIZE, query),
+    queryKey: ["w5", translateJobId, "entries", filter, page, query, fileFilter] as const,
+    queryFn: () =>
+      api.entries(translateJobId as string, filter, page, PAGE_SIZE, query, fileFilter),
     enabled: translateJobId !== null,
     placeholderData: keepPreviousData,
   });
 
   // One counts request for every filter chip (was one entries request per filter).
   const countsQuery = useQuery({
-    queryKey: ["w5", translateJobId, "counts", query],
-    queryFn: () => api.entryCounts(translateJobId as string, query),
+    queryKey: ["w5", translateJobId, "counts", query, fileFilter],
+    queryFn: () => api.entryCounts(translateJobId as string, query, fileFilter),
     enabled: translateJobId !== null,
     placeholderData: keepPreviousData,
+  });
+
+  // Per-file totals for the side list; fetched only while it is open.
+  const filesQuery = useQuery({
+    queryKey: ["w5", translateJobId, "files"],
+    queryFn: () => api.entryFiles(translateJobId as string),
+    enabled: translateJobId !== null && showFiles,
+    placeholderData: keepPreviousData,
+    select: (data) => sortFiles(data.files),
   });
   const counts = useMemo(() => {
     const map = {} as Record<ReviewFilter, number | null>;
@@ -216,7 +236,7 @@ export function W5Review() {
   // Review progress is over the whole run, never the searched subset; with
   // no search this is the same query as `countsQuery` and is deduplicated.
   const progressQuery = useQuery({
-    queryKey: ["w5", translateJobId, "counts", ""],
+    queryKey: ["w5", translateJobId, "counts", "", null],
     queryFn: () => api.entryCounts(translateJobId as string, ""),
     enabled: translateJobId !== null,
     placeholderData: keepPreviousData,
@@ -295,7 +315,7 @@ export function W5Review() {
   };
 
   /* Review sign-off. Persisted by the engine in the session's journal. */
-  const pageKey = ["w5", translateJobId, "entries", filter, page, query] as const;
+  const pageKey = ["w5", translateJobId, "entries", filter, page, query, fileFilter] as const;
   const reviewMut = useMutation({
     mutationFn: ({ refs, reviewed }: { refs: EntryRef[]; reviewed: boolean }) =>
       api.markReviewed(translateJobId as string, refs, reviewed),
@@ -613,6 +633,20 @@ export function W5Review() {
         {REVIEW_FILTERS.map((f) => chip(f))}
         <div className="mx-1 h-5 w-px bg-edge" />
         <button
+          onClick={() => setShowFiles((v) => !v)}
+          aria-pressed={showFiles}
+          className={`flex items-center gap-[6px] border px-[10px] py-[6px] text-[11px] font-semibold ${
+            showFiles || fileFilter !== null
+              ? "border-accent bg-accent/8 text-accent"
+              : "border-edge text-text2 hover:border-edge2 hover:text-text"
+          }`}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M1 2 H4 M1 6 H4 M1 10 H4 M6 2 H11 M6 6 H11 M6 10 H11" />
+          </svg>
+          {t("w5.files.toggle")}
+        </button>
+        <button
           onClick={() => setColorPreview((v) => !v)}
           className={`flex items-center gap-[6px] border px-[10px] py-[6px] text-[11px] font-semibold ${
             colorPreview
@@ -663,9 +697,75 @@ export function W5Review() {
       </div>
 
       {/* 2-col: table + detail */}
-      <div className="grid grid-cols-[1fr_400px] border border-t-0 border-line2 bg-raised">
+      <div
+        className={`grid ${showFiles ? "grid-cols-[220px_minmax(0,1fr)_380px]" : "grid-cols-[minmax(0,1fr)_400px]"} border border-t-0 border-line2 bg-raised`}
+      >
+        {/* Per-file progress */}
+        {showFiles && (
+          <nav aria-label={t("w5.files.label")} className="max-h-[620px] overflow-y-auto border-r border-line2">
+            <button
+              type="button"
+              aria-current={fileFilter === null}
+              onClick={() => setFileFilter(null)}
+              className={`w-full border-b border-line px-3 py-2 text-left font-mono text-[11px] font-semibold ${
+                fileFilter === null ? "bg-accent/8 text-accent" : "text-text2 hover:bg-raised-hover hover:text-text"
+              }`}
+            >
+              {t("w5.files.all")}
+            </button>
+            {filesQuery.isError ? (
+              <div className="px-3 py-4 font-mono text-[11px] text-red">{t("w5.files.loadError")}</div>
+            ) : (
+              (filesQuery.data ?? []).map((f) => {
+                const label = fileLabel(f.file);
+                const active = fileFilter === f.file;
+                const pct = reviewedPercent(f.reviewed, f.total) ?? 0;
+                return (
+                  <button
+                    key={f.file}
+                    type="button"
+                    title={f.file}
+                    aria-current={active}
+                    onClick={() => setFileFilter(active ? null : f.file)}
+                    className={`block w-full border-b border-line px-3 py-2 text-left ${
+                      active ? "bg-accent/8" : "hover:bg-raised-hover"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span
+                        className={`overflow-hidden text-[12px] font-semibold text-ellipsis whitespace-nowrap ${active ? "text-accent" : "text-text"}`}
+                      >
+                        {label.mod}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-text3">
+                        {formatInt(f.reviewed)}/{formatInt(f.total)}
+                      </span>
+                    </div>
+                    <div className="overflow-hidden font-mono text-[10px] text-ellipsis whitespace-nowrap text-text3">
+                      {label.name}
+                    </div>
+                    <div className="mt-[4px] h-[2px] bg-line2">
+                      <div className="h-full" style={{ width: `${pct}%`, background: REVIEWED_COLOR }} />
+                    </div>
+                    {(f.failed > 0 || f.modified > 0) && (
+                      <div className="mt-[3px] flex gap-2 font-mono text-[10px]">
+                        {f.failed > 0 && (
+                          <span className="text-red">{t("w5.files.failed", { n: formatInt(f.failed) })}</span>
+                        )}
+                        {f.modified > 0 && (
+                          <span className="text-blue">{t("w5.files.modified", { n: formatInt(f.modified) })}</span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </nav>
+        )}
+
         {/* Table */}
-        <div className="border-r border-line2">
+        <div className="min-w-0 border-r border-line2">
           <div className={`grid ${ROW_GRID} gap-[10px] border-b border-line2 bg-hover px-[14px] py-2 font-mono text-[10px] font-bold tracking-[0.06em] text-text3 uppercase`}>
             <div />
             <div />
@@ -794,7 +894,20 @@ export function W5Review() {
 
           {/* Table footer */}
           <div className="flex items-center justify-between border-t border-line2 bg-hover px-[14px] py-2 font-mono text-[11px] text-text3">
-            <div>{t("w5.footerCount", { total: formatInt(total), shown: formatInt(rows.length) })}</div>
+            <div className="flex min-w-0 items-center gap-2">
+              <span>{t("w5.footerCount", { total: formatInt(total), shown: formatInt(rows.length) })}</span>
+              {fileFilter !== null && (
+                <button
+                  type="button"
+                  onClick={() => setFileFilter(null)}
+                  title={fileFilter}
+                  aria-label={t("w5.files.clear")}
+                  className="overflow-hidden border border-accent px-[6px] text-ellipsis whitespace-nowrap text-accent hover:bg-accent/8"
+                >
+                  {fileLabel(fileFilter).mod} · {fileLabel(fileFilter).name} ✕
+                </button>
+              )}
+            </div>
             <div className="flex gap-3">
               <span className="text-text3">{t("w5.hintMove")}</span>
               <span className="text-text3">{t("w5.hintEdit")}</span>

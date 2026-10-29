@@ -18,7 +18,16 @@
     "unreviewed": "검수 안 함",
     "reviewed": "검수 완료"
   },
-  "glossaryMissing": "용어집: {{terms}} 누락",
+  "files": {
+    "toggle": "파일별",
+    "label": "파일별 진행",
+    "all": "전체 파일",
+    "failed": "실패 {{n}}",
+    "modified": "수정 {{n}}",
+    "clear": "파일 필터 해제",
+    "loadError": "파일 목록을 불러오지 못했습니다"
+  },
+  "glossaryMissing":"용어집: {{terms}} 누락",
   "markPage":"이 페이지 {{n}}건 검수 완료",
   "unmarkPage": "이 페이지 {{n}}건 검수 해제",
   "colorPreview": "§색코드 미리보기",

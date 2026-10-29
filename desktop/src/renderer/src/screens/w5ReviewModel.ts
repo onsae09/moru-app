@@ -30,6 +30,32 @@ export function nextRowId(rows: readonly EntryRef[], currentId: string): string 
   return next === undefined ? null : entryId(next);
 }
 
+/**
+ * A source file's display label: the mod (resource namespace) it belongs to,
+ * and a short name. Lang files are all called `en_us.json`, so the mod is
+ * the part that tells two of them apart.
+ *
+ *   kubejs/assets/create/lang/en_us.json -> { mod: "create", name: "lang/en_us.json" }
+ *   config/ftbquests/quests/chapters/a.snbt -> { mod: "config", name: "chapters/a.snbt" }
+ */
+export function fileLabel(file: string): { mod: string; name: string } {
+  const parts = file.split(/[\\/]/).filter((p) => p !== "");
+  const assets = parts.indexOf("assets");
+  const mod =
+    assets !== -1 && parts[assets + 1] !== undefined ? parts[assets + 1] : (parts[0] ?? file);
+  const name = parts.slice(-2).join("/") || file;
+  return { mod, name };
+}
+
+/** Files ordered for the side list: by mod, then by file path. */
+export function sortFiles<T extends { file: string }>(files: readonly T[]): T[] {
+  return [...files].sort((a, b) => {
+    const am = fileLabel(a.file).mod;
+    const bm = fileLabel(b.file).mod;
+    return am === bm ? a.file.localeCompare(b.file) : am.localeCompare(bm);
+  });
+}
+
 /** Share of entries signed off, as a 0..100 percentage; null when empty. */
 export function reviewedPercent(reviewed: number | null, total: number | null): number | null {
   if (reviewed === null || total === null || total <= 0) return null;

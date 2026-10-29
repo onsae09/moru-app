@@ -2764,3 +2764,59 @@ def test_glossary_filter_follows_edits_and_glossary_changes(
     assert glossary_keys() == []
     counts = client.get(f"/translate/{record.id}/entries/counts", headers=AUTH).json()
     assert counts["glossary"] == 0
+
+
+# -- review: per-file progress -----------------------------------------------
+
+
+def test_files_endpoint_aggregates_and_file_param_narrows(
+    client: TestClient, tmp_path: Path
+) -> None:
+    record = _install_glossary_review_job(client, tmp_path)
+    other = "kubejs/assets/other/lang/en_us.json"
+    record.result.entries.append(
+        EntryResult(
+            key="item.x",
+            file=other,
+            source_text="X",
+            translated_text="エックス",
+            status=EntryStatus.MODIFIED,
+        )
+    )
+    response = client.post(
+        f"/translate/{record.id}/entries/reviewed",
+        json={
+            "refs": [
+                {"file": "mod/lang/en_us.json", "key": "item.pick"},
+                {"file": other, "key": "item.x"},
+            ],
+            "reviewed": True,
+        },
+        headers=AUTH,
+    )
+    assert response.status_code == 200, response.text
+
+    # Not swallowed by the `{entry_key:path}` routes.
+    response = client.get(f"/translate/{record.id}/entries/files", headers=AUTH)
+    assert response.status_code == 200, response.text
+    assert response.json()["files"] == [
+        {"file": other, "total": 1, "failed": 0, "modified": 1, "reviewed": 1},
+        {
+            "file": "mod/lang/en_us.json",
+            "total": 6,
+            "failed": 1,
+            "modified": 0,
+            "reviewed": 1,
+        },
+    ]
+
+    response = client.get(
+        f"/translate/{record.id}/entries", params={"file": other}, headers=AUTH
+    )
+    assert [e["key"] for e in response.json()["entries"]] == ["item.x"]
+    counts = client.get(
+        f"/translate/{record.id}/entries/counts", params={"file": other}, headers=AUTH
+    ).json()
+    assert counts["all"] == 1
+    assert counts["reviewed"] == 1
+    assert counts["unreviewed"] == 0

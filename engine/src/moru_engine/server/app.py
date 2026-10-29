@@ -659,6 +659,12 @@ def create_app(
             miss_index_holder[cache_key] = index
         return index.for_entries(result.entries)
 
+    def _in_file(
+        entries: list[EntryResult], file: str | None
+    ) -> list[EntryResult]:
+        """Entries of one source file, or all of them when none is named."""
+        return entries if file is None else [e for e in entries if e.file == file]
+
     def _drop_glossary_caches() -> None:
         """Forget every glossary-derived cache after the glossary changed.
 
@@ -717,12 +723,44 @@ def create_app(
     # otherwise swallow "counts" as an entry key.
     @api.get("/translate/{job_id}/entries/counts")
     async def translate_entry_counts(
-        job_id: str, search: str = Query("", max_length=200)
+        job_id: str,
+        search: str = Query("", max_length=200),
+        file: str | None = Query(None, max_length=1024),
     ) -> dict[str, int]:
-        """Every bucket's size in one pass over the result."""
+        """Every bucket's size in one pass over the result (or one file)."""
         _, result = _get_pipeline_result(job_id)
         misses = await asyncio.to_thread(_glossary_misses, result)
-        return manual.counts(job_id, result.entries, search, misses)
+        return manual.counts(job_id, _in_file(result.entries, file), search, misses)
+
+    @api.get("/translate/{job_id}/entries/files")
+    async def translate_entry_files(job_id: str) -> dict[str, Any]:
+        """Per-source-file progress for the review screen's side list.
+
+        One pass over the result. The review table is paginated, so the
+        client cannot add these up from the rows it holds.
+        """
+        _, result = _get_pipeline_result(job_id)
+        state = manual.state(job_id)
+        files: dict[str, dict[str, Any]] = {}
+        for e in result.entries:
+            row = files.get(e.file)
+            if row is None:
+                row = files[e.file] = {
+                    "file": e.file,
+                    "total": 0,
+                    "failed": 0,
+                    "modified": 0,
+                    "reviewed": 0,
+                }
+            row["total"] += 1
+            if e.status is EntryStatus.FAILED:
+                row["failed"] += 1
+            elif e.status is EntryStatus.MODIFIED:
+                row["modified"] += 1
+            mark = state.get(entry_ref(e.file, e.key))
+            if mark is not None and mark.reviewed:
+                row["reviewed"] += 1
+        return {"files": sorted(files.values(), key=lambda r: r["file"])}
 
     @api.post("/translate/{job_id}/entries/reviewed")
     async def mark_reviewed(job_id: str, body: ReviewMark) -> dict[str, int]:
@@ -749,8 +787,9 @@ def create_app(
         page: int = Query(1, ge=1),
         page_size: int = Query(100, ge=1, le=500),
         search: str = Query("", max_length=200),
+        file: str | None = Query(None, max_length=1024),
     ) -> dict[str, Any]:
-        """One page of review entries.
+        """One page of review entries, optionally from one source file.
 
         `search` filters across the WHOLE result set before paginating, so
         the review screen can find an entry that lives on any page — a
@@ -762,7 +801,9 @@ def create_app(
         _, result = _get_pipeline_result(job_id)
         # Cached per entry: after the first call this is a dict walk.
         misses = await asyncio.to_thread(_glossary_misses, result)
-        entries = manual.select(job_id, result.entries, filter, search, misses)
+        entries = manual.select(
+            job_id, _in_file(result.entries, file), filter, search, misses
+        )
         start = (page - 1) * page_size
         rows: list[dict[str, Any]] = []
         for e in entries[start : start + page_size]:

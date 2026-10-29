@@ -91,6 +91,15 @@ export interface EntryPage {
 /** GET /translate/{jobId}/entries/counts — every bucket in one pass. */
 export type EntryCounts = Record<EntryFilter, number>;
 
+/** GET /translate/{jobId}/entries/files — one row per source file. */
+export interface EntryFileProgress {
+  file: string;
+  total: number;
+  failed: number;
+  modified: number;
+  reviewed: number;
+}
+
 /**
  * POST /translate/{jobId}/validate — structured issues, unlike the flattened
  * English strings on `Entry.errors`. Switch on `issue_type` to localize;

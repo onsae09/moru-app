@@ -224,11 +224,40 @@ paths:
             text. Applied to the whole filtered set BEFORE pagination, so the
             review screen can find entries on any page.
           schema: { type: string, maxLength: 200 }
+        - name: file
+          in: query
+          description: Only entries of this source file (exact Entry.file).
+          schema: { type: string, maxLength: 1024 }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EntryPage" }
+  /translate/{jobId}/entries/files:
+    get:
+      summary: >
+        Per-source-file progress for the review screen's side list, in one
+        pass over the result: total, failed, modified and reviewed counts
+        per Entry.file, sorted by file.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [file, total, failed, modified, reviewed]
+                      properties:
+                        file: { type: string }
+                        total: { type: integer }
+                        failed: { type: integer }
+                        modified: { type: integer }
+                        reviewed: { type: integer }
   /translate/{jobId}/graph:
     get:
       summary: >
@@ -415,6 +444,10 @@ paths:
           in: query
           description: Applied before counting, same semantics as /entries.
           schema: { type: string, maxLength: 200 }
+        - name: file
+          in: query
+          description: Count only this source file's entries, as /entries.
+          schema: { type: string, maxLength: 1024 }
       responses:
         "200":
           content:

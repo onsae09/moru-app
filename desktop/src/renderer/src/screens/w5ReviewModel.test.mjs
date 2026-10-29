@@ -2,7 +2,32 @@ import { expect, test } from "bun:test";
 
 import ko from "../i18n/ko/w5.json";
 import en from "../i18n/en/w5.json";
-import { entryId, nextRowId, reviewedPercent } from "./w5ReviewModel.ts";
+import { entryId, fileLabel, nextRowId, reviewedPercent, sortFiles } from "./w5ReviewModel.ts";
+
+test("a lang file is labelled by its mod namespace", () => {
+  expect(fileLabel("kubejs/assets/create/lang/en_us.json")).toEqual({
+    mod: "create",
+    name: "lang/en_us.json",
+  });
+  expect(fileLabel("somemod/lang/en_us.json").mod).toBe("somemod");
+  expect(fileLabel("config\\ftbquests\\quests\\chapters\\a.snbt")).toEqual({
+    mod: "config",
+    name: "chapters/a.snbt",
+  });
+});
+
+test("the side list groups files by mod", () => {
+  const files = [
+    { file: "z/assets/b/lang/en_us.json" },
+    { file: "a/assets/c/lang/en_us.json" },
+    { file: "y/assets/b/lang/a.json" },
+  ];
+  expect(sortFiles(files).map((f) => f.file)).toEqual([
+    "y/assets/b/lang/a.json",
+    "z/assets/b/lang/en_us.json",
+    "a/assets/c/lang/en_us.json",
+  ]);
+});
 
 const rows = [
   { file: "a.json", key: "k1" },

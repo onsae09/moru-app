@@ -29,6 +29,7 @@ from .credentials import (
     CliAuthError,
     gemini_cli_headers,
 )
+from .http import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -286,11 +287,10 @@ class GeminiCliLLM(CustomLLM):
         }
         state = _StreamState()
         url = f"{CODE_ASSIST_ENDPOINT}{API_PATH}"
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = (await resp.aread()).decode(errors="replace")
-                    _check_status(resp.status_code, body)
-                async for line in resp.aiter_lines():
-                    parse_sse([line], state)
+        async with async_client().stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode(errors="replace")
+                _check_status(resp.status_code, body)
+            async for line in resp.aiter_lines():
+                parse_sse([line], state)
         return _fill_response(kwargs["model_response"], model, state)

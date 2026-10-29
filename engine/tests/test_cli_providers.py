@@ -1657,3 +1657,49 @@ async def test_gemini_refreshes_credentials_off_the_event_loop(monkeypatch) -> N
             model="gemini-3.5-flash", messages=[], model_response=ModelResponse()
         )
     assert seen == [True]
+
+
+async def test_codex_batches_share_one_pooled_client(monkeypatch) -> None:
+    """A client per request paid a fresh TCP+TLS handshake on every batch."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from moru_engine.cli_providers import http
+
+    sse = (
+        'data: {"type":"response.output_text.delta","delta":"ok"}\n\n'
+        'data: {"type":"response.completed","response":{"usage":'
+        '{"input_tokens":1,"output_tokens":1}}}\n\n'
+    )
+    clients: list[int] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=sse)
+
+    pooled = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    http._clients[asyncio.get_running_loop()] = pooled
+    original = http.async_client
+
+    def tracking() -> httpx.AsyncClient:
+        client = original()
+        clients.append(id(client))
+        return client
+
+    monkeypatch.setattr(codex, "async_client", tracking)
+    monkeypatch.setattr(
+        credentials.CODEX_STORE,
+        "credentials",
+        lambda: SimpleNamespace(access="t", account_id="a"),
+    )
+    for _ in range(2):
+        response = await codex.CodexLLM().acompletion(
+            model="gpt-5.5", messages=[{"role": "user", "content": "hi"}],
+            model_response=ModelResponse(),
+        )
+        assert response.choices[0].message.content == "ok"
+    assert clients == [id(pooled), id(pooled)]
+    assert not pooled.is_closed
+    await http.aclose_async_client()
+    assert pooled.is_closed
+    assert http.async_client() is not pooled
+    await http.aclose_async_client()

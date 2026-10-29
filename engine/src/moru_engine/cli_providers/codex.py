@@ -26,11 +26,13 @@ from litellm.types.utils import Choices, Message, ModelResponse, PromptTokensDet
 
 from .wire import strip_wire_marker
 from .credentials import CODEX_STORE, CliAuthError
+from .http import async_client
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://chatgpt.com/backend-api"
 API_URL = f"{BASE_URL}/codex/responses"
+_MODELS_TIMEOUT = httpx.Timeout(30.0)
 
 #: Pinned Codex client version (matches the `@openai/codex` release).
 CODEX_CLIENT_VERSION = "0.144.1"
@@ -291,20 +293,22 @@ async def fetch_models() -> list[str]:
     headers = build_headers(creds.access, creds.account_id, str(uuid.uuid4()))
     headers["Accept"] = "application/json"
     params = {"client_version": CODEX_CLIENT_VERSION}
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        for path in ("/codex/models", "/models"):
-            try:
-                resp = await client.get(f"{BASE_URL}{path}", headers=headers, params=params)
-            except httpx.HTTPError:
-                continue
-            if resp.status_code != 200:
-                continue
-            try:
-                models = _normalize_models(resp.json())
-            except ValueError:
-                continue
-            if models:
-                return models
+    client = async_client()
+    for path in ("/codex/models", "/models"):
+        try:
+            resp = await client.get(
+                f"{BASE_URL}{path}", headers=headers, params=params, timeout=_MODELS_TIMEOUT
+            )
+        except httpx.HTTPError:
+            continue
+        if resp.status_code != 200:
+            continue
+        try:
+            models = _normalize_models(resp.json())
+        except ValueError:
+            continue
+        if models:
+            return models
     return []
 
 
@@ -333,11 +337,10 @@ class CodexLLM(CustomLLM):
         payload = build_payload(model, kwargs["messages"], kwargs.get("optional_params") or {})
         headers = build_headers(creds.access, creds.account_id, str(uuid.uuid4()))
         state = _StreamState()
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            async with client.stream("POST", API_URL, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = (await resp.aread()).decode(errors="replace")
-                    _check_status(resp.status_code, body)
-                async for line in resp.aiter_lines():
-                    parse_sse([line], state)
+        async with async_client().stream("POST", API_URL, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode(errors="replace")
+                _check_status(resp.status_code, body)
+            async for line in resp.aiter_lines():
+                parse_sse([line], state)
         return _fill_response(kwargs["model_response"], model, state)

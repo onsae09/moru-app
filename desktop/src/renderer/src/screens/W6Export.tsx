@@ -17,6 +17,7 @@ import type {
   PipelineStats,
   UploadParams,
 } from "../../../shared/engine";
+import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { api, openJobEvents } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatCompact, formatDuration, formatInt, formatUsd, packInitials } from "@/lib/format";
@@ -339,9 +340,10 @@ export function W6Export() {
     }
   }
 
+  const { requestReset, dialog: resetDialog } = useWizardResetGuard();
+
   function finishAnd(screen: "home" | "w1"): void {
-    wizard.reset();
-    go(screen);
+    requestReset(screen);
   }
 
   return (
@@ -1131,6 +1133,7 @@ export function W6Export() {
           </button>
         </div>
       </div>
+      {resetDialog}
     </div>
   );
 }

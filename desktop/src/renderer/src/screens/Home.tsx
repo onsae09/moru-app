@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
 
+import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { moru } from "@/lib/bridge";
 import { formatCompact, formatInt, formatRelative, formatUsd, packInitials } from "@/lib/format";
 import { modelDisplayName } from "@/lib/models";
@@ -438,6 +439,7 @@ export function HomeScreen() {
   const resumeTranslate = useWizard((s) => s.resumeTranslate);
   const recentFolders = useSettings((s) => s.recentFolders);
   const queueActive = useTranslationQueue(selectQueueActive);
+  const { requestReset, dialog: resetDialog } = useWizardResetGuard();
   const [dragOver, setDragOver] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -661,10 +663,7 @@ export function HomeScreen() {
               <button
                 onClick={() => {
                   if (queueActive) go("queue");
-                  else {
-                    useWizard.getState().reset();
-                    go("w1");
-                  }
+                  else requestReset("w1");
                 }}
                 className="bg-accent px-4 py-2.5 text-[13px] font-bold text-bar hover:bg-accent-hi"
               >
@@ -739,6 +738,7 @@ export function HomeScreen() {
         {/* Community alerts */}
         <CommunityCard />
       </div>
+      {resetDialog}
     </div>
   );
 }

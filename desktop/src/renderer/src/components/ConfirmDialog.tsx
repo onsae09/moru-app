@@ -19,7 +19,8 @@ export interface ConfirmDialogProps {
   body?: ReactNode;
   /** Small mono label above the title. */
   eyebrow?: ReactNode;
-  confirmLabel: ReactNode;
+  /** Omit for an informational dialog with only the cancel/close button. */
+  confirmLabel?: ReactNode;
   /** Defaults to common.action.cancel. */
   cancelLabel?: ReactNode;
   onConfirm: () => void;
@@ -139,16 +140,18 @@ function DialogPanel({
           >
             {cancelLabel ?? t("common.action.cancel")}
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-            className={`px-3.5 py-2 text-[12px] font-bold text-sel-ink disabled:opacity-50 ${
-              danger ? "bg-red hover:bg-red-hi" : "bg-accent hover:bg-accent-hi"
-            }`}
-          >
-            {confirmLabel}
-          </button>
+          {confirmLabel !== undefined && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onConfirm}
+              className={`px-3.5 py-2 text-[12px] font-bold text-sel-ink disabled:opacity-50 ${
+                danger ? "bg-red hover:bg-red-hi" : "bg-accent hover:bg-accent-hi"
+              }`}
+            >
+              {confirmLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -80,5 +80,21 @@
   "unit": {
     "files": "{{count}} files",
     "entries": "{{count}} entries"
+  },
+  "resetGuard": {
+    "running": {
+      "title": {
+        "scan": "A scan is in progress",
+        "translate": "A translation is in progress",
+        "export": "An export is in progress"
+      },
+      "body": "Starting over now would lose track of this job. Wait for it to finish or cancel it from the progress screen first.",
+      "goToProgress": "Go to progress"
+    },
+    "unexported": {
+      "title": "Not exported yet",
+      "body": "This translation hasn't been exported as a resource pack yet. You can still reopen it later from History.",
+      "confirm": "Start over"
+    }
   }
 }

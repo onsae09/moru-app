@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { moru } from "@/lib/bridge";
 import { WEB_URL } from "@/lib/web";
 import { useAccount } from "@/stores/account";
 import { useRouter } from "@/stores/router";
 import { useSessions } from "@/stores/sessions";
 import { selectQueueActive, useTranslationQueue } from "@/stores/translationQueue";
-import { useWizard } from "@/stores/wizard";
 import type { UpdateState } from "../../../shared/bridge";
 
 function ActiveBar() {
@@ -65,14 +65,15 @@ export function Sidebar() {
     return moru.updates.onState(setUpdate);
   }, []);
 
+  const { requestReset, dialog: resetDialog } = useWizardResetGuard();
+
   const startNewTranslation = useCallback((): void => {
     if (queueActive) {
       go("queue");
       return;
     }
-    useWizard.getState().reset();
-    go("w1");
-  }, [go, queueActive]);
+    requestReset("w1");
+  }, [go, queueActive, requestReset]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -263,6 +264,7 @@ export function Sidebar() {
           </div>
         </div>
       </div>
+      {resetDialog}
     </nav>
   );
 }

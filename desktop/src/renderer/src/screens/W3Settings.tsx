@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Provider, SpeechLevel, TermStyle } from "../../../shared/engine";
 import { activateOnKey, pressable } from "@/components/a11y";
 import { ErrorDetails } from "@/components/ErrorDetails";
+import { Button, buttonClass } from "@/components/Button";
 import { ModelSelect } from "@/components/ModelSelect";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -1436,16 +1437,12 @@ export function W3Settings() {
           </div>
         )}
         <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => go("w2")}
-            className="flex cursor-pointer items-center gap-[6px] bg-transparent px-[18px] py-[10px] text-[13px] font-semibold text-text2 hover:text-text"
-          >
+          <Button variant="ghost" size={null} onClick={() => go("w2")} className="px-[18px] py-[10px] text-ui">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M8 2 L4 6 L8 10" />
             </svg>
             {t("common.action.back")}
-          </button>
+          </Button>
           <div className="flex items-center gap-3">
             <span className="font-mono text-[11px] text-text3">
               {presetName} · {modelDisplayName(settings.model)}
@@ -1500,7 +1497,7 @@ export function W3Settings() {
                 void wizard.startTranslate();
                 go("w4");
               }}
-              className="flex cursor-pointer items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi disabled:cursor-not-allowed disabled:opacity-40"
+              className={buttonClass("primary", "md")}
               style={canStart ? { boxShadow: "0 0 24px rgba(61,220,132,0.25)" } : undefined}
             >
               {t("w3.footer.start")}

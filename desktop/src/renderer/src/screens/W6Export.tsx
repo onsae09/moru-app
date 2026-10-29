@@ -17,6 +17,7 @@ import type {
   PipelineStats,
   UploadParams,
 } from "../../../shared/engine";
+import { Button } from "@/components/Button";
 import { ErrorDetails } from "@/components/ErrorDetails";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { api, openJobEvents } from "@/lib/api";
@@ -1109,32 +1110,23 @@ export function W6Export() {
 
       {/* Bottom actions */}
       <div className="flex items-center justify-between border-t border-line pt-5">
-        <button
-          className="flex items-center gap-[6px] px-[18px] py-[10px] text-[13px] font-semibold text-text2 hover:text-text"
-          onClick={() => go("w5")}
-        >
+        <Button variant="ghost" size={null} className="px-[18px] py-[10px] text-ui" onClick={() => go("w5")}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M8 2 L4 6 L8 10" />
           </svg>
           {t("w6.actions.backToReview")}
-        </button>
+        </Button>
         <div className="flex gap-2">
-          <button
-            className="border border-edge bg-transparent px-5 py-[10px] text-[13px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-            onClick={() => finishAnd("home")}
-          >
+          <Button variant="secondary" onClick={() => finishAnd("home")}>
             {t("w6.actions.home")}
-          </button>
-          <button
-            className="flex items-center gap-[6px] bg-line2 px-5 py-[10px] text-[13px] font-bold text-text hover:bg-edge"
-            onClick={() => finishAnd("w1")}
-          >
+          </Button>
+          <Button variant="neutral" onClick={() => finishAnd("w1")}>
             <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges">
               <rect x="5" y="1" width="2" height="10" fill="currentColor" />
               <rect x="1" y="5" width="10" height="2" fill="currentColor" />
             </svg>
             {t("w6.actions.newPack")}
-          </button>
+          </Button>
         </div>
       </div>
       {resetDialog}

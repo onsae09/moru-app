@@ -12,6 +12,14 @@
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", "Pretendard Variable", Pretendard, ui-monospace, monospace;
 
+  /* type scale (px, the design's working sizes) -> text-micro … text-display */
+  --text-micro: 10px; /* badges, kbd hints, mono meta */
+  --text-caption: 11px; /* mono labels, secondary lines */
+  --text-body: 12px; /* dense body, small buttons */
+  --text-ui: 13px; /* default UI text, buttons */
+  --text-title: 15px; /* dialog / card titles */
+  --text-display: 26px; /* screen headings */
+
   /* neutrals */
   --color-ink: #06090a; /* page backdrop */
   --color-bar: #0a100d; /* titlebar, deep wells */

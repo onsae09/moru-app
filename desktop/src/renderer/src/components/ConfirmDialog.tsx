@@ -13,6 +13,8 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Button } from "./Button";
+
 export interface ConfirmDialogProps {
   open: boolean;
   title: ReactNode;
@@ -28,8 +30,6 @@ export interface ConfirmDialogProps {
   variant?: "default" | "danger";
   /** Disables the confirm button (an action already in flight). */
   busy?: boolean;
-  /** Optional third action rendered left of cancel. */
-  secondary?: { label: ReactNode; onClick: () => void; danger?: boolean };
 }
 
 const FOCUSABLE =
@@ -50,7 +50,6 @@ function DialogPanel({
   onCancel,
   variant = "default",
   busy = false,
-  secondary,
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -106,51 +105,31 @@ function DialogPanel({
         onClick={(e) => e.stopPropagation()}
       >
         {eyebrow !== undefined && (
-          <div className="mb-2 font-mono text-[10px] font-semibold tracking-[0.08em] text-text3 uppercase">
+          <div className="mb-2 font-mono text-micro font-semibold tracking-[0.08em] text-text3 uppercase">
             {eyebrow}
           </div>
         )}
-        <div id={titleId} className="mb-2 text-[14px] font-bold text-text">
+        <div id={titleId} className="mb-2 text-title font-bold text-text">
           {title}
         </div>
         {body !== undefined && (
-          <div id={bodyId} className="mb-5 text-[12px] leading-relaxed text-text2">
+          <div id={bodyId} className="mb-5 text-body leading-relaxed text-text2">
             {body}
           </div>
         )}
         <div className={`flex justify-end gap-2 ${body === undefined ? "mt-5" : ""}`}>
-          {secondary !== undefined && (
-            <button
-              type="button"
-              onClick={secondary.onClick}
-              className={`mr-auto border px-3.5 py-2 text-[12px] font-semibold ${
-                secondary.danger
-                  ? "border-red/50 text-red hover:border-red"
-                  : "border-edge text-text2 hover:border-edge2 hover:text-text"
-              }`}
-            >
-              {secondary.label}
-            </button>
-          )}
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="border border-edge px-3.5 py-2 text-[12px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-          >
+          <Button ref={cancelRef} variant="secondary" size="sm" onClick={onCancel}>
             {cancelLabel ?? t("common.action.cancel")}
-          </button>
+          </Button>
           {confirmLabel !== undefined && (
-            <button
-              type="button"
+            <Button
+              variant={danger ? "danger" : "primary"}
+              size="sm"
               disabled={busy}
               onClick={onConfirm}
-              className={`px-3.5 py-2 text-[12px] font-bold text-sel-ink disabled:opacity-50 ${
-                danger ? "bg-red hover:bg-red-hi" : "bg-accent hover:bg-accent-hi"
-              }`}
             >
               {confirmLabel}
-            </button>
+            </Button>
           )}
         </div>
       </div>

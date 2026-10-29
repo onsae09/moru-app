@@ -57,8 +57,11 @@
   --color-red-hi: #f58585; /* danger button hover */
   --color-amber: #f5b454;
   --color-blue: #6bb3f5;
+  --color-sky: #38bdf8; /* OpenAI-compatible server card */
   --color-purple: #a78bfa;
   --color-discord: #5865f2;
+  /* untranslated entries: brighter than text4 (skipped), it is work to do */
+  --color-pending: #8a9aa8;
 
   /* motion (design keyframes, verbatim timing) */
   --animate-pxspin: pxspin 1s linear infinite;
@@ -184,8 +187,10 @@
   --color-red-hi: #a32020;
   --color-amber: #8f5a00;
   --color-blue: #1d64a8;
+  --color-sky: #0b6a94;
   --color-purple: #6a46cc;
   --color-discord: #4752c4;
+  --color-pending: #566778;
 }
 
 /* Element defaults live in the base layer so Tailwind utility classes

@@ -112,12 +112,12 @@ function PackRow({ name, path, launcher, selected, probe, translated, onSelect }
         )}
         {selected ? (
           <div className="flex h-5 w-5 items-center justify-center bg-accent">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#0A100D" strokeWidth="2">
+            <svg className="text-sel-ink" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M2 6 L5 9 L10 3" />
             </svg>
           </div>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#4A5A52" strokeWidth="1.5">
+          <svg className="text-text4" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M4 2 L8 6 L4 10" />
           </svg>
         )}
@@ -377,7 +377,7 @@ export function W1Select() {
       {/* Drop zone */}
       <div
         className={`relative mb-5 overflow-hidden border-2 border-dashed p-10 text-center ${
-          dragOver ? "border-accent bg-tint" : "border-[#2A3B33] bg-hover hover:border-accent hover:bg-tint"
+          dragOver ? "border-accent bg-tint" : "border-edge bg-hover hover:border-accent hover:bg-tint"
         }`}
         onDragEnter={(e) => {
           e.preventDefault();
@@ -410,19 +410,19 @@ export function W1Select() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 2px 2px, rgba(61,220,132,0.08) 1px, transparent 1px)",
+              "radial-gradient(circle at 2px 2px, color-mix(in srgb, var(--color-accent) 8%, transparent) 1px, transparent 1px)",
             backgroundSize: "12px 12px",
           }}
         />
 
         <div className="relative flex flex-col items-center gap-4">
           <div className="flex items-end gap-1">
-            <div className="h-8 w-5 border border-[#2A3B33] bg-line2" />
+            <div className="h-8 w-5 border border-edge bg-line2" />
             <div className="h-11 w-5 border border-edge2 bg-edge" />
-            <div className="h-6 w-5 border border-[#2A3B33] bg-line2" />
-            <div className="h-10 w-6 border border-accent-hi bg-accent shadow-[0_0_20px_rgba(61,220,132,0.4)]" />
+            <div className="h-6 w-5 border border-edge bg-line2" />
+            <div className="h-10 w-6 border border-accent-hi bg-accent shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_40%,transparent)]" />
             <div className="h-7 w-5 border border-edge2 bg-edge" />
-            <div className="h-9 w-5 border border-[#2A3B33] bg-line2" />
+            <div className="h-9 w-5 border border-edge bg-line2" />
           </div>
           <div>
             <div className="mb-1 text-lg font-bold tracking-[-0.01em] text-text">
@@ -466,7 +466,7 @@ export function W1Select() {
       {probeError !== null && (
         <div className="mb-5 flex items-center gap-3 border border-red/40 bg-red/6 px-4 py-3">
           <div className="flex h-5 w-5 shrink-0 items-center justify-center bg-red">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#0A0F0C" strokeWidth="2">
+            <svg className="text-sel-ink" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 2.5 V7" />
               <path d="M6 9.2 V9.6" />
             </svg>

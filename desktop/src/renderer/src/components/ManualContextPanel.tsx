@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Entry, EntryContext, ValidationIssue } from "../../../shared/engine";
-import { STATUS_COLOR, StatusIcon, tokensOf } from "@/components/EntryText";
+import { STATUS_TOKEN, StatusIcon, tokensOf } from "@/components/EntryText";
 import { api } from "@/lib/api";
 import { contentKind, fileLabel } from "@/stores/manual";
 
@@ -197,13 +197,13 @@ export function ManualContextPanel({
                     style={
                       ok
                         ? {
-                            background: "rgba(61,220,132,0.12)",
-                            borderColor: "rgba(61,220,132,0.3)",
+                            background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                            borderColor: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
                             color: "var(--color-accent)",
                           }
                         : {
-                            background: "rgba(242,107,107,0.12)",
-                            borderColor: "rgba(242,107,107,0.4)",
+                            background: "color-mix(in srgb, var(--color-red) 12%, transparent)",
+                            borderColor: "color-mix(in srgb, var(--color-red) 40%, transparent)",
                             color: "var(--color-red)",
                           }
                     }
@@ -212,7 +212,7 @@ export function ManualContextPanel({
                   </span>
                   <span
                     className="font-mono text-[10px]"
-                    style={{ color: ok ? "#6A7C74" : "#F26B6B" }}
+                    style={{ color: ok ? "var(--color-text3)" : "var(--color-red)" }}
                   >
                     {b.draft} / {b.source}
                   </span>
@@ -222,7 +222,7 @@ export function ManualContextPanel({
             {sectionCount > 0 && (
               <div
                 className="mt-1 font-mono text-[10px]"
-                style={{ color: draftSections === sectionCount ? "#6A7C74" : "#F5B454" }}
+                style={{ color: draftSections === sectionCount ? "var(--color-text3)" : "var(--color-amber)" }}
               >
                 {t("w5m.context.sectionCodes", {
                   draft: draftSections,
@@ -243,7 +243,7 @@ export function ManualContextPanel({
                 key={`${term.aliases.join(",")}:${term.term_ko}`}
                 label={term.aliases.join(" · ")}
                 value={term.term_ko}
-                color="#3DDC84"
+                color="var(--color-accent)"
                 hint={
                   term.key_scope.length > 0
                     ? t("w5m.context.keyScope", { scope: term.key_scope.join(", ") })
@@ -258,7 +258,7 @@ export function ManualContextPanel({
                 key={noun.source_like}
                 label={noun.source_like}
                 value={noun.preferred_ko}
-                color="#A78BFA"
+                color="var(--color-purple)"
                 title={t("w5m.context.insertTerm")}
                 onInsert={onInsert}
               />
@@ -285,7 +285,7 @@ export function ManualContextPanel({
               <InsertButton
                 label={t("w5m.context.tmExact", { origin: tmExact.origin })}
                 value={tmExact.translated_text}
-                color="#3DDC84"
+                color="var(--color-accent)"
                 title={t("w5m.context.insertTerm")}
                 onInsert={onInsert}
               />
@@ -294,11 +294,11 @@ export function ManualContextPanel({
               <div
                 key={`${other.file}:${other.key}`}
                 className="flex flex-col gap-[2px] border-l pl-2"
-                style={{ borderColor: other.agrees ? "#24322B" : "#F5B454" }}
+                style={{ borderColor: other.agrees ? "var(--color-edge)" : "var(--color-amber)" }}
               >
                 <span
                   className="font-mono text-[10px]"
-                  style={{ color: other.agrees ? "#6A7C74" : "#F5B454" }}
+                  style={{ color: other.agrees ? "var(--color-text3)" : "var(--color-amber)" }}
                 >
                   {other.agrees
                     ? t("w5m.context.sameSourceAgrees")
@@ -335,7 +335,7 @@ export function ManualContextPanel({
                 {s.translated_text !== null && s.translated_text !== "" && (
                   <div
                     className="text-[11px] leading-[1.5]"
-                    style={{ color: STATUS_COLOR[s.status] }}
+                    style={{ color: STATUS_TOKEN[s.status] }}
                   >
                     {s.translated_text}
                   </div>
@@ -354,7 +354,7 @@ export function ManualContextPanel({
               <div key={`${issue.issue_type}:${i}`} className="flex flex-col">
                 <span
                   className="font-mono text-[10px] font-bold"
-                  style={{ color: issue.severity === "error" ? "#F26B6B" : "#F5B454" }}
+                  style={{ color: issue.severity === "error" ? "var(--color-red)" : "var(--color-amber)" }}
                 >
                   {/* Localized off issue_type; `message` is English-only. */}
                   {t(`w5m.issue.${issue.issue_type}`, { defaultValue: issue.message })}

@@ -43,7 +43,7 @@ function formatSize(chars: number): string {
 /** Category icon by handler/name keyword. */
 function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: number }) {
   const hint = `${category.handler} ${category.name}`.toLowerCase();
-  let color = "#6A7C74";
+  let color = "var(--color-text4)";
   let body = (
     <>
       <rect x="2" y="4" width="10" height="6" />
@@ -51,7 +51,7 @@ function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: 
     </>
   );
   if (/quest|ftb/.test(hint)) {
-    color = "#3DDC84";
+    color = "var(--color-accent)";
     body = (
       <>
         <path d="M2 2 H12 V11 L10 12 L7 11 L4 12 L2 11 Z" />
@@ -59,7 +59,7 @@ function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: 
       </>
     );
   } else if (/patchouli|book|guide/.test(hint)) {
-    color = "#A78BFA";
+    color = "var(--color-purple)";
     body = (
       <>
         <rect x="2" y="2" width="10" height="10" />
@@ -67,7 +67,7 @@ function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: 
       </>
     );
   } else if (/lang/.test(hint)) {
-    color = "#6BB3F5";
+    color = "var(--color-blue)";
     body = (
       <>
         <path d="M2 12 L5 3 L8 12 M3 9 H7" />
@@ -75,7 +75,7 @@ function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: 
       </>
     );
   } else if (/kubejs|script|js/.test(hint)) {
-    color = "#F5B454";
+    color = "var(--color-amber)";
     body = (
       <>
         <path d="M2 2 L4 7 L2 12 M12 2 L10 7 L12 12" />
@@ -89,7 +89,8 @@ function CategoryIcon({ category, size = 14 }: { category: ScanCategory; size?: 
       height={size}
       viewBox="0 0 14 14"
       fill="none"
-      stroke={color}
+      stroke="currentColor"
+      style={{ color }}
       strokeWidth="1.5"
       className="shrink-0"
     >
@@ -121,11 +122,12 @@ function CheckBox({
       style={{ width: size, height: size }}
     >
       <svg
+        className="text-sel-ink"
         width={size - 4}
         height={size - 4}
         viewBox="0 0 10 10"
         fill="none"
-        stroke="#0A100D"
+        stroke="currentColor"
         strokeWidth="2"
       >
         {checked ? <path d="M1 5 L4 8 L9 2" /> : <path d="M2 5 L8 5" />}
@@ -239,7 +241,7 @@ function FailedState() {
       <StepHeader label={t("w2.stepLabel")} />
       <div className="mx-auto mt-16 max-w-[520px] border border-red/40 bg-card p-8 text-center">
         <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center bg-red/12">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#F26B6B" strokeWidth="2">
+          <svg className="text-red" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 3 L13 13 M13 3 L3 13" />
           </svg>
         </div>
@@ -1041,7 +1043,7 @@ function CategoryRow({
               }`}
             >
               <div className="flex h-3 w-3 shrink-0 items-center justify-center bg-accent">
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="2">
+                <svg className="text-sel-ink" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M1 4 L3 6 L7 2" />
                 </svg>
               </div>
@@ -1100,7 +1102,7 @@ function FileRows({
           const sampleRows = Object.entries(f.sample);
           return (
             <div key={f.path}>
-              <div className="flex items-center border-b border-line bg-[#1A2420] px-3.5 py-2">
+              <div className="flex items-center border-b border-line bg-line px-3.5 py-2">
                 <span className="truncate font-mono text-[12px] font-semibold text-text" title={f.path}>
                   {f.path.split("/").at(-1)}
                 </span>

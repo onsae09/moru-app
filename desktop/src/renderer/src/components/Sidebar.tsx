@@ -99,7 +99,7 @@ export function Sidebar() {
           className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] font-bold text-bar hover:brightness-110 active:translate-y-px"
           style={{
             background: "linear-gradient(180deg, var(--color-accent) 0%, var(--color-accent-mid) 100%)",
-            boxShadow: "0 1px 0 var(--color-accent-hi) inset, 0 2px 0 var(--color-accent-lo), 0 6px 12px rgba(61,220,132,0.15)",
+            boxShadow: "0 1px 0 var(--color-accent-hi) inset, 0 2px 0 var(--color-accent-lo), 0 6px 12px color-mix(in srgb, var(--color-accent) 15%, transparent)",
           }}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" shapeRendering="crispEdges">

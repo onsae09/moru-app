@@ -383,7 +383,7 @@ export function W5Manual(): ReactNode {
                   className="flex shrink-0 items-center gap-2 bg-accent px-4 py-[10px] text-[13px] font-bold whitespace-nowrap text-sel-ink hover:bg-accent-hi disabled:cursor-default disabled:opacity-50"
                 >
                   {t("w5m.focus.commitNext")}
-                  <span className="bg-[rgba(10,16,13,0.15)] px-1 py-px font-mono text-[10px]">
+                  <span className="bg-sel-ink/15 px-1 py-px font-mono text-[10px]">
                     ⌃↵
                   </span>
                 </button>

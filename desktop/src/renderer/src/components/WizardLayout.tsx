@@ -19,7 +19,7 @@ const STEPS: { screen: Screen; num: string; key: string }[] = [
 
 function CheckIcon() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3DDC84" strokeWidth="1.8">
+    <svg className="text-accent" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M1 5 L4 8 L9 2" />
     </svg>
   );
@@ -153,7 +153,7 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
               <div
                 key={step.screen}
                 className="flex-1"
-                style={{ background: stepDone[step.screen] ? "#3DDC84" : undefined }}
+                style={{ background: stepDone[step.screen] ? "var(--color-accent)" : undefined }}
               />
             ))}
           </div>

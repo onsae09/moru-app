@@ -64,11 +64,12 @@ function maskKey(key: string): string {
 }
 
 function TabIcon({ tab, active }: { tab: TabId; active: boolean }) {
-  const stroke = active ? "#3DDC84" : "currentColor";
+  // currentColor + a CSS color, not a var() in the presentation attribute.
+  const style = active ? { color: "var(--color-accent)" } : undefined;
   switch (tab) {
     case "models":
       return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={stroke} strokeWidth="1.5">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={style} strokeWidth="1.5">
           <rect x="2" y="4" width="10" height="7" />
           <path d="M5 4 V2 H9 V4" />
           <circle cx="7" cy="8" r="1.5" />
@@ -76,21 +77,21 @@ function TabIcon({ tab, active }: { tab: TabId; active: boolean }) {
       );
     case "general":
       return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={stroke} strokeWidth="1.5">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={style} strokeWidth="1.5">
           <circle cx="7" cy="7" r="5" />
           <path d="M2 7 H12 M7 2 A5 8 0 0 1 7 12 M7 2 A5 8 0 0 0 7 12" />
         </svg>
       );
     case "account":
       return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={stroke} strokeWidth="1.5">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={style} strokeWidth="1.5">
           <circle cx="7" cy="5" r="2.5" />
           <path d="M2 12 A5 4 0 0 1 12 12" />
         </svg>
       );
     case "about":
       return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={stroke} strokeWidth="1.5">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={style} strokeWidth="1.5">
           <circle cx="7" cy="7" r="5" />
           <path d="M7 4 V7 M7 10 V10.01" />
         </svg>
@@ -566,7 +567,7 @@ function CompatCard({
   };
 
   return (
-    <div className="relative mb-3 overflow-hidden border border-[#38BDF8] bg-raised">
+    <div className="relative mb-3 overflow-hidden border border-sky bg-raised">
       <ConfirmDialog
         open={confirmRemove}
         variant="danger"
@@ -582,12 +583,12 @@ function CompatCard({
       <div
         className="absolute -top-2 -right-2 h-[60px] w-[60px] opacity-20"
         style={{
-          backgroundImage: "radial-gradient(circle at 2px 2px, #38BDF8 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-sky) 1px, transparent 1px)",
           backgroundSize: "6px 6px",
         }}
       />
       <div className="flex items-center gap-[14px] border-b border-line2 px-5 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#38BDF8] font-mono text-sm font-bold text-sel-ink">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-sky font-mono text-sm font-bold text-sel-ink">
           C
         </div>
         <div className="min-w-0 flex-1">
@@ -595,7 +596,7 @@ function CompatCard({
             <span className="text-sm font-bold text-text">
               {t("settings.models.compatTitle")}
             </span>
-            <span className="bg-[rgba(56,189,248,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-[#38BDF8]">
+            <span className="bg-sky/8 px-[5px] py-[2px] font-mono text-[10px] text-sky">
               {t("settings.models.compatChip")}
             </span>
           </div>
@@ -603,7 +604,7 @@ function CompatCard({
         </div>
         <div className="shrink-0 text-right">
           {models.length > 0 && (
-            <div className="font-mono text-xs font-bold text-[#38BDF8]">
+            <div className="font-mono text-xs font-bold text-sky">
               {t("settings.models.ollamaModelCount", { n: models.length })}
             </div>
           )}
@@ -797,9 +798,9 @@ function SelectChip({
         height="10"
         viewBox="0 0 10 10"
         fill="none"
-        stroke="#6A7C74"
+        stroke="currentColor"
         strokeWidth="1.5"
-        className="pointer-events-none absolute top-1/2 right-[10px] -translate-y-1/2"
+        className="text-text4 pointer-events-none absolute top-1/2 right-[10px] -translate-y-1/2"
       >
         <path d="M2 3 L5 6 L8 3" />
       </svg>
@@ -1015,7 +1016,7 @@ function AccountTab() {
         )}
         <div className="flex max-w-[520px] flex-col items-center border border-line2 bg-raised px-10 py-10 text-center">
           <div className="flex h-12 w-12 items-center justify-center border border-edge bg-card">
-            <svg width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="#6A7C74" strokeWidth="1.5">
+            <svg className="text-text4" width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
               <circle cx="7" cy="5" r="2.5" />
               <path d="M2 12 A5 4 0 0 1 12 12" />
             </svg>

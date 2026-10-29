@@ -134,7 +134,7 @@ function RecentJobCard({
       {running ? (
         <div
           className="absolute inset-x-0 top-0 h-0.5"
-          style={{ background: `linear-gradient(90deg, #3DDC84 0%, #1F8A5B ${pct}%, #1F2B25 ${pct}%)` }}
+          style={{ background: `linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-lo) ${pct}%, var(--color-line2) ${pct}%)` }}
         />
       ) : (
         <div
@@ -155,7 +155,7 @@ function RecentJobCard({
             running
               ? {
                   backgroundImage:
-                    "repeating-linear-gradient(45deg, transparent 0 4px, rgba(61,220,132,0.06) 4px 5px)",
+                    "repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--color-accent) 6%, transparent) 4px 5px)",
                 }
               : undefined
           }

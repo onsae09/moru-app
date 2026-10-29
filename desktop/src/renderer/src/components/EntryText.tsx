@@ -30,6 +30,28 @@ export const STATUS_COLOR: Record<EntryStatus, string> = {
   pending: "#8A9AA8",
 };
 
+/**
+ * Theme-following twin of STATUS_COLOR (CSS var() references). Prefer this
+ * everywhere: STATUS_COLOR stays raw hex only for callers that still append
+ * a hex alpha suffix to it, which a var() cannot take — tint those with
+ * `color-mix(in srgb, <token> N%, transparent)` instead.
+ */
+export const STATUS_TOKEN: Record<EntryStatus, string> = {
+  passed: "var(--color-accent)",
+  warning: "var(--color-amber)",
+  failed: "var(--color-red)",
+  modified: "var(--color-blue)",
+  tm_hit: "var(--color-purple)",
+  migrated: "var(--color-purple)",
+  skipped: "var(--color-text4)",
+  pending: "var(--color-pending)",
+};
+
+/** `color` (any CSS color, var() included) at `percent`% over transparent. */
+export function tint(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
 /** i18n keys for each status, so both screens label them the same way. */
 export const STATUS_LABEL_KEY: Record<EntryStatus, string> = {
   passed: "common.status.passed",
@@ -54,7 +76,7 @@ export function StatusIcon({
   switch (status) {
     case "failed":
       glyph = (
-        <svg width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="2">
+        <svg className="text-sel-ink" width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M2 2 L6 6 M6 2 L2 6" />
         </svg>
       );
@@ -62,52 +84,52 @@ export function StatusIcon({
     case "warning":
       glyph = (
         <svg width={s} height={s} viewBox="0 0 8 8" shapeRendering="crispEdges">
-          <rect x="3" y="1" width="2" height="4" fill="#0A100D" />
-          <rect x="3" y="6" width="2" height="1" fill="#0A100D" />
+          <rect className="text-sel-ink" x="3" y="1" width="2" height="4" fill="currentColor" />
+          <rect className="text-sel-ink" x="3" y="6" width="2" height="1" fill="currentColor" />
         </svg>
       );
       break;
     case "modified":
       glyph = (
-        <svg width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="1.5">
-          <path d="M1 6 L5 2 L7 4 L3 8 Z" fill="#0A100D" />
+        <svg className="text-sel-ink" width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path className="text-sel-ink" d="M1 6 L5 2 L7 4 L3 8 Z" fill="currentColor" />
         </svg>
       );
       break;
     case "tm_hit":
       glyph = (
         <svg width={s} height={s} viewBox="0 0 8 8" shapeRendering="crispEdges">
-          <rect x="1" y="1" width="6" height="2" fill="#0A100D" />
-          <rect x="1" y="5" width="6" height="2" fill="#0A100D" />
+          <rect className="text-sel-ink" x="1" y="1" width="6" height="2" fill="currentColor" />
+          <rect className="text-sel-ink" x="1" y="5" width="6" height="2" fill="currentColor" />
         </svg>
       );
       break;
     case "migrated":
       glyph = (
-        <svg width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="1.5">
-          <path d="M1 2 H5 V1 L7 3 L5 5 V4 H1 Z" fill="#0A100D" />
-          <path d="M7 6 H3 V7 L1 5 L3 3 V4 H7 Z" fill="#0A100D" />
+        <svg className="text-sel-ink" width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path className="text-sel-ink" d="M1 2 H5 V1 L7 3 L5 5 V4 H1 Z" fill="currentColor" />
+          <path className="text-sel-ink" d="M7 6 H3 V7 L1 5 L3 3 V4 H7 Z" fill="currentColor" />
         </svg>
       );
       break;
     case "skipped":
       glyph = (
         <svg width={s} height={s} viewBox="0 0 8 8" shapeRendering="crispEdges">
-          <rect x="1" y="3" width="6" height="2" fill="#0A100D" />
+          <rect className="text-sel-ink" x="1" y="3" width="6" height="2" fill="currentColor" />
         </svg>
       );
       break;
     case "pending":
       // Hollow: nothing has been written into this entry yet.
       glyph = (
-        <svg width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="1.5">
+        <svg className="text-sel-ink" width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
           <rect x="1.5" y="1.5" width="5" height="5" />
         </svg>
       );
       break;
     default:
       glyph = (
-        <svg width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="#0A100D" strokeWidth="2">
+        <svg className="text-sel-ink" width={s} height={s} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M1 4 L3 6 L7 2" />
         </svg>
       );
@@ -115,7 +137,7 @@ export function StatusIcon({
   return (
     <div
       className="flex items-center justify-center"
-      style={{ width: size, height: size, background: STATUS_COLOR[status] }}
+      style={{ width: size, height: size, background: STATUS_TOKEN[status] }}
     >
       {glyph}
     </div>
@@ -183,12 +205,10 @@ export function useTokenPatterns(): void {
 }
 
 /** accent -> blue -> purple -> amber, cycling; same token = same color. */
-const TOKEN_PALETTE = [
-  { color: "var(--color-accent)", bg: "rgba(61,220,132,0.15)", border: "rgba(61,220,132,0.3)" },
-  { color: "var(--color-blue)", bg: "rgba(107,179,245,0.15)", border: "rgba(107,179,245,0.3)" },
-  { color: "var(--color-purple)", bg: "rgba(167,139,250,0.15)", border: "rgba(167,139,250,0.3)" },
-  { color: "var(--color-amber)", bg: "rgba(245,180,84,0.15)", border: "rgba(245,180,84,0.3)" },
-];
+const TOKEN_PALETTE = ["accent", "blue", "purple", "amber"].map((name) => {
+  const color = `var(--color-${name})`;
+  return { color, bg: tint(color, 15), border: tint(color, 30) };
+});
 
 export function tokenColorMap(...texts: string[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -236,6 +256,10 @@ export function TokenText({
 }
 
 /* ---- Minecraft § color rendering -------------------------------------- */
+
+// The game's own palette, kept verbatim in both themes: these are the
+// colors the text will have in game. Pale codes (§e, §f, §a) read poorly
+// on the light theme, as dark codes (§0, §1) already do on the dark one.
 
 const MC_COLORS: Record<string, string> = {
   "0": "#000000",

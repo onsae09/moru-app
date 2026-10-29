@@ -2422,7 +2422,10 @@ class TranslationPipeline:
             by_file.setdefault(entry.file, []).append(entry)
 
         graph = self._ensure_graph(result)
-        for rel, entries in by_file.items():
+
+        async def retry_file(
+            rel: str, entries: list[EntryResult]
+        ) -> tuple[dict[str, ProtectedText], dict[str, str], dict[str, list[str]]]:
             protector = PlaceholderProtector()
             protected = {e.key: protector.protect(e.source_text) for e in entries}
             pending = {e.key: protected[e.key].protected for e in entries}
@@ -2434,22 +2437,37 @@ class TranslationPipeline:
             # amplification loop, on a path that exists because these
             # entries already failed once.
             unique, aliases = batching.dedup_entries(pending)
-            translations: dict[str, str] = {}
-            failures: dict[str, list[str]] = {}
-            for chunk in self._make_batches(unique):
+
+            async def retry_chunk(
+                chunk: dict[str, str],
+            ) -> tuple[dict[str, str], dict[str, list[str]]]:
                 chunk_glossary = GlossaryFilter.filter_for_texts(
                     glossary, {key: source_by_key[key] for key in chunk}
                 ).to_context_string()
                 context = self._with_sibling_context(
                     f"retry; file: {rel}", graph, rel, chunk
                 )
-                chunk_translations, chunk_failures = await self._translate_batch(
-                    chunk, chunk_glossary, context
-                )
+                return await self._translate_batch(chunk, chunk_glossary, context)
+
+            translations: dict[str, str] = {}
+            failures: dict[str, list[str]] = {}
+            # Concurrent like a normal run: _translate_batch admits each
+            # chunk through the shared limiter, which bounds the load.
+            for chunk_translations, chunk_failures in await asyncio.gather(
+                *(retry_chunk(chunk) for chunk in self._make_batches(unique))
+            ):
                 translations.update(
                     batching.expand_aliases(chunk_translations, aliases)
                 )
                 failures.update(batching.expand_aliases(chunk_failures, aliases))
+            return protected, translations, failures
+
+        outcomes = await asyncio.gather(
+            *(retry_file(rel, entries) for rel, entries in by_file.items())
+        )
+        for (rel, entries), (protected, translations, failures) in zip(
+            by_file.items(), outcomes, strict=True
+        ):
             for entry in entries:
                 out = translations.get(entry.key)
                 if out is None:

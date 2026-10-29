@@ -1452,7 +1452,10 @@ def create_app(
             return {
                 "provider": body.provider,
                 "models": provider_models(body.provider),
-                "source": "static",
+                # Not a failed live fetch: the CLI publishes no list, so
+                # this IS the lineup. A distinct value keeps the client from
+                # presenting it as a degraded fallback.
+                "source": "catalog",
                 "error": status.get("error"),
             }
         api_key = body.api_key or (os.environ.get(env_name) if env_name else None)

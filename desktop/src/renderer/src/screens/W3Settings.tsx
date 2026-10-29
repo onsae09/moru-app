@@ -1181,6 +1181,8 @@ export function W3Settings() {
                       <span className="text-accent">
                         {t("w3.advanced.modelsLive", { n: modelOptions.length })}
                       </span>
+                    ) : liveModelsQuery.data?.source === "catalog" ? (
+                      <span className="text-text3">{t("w3.advanced.modelsCatalog")}</span>
                     ) : liveModelsQuery.data?.source === "static" ? (
                       <span className="text-amber">{t("w3.advanced.modelsStatic")}</span>
                     ) : null}

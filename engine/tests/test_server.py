@@ -2014,7 +2014,7 @@ def test_cli_providers_without_discovery_use_the_static_catalog(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["source"] == "static"
+    assert body["source"] == "catalog"
     assert body["error"] is None
     assert body["models"]
 

@@ -82,6 +82,7 @@
     "refresh": "Refresh",
     "modelsLoading": "Fetching model list…",
     "modelsLive": "Live list · {{n}} models",
+    "modelsCatalog": "Fixed model list for this subscription (it offers no way to look models up)",
     "modelsStatic": "Live fetch failed — showing the default list",
     "modelSearchPlaceholder": "Search models… (name or ID)",
     "modelNoMatch": "No models match \"{{q}}\"",

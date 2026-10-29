@@ -82,6 +82,7 @@
     "refresh": "새로고침",
     "modelsLoading": "모델 목록 불러오는 중…",
     "modelsLive": "실시간 목록 · {{n}}개 모델",
+    "modelsCatalog": "구독이 제공하는 고정 모델 목록이에요 (이 연결은 목록을 따로 조회할 수 없어요)",
     "modelsStatic": "최신 목록을 불러오지 못해 기본 목록을 표시 중",
     "modelSearchPlaceholder": "모델 검색… (이름 또는 ID)",
     "modelNoMatch": "\"{{q}}\"에 맞는 모델이 없어요",

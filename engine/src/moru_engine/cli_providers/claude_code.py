@@ -46,10 +46,11 @@ logger = logging.getLogger(__name__)
 
 #: CLI-style aliases the `claude` CLI accepts, mapped to wire model ids.
 _MODEL_ALIASES = {
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-8",
-    "haiku": "claude-haiku-4-5",
-    "default": "claude-sonnet-4-6",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5",
+    "haiku": "claude-haiku-5-5",
+    "fable": "claude-fable-5-1",
+    "default": "claude-sonnet-5-5",
 }
 
 #: Effort when the caller did not ask for any. The 5.x models think by

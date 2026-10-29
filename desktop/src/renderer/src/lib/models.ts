@@ -145,9 +145,9 @@ export const PROVIDER_TIERS: Record<string, Record<PresetId, string>> = {
     best: "openrouter/anthropic/claude-sonnet-5.5",
   },
   "claude-code": {
-    fast: "claude-code/claude-haiku-4-5",
-    balanced: "claude-code/claude-sonnet-4-6",
-    best: "claude-code/claude-opus-4-8",
+    fast: "claude-code/claude-haiku-5-5",
+    balanced: "claude-code/claude-sonnet-5-5",
+    best: "claude-code/claude-opus-5-5",
   },
   codex: {
     fast: "codex/gpt-5.6-luna",

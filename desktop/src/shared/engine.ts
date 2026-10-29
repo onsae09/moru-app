@@ -464,7 +464,8 @@ export interface Provider {
 export interface ProviderModels {
   provider: string;
   models: string[];
-  source: "live" | "static";
+  /** `catalog`: the provider publishes no list, so the fixed lineup is the answer. */
+  source: "live" | "static" | "catalog";
   error: string | null;
 }
 

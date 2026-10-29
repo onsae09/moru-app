@@ -94,9 +94,10 @@ def test_claude_oversized_system_prompt_moves_to_stdin() -> None:
 
 
 def test_claude_model_aliases_resolve_to_pinned_ids() -> None:
-    assert claude_code.resolve_model("sonnet") == "claude-sonnet-4-6"
-    assert claude_code.resolve_model("@/claude-haiku-4-5") == "claude-haiku-4-5"
-    assert claude_code.resolve_model("claude-code/claude-opus-4-8") == "claude-opus-4-8"
+    assert claude_code.resolve_model("sonnet") == "claude-sonnet-5-5"
+    assert claude_code.resolve_model("fable") == "claude-fable-5-1"
+    assert claude_code.resolve_model("@/claude-haiku-5-5") == "claude-haiku-5-5"
+    assert claude_code.resolve_model("claude-code/claude-opus-5-5") == "claude-opus-5-5"
 
 
 def test_claude_response_reads_text_and_counts_cache_as_prompt() -> None:

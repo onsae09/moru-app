@@ -34,7 +34,7 @@ export function Titlebar() {
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <button
-          aria-label="minimize"
+          aria-label={t("common.window.minimize")}
           onClick={() => moru.win.minimize()}
           className="flex h-7 w-8 items-center justify-center text-text3 hover:bg-raised hover:text-text"
         >
@@ -43,7 +43,7 @@ export function Titlebar() {
           </svg>
         </button>
         <button
-          aria-label="maximize"
+          aria-label={t("common.window.maximize")}
           onClick={() => moru.win.toggleMaximize()}
           className="flex h-7 w-8 items-center justify-center text-text3 hover:bg-raised hover:text-text"
         >
@@ -59,7 +59,7 @@ export function Titlebar() {
           </svg>
         </button>
         <button
-          aria-label="close"
+          aria-label={t("common.window.close")}
           onClick={() => moru.win.close()}
           className="flex h-7 w-8 items-center justify-center text-text3 hover:bg-[#E33] hover:text-white"
         >

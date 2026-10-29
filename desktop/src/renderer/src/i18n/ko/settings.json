@@ -58,7 +58,8 @@
     "cliRecheck": "다시 확인",
     "cliDisabled": "사용 중지",
     "cliDisabledHint": "Claude Code 연결은 현재 사용할 수 없어요. 다른 공급자를 선택해 주세요.",
-    "cliTestFailUnknown": "CLI가 알아볼 수 있는 이유를 주지 않았어요. 터미널에서 직접 실행해 확인해 주세요."
+    "cliTestFailUnknown": "CLI가 알아볼 수 있는 이유를 주지 않았어요. 터미널에서 직접 실행해 확인해 주세요.",
+    "baseUrlPlaceholder": "http://localhost:1234/v1"
   },
   "general": {
     "title": "앱 기본 설정",

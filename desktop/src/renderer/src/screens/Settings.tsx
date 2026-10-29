@@ -586,7 +586,7 @@ function CompatCard({
           type="text"
           value={baseUrl}
           spellCheck={false}
-          placeholder="http://localhost:1234/v1"
+          placeholder={t("settings.models.baseUrlPlaceholder")}
           onChange={(e) => set({ openaiCompatBaseUrl: e.target.value })}
           className="min-w-0 border border-edge bg-card px-3 py-2 font-mono text-xs text-text placeholder:text-text4 focus:border-edge2"
         />

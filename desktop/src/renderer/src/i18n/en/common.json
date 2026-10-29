@@ -96,5 +96,10 @@
       "body": "This translation hasn't been exported as a resource pack yet. You can still reopen it later from History.",
       "confirm": "Start over"
     }
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close"
   }
 }

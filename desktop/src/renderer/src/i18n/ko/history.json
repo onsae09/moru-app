@@ -56,5 +56,10 @@
   "resume": {
     "gone": "이어서 번역할 저장 내용이 없어요. 다시 시도로 새로 번역해 주세요.",
     "failed": "이어서 번역을 시작하지 못했어요: {{error}}"
+  },
+  "session": {
+    "importFailed": "세션 불러오기 실패: {{error}}",
+    "exported": "세션 파일이 저장되었습니다: {{path}}",
+    "exportFailed": "세션 내보내기 실패: {{error}}"
   }
 }

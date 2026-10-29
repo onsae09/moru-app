@@ -463,7 +463,7 @@ export function HistoryScreen(): React.JSX.Element {
         await reopen(rec.id, "w5");
       }
     } catch (err) {
-      setNotice(lang === "ko" ? `세션 불러오기 실패: ${String(err)}` : `Import failed: ${String(err)}`);
+      setNotice(t("history.session.importFailed", { error: String(err) }));
     }
   };
 
@@ -474,9 +474,9 @@ export function HistoryScreen(): React.JSX.Element {
     try {
       const targetId = useSessionJobs.getState().jobs[s.id] ?? s.id;
       await api.exportSession(targetId, savePath);
-      setNotice(lang === "ko" ? `세션 파일이 저장되었습니다: ${savePath}` : `Session saved: ${savePath}`);
+      setNotice(t("history.session.exported", { path: savePath }));
     } catch (err) {
-      setNotice(lang === "ko" ? `세션 내보내기 실패: ${String(err)}` : `Export failed: ${String(err)}`);
+      setNotice(t("history.session.exportFailed", { error: String(err) }));
     }
   };
 

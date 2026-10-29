@@ -56,5 +56,10 @@
   "resume": {
     "gone": "There is no saved progress to resume. Retry to translate from scratch.",
     "failed": "Could not resume the translation: {{error}}"
+  },
+  "session": {
+    "importFailed": "Import failed: {{error}}",
+    "exported": "Session saved: {{path}}",
+    "exportFailed": "Export failed: {{error}}"
   }
 }

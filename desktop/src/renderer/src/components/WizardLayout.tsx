@@ -96,7 +96,10 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
         <div className="mb-1 font-mono text-[11px] font-semibold tracking-[0.08em] text-text3 uppercase">
           <span className="text-accent">▍</span> {t("common.wizard.title")}
         </div>
-        <div className="mb-5 text-[13px] font-bold tracking-[-0.01em] text-text">
+        <div
+          className="mb-5 truncate text-[13px] font-bold tracking-[-0.01em] text-text"
+          title={wizard.modpackName !== "" ? wizard.modpackName : undefined}
+        >
           {wizard.modpackName !== "" ? wizard.modpackName : "—"}
         </div>
 

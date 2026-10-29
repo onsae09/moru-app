@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 
 import type { HardcodedMod, ScanCategory, ScanFile } from "../../../shared/engine";
+import { ChevronIcon } from "@/components/icons";
 import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { pressable } from "@/components/a11y";
 import { api, type TranslationMatch } from "@/lib/api";
@@ -945,17 +946,7 @@ function GroupRow({
       >
         <CheckBox checked={allIncluded} indeterminate={includedCount > 0} />
       </button>
-      <svg
-        width="10"
-        height="10"
-        viewBox="0 0 10 10"
-        fill="none"
-        stroke="#6A7C74"
-        strokeWidth="1.5"
-        className={`shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
-      >
-        <path d="M2 3 L5 6 L8 3" />
-      </svg>
+      <ChevronIcon open={!collapsed} className="text-text4" />
       <span className="truncate font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase">
         {label}
       </span>
@@ -1017,9 +1008,7 @@ function CategoryRow({
           <CheckBox checked={checked} />
         </button>
         {expanded ? (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#6A7C74" strokeWidth="1.5" className="shrink-0">
-            <path d="M2 3 L5 6 L8 3" />
-          </svg>
+          <ChevronIcon className="text-text4" />
         ) : (
           <div className="w-[10px] shrink-0" />
         )}

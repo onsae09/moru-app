@@ -17,6 +17,7 @@ import type {
   PipelineStats,
   UploadParams,
 } from "../../../shared/engine";
+import { Spinner } from "@/components/icons";
 import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { Button } from "@/components/Button";
 import { ErrorDetails } from "@/components/ErrorDetails";
@@ -516,7 +517,7 @@ export function W6Export() {
               >
                 {exportBusy ? (
                   <>
-                    <span className="inline-block h-3 w-3 animate-pxspin border-2 border-sel-ink border-t-transparent" />
+                    <Spinner className="h-3 w-3 border-sel-ink" />
                     {t("w6.export.creating")}
                   </>
                 ) : exportDone && wizard.exportZipPath !== null ? (

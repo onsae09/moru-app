@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Provider, SpeechLevel, TermStyle } from "../../../shared/engine";
+import { CheckMarkIcon, ChevronIcon, Spinner } from "@/components/icons";
 import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { activateOnKey, pressable } from "@/components/a11y";
 import { ErrorDetails } from "@/components/ErrorDetails";
@@ -108,14 +109,6 @@ const SPEECH_LEVELS: readonly SpeechLevel[] = ["auto", "polite", "banmal", "hage
 const TERM_STYLES: readonly TermStyle[] = ["auto", "translate", "transliterate"];
 
 /* ---- screen-local pieces ---- */
-
-function CheckMark() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0A100D" strokeWidth="2">
-      <path d="M1 5 L4 8 L9 2" />
-    </svg>
-  );
-}
 
 function KeyIcon({ color }: { color: string }) {
   return (
@@ -247,7 +240,7 @@ function OptionCheck({
     >
       {checked ? (
         <div className="mt-px flex h-4 w-4 shrink-0 items-center justify-center bg-accent">
-          <CheckMark />
+          <CheckMarkIcon className="text-sel-ink" />
         </div>
       ) : (
         <div className="mt-px h-4 w-4 shrink-0 border border-edge bg-bar" />
@@ -1107,20 +1100,7 @@ export function W3Settings() {
           {...pressable(() => setAdvancedOpen((v) => !v))}
           aria-expanded={advancedOpen}
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="#6A7C74"
-            strokeWidth="1.5"
-            style={{
-              transform: advancedOpen ? "rotate(0deg)" : "rotate(-90deg)",
-              transition: "transform 0.15s ease",
-            }}
-          >
-            <path d="M2 3 L5 6 L8 3" />
-          </svg>
+          <ChevronIcon open={advancedOpen} className="text-text4" />
           <span className="text-[13px] font-bold text-text">{t("w3.advanced.title")}</span>
           <span className="font-mono text-[11px] text-text3">{t("w3.advanced.hint")}</span>
           <div className="flex-1" />
@@ -1332,17 +1312,7 @@ export function W3Settings() {
             sourceExportOpen ? "border-b-0" : ""
           }`}
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            className={`text-text3 transition-transform ${sourceExportOpen ? "" : "-rotate-90"}`}
-          >
-            <path d="M2 3 L5 6 L8 3" />
-          </svg>
+          <ChevronIcon open={sourceExportOpen} className="text-text3" />
           <span className="text-[12px] font-semibold text-text2">{t("w3.sourceExport.title")}</span>
           <span className="bg-line2 px-2 py-[3px] font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-text2">
             {t("w3.sourceExport.badge")}
@@ -1365,7 +1335,7 @@ export function W3Settings() {
               >
                 {sourceExportBusy ? (
                   <>
-                    <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text border-t-transparent" />
+                    <Spinner className="h-3 w-3 border-text" />
                     {t("w3.sourceExport.creating")}
                   </>
                 ) : sourceExportDone ? (
@@ -1483,7 +1453,7 @@ export function W3Settings() {
               className="flex cursor-pointer items-center gap-[6px] border border-edge bg-card px-4 py-[10px] text-[12px] font-semibold whitespace-nowrap text-text2 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               {manualSeedPending ? (
-                <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text2 border-t-transparent" />
+                <Spinner className="h-3 w-3 border-text2" />
               ) : (
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M2 10 L4 10 L10 4 L8 2 L2 8 Z" />

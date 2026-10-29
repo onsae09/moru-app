@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
 
+import { toast } from "@/components/Toast";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { moru } from "@/lib/bridge";
 import { formatCompact, formatInt, formatRelative, formatUsd, packInitials } from "@/lib/format";
@@ -14,7 +15,9 @@ import { useRouter } from "@/stores/router";
 import { aggregateStats, useSessions, type SessionRecord } from "@/stores/sessions";
 import { useSettings } from "@/stores/settings";
 import { selectQueueActive, useTranslationQueue } from "@/stores/translationQueue";
-import { deleteHistorySession, useWizard } from "@/stores/wizard";
+import { useWizard } from "@/stores/wizard";
+
+import { deleteSessionWithToast } from "./sessionActions";
 
 /**
  * TOKENS_PER_ENTRY: TM-savings heuristic. Each TM hit skips one LLM round
@@ -441,7 +444,6 @@ export function HomeScreen() {
   const queueActive = useTranslationQueue(selectQueueActive);
   const { requestReset, dialog: resetDialog } = useWizardResetGuard();
   const [dragOver, setDragOver] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const stats = useMemo(() => aggregateStats(sessions), [sessions]);
   const recent = sessions.slice(0, 3);
@@ -486,15 +488,9 @@ export function HomeScreen() {
     }
     const resumable =
       useSessions.getState().sessions.find((s) => s.id === id)?.resumable === true;
-    setNotice(
-      t(
-        result === "busy"
-          ? "history.reopen.busy"
-          : resumable
-            ? "history.reopen.resumable"
-            : "history.reopen.gone",
-      ),
-    );
+    if (result === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
+    else if (resumable) toast(t("history.reopen.resumable"), { tone: "warn" });
+    else toast(t("history.reopen.gone"), { tone: "err" });
   };
 
   const handleResumeTranslation = async (id: string) => {
@@ -507,13 +503,13 @@ export function HomeScreen() {
       go("w4");
       return;
     }
-    setNotice(
-      outcome === "busy"
-        ? t("history.reopen.busy")
-        : outcome === "gone"
-          ? t("history.resume.gone")
-          : t("history.resume.failed", { error: useWizard.getState().runError ?? "" }),
-    );
+    if (outcome === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
+    else if (outcome === "gone") toast(t("history.resume.gone"), { tone: "warn" });
+    else {
+      toast(t("history.resume.failed", { error: useWizard.getState().runError ?? "" }), {
+        tone: "err",
+      });
+    }
   };
 
   const handleRetry = (id: string) => {
@@ -566,18 +562,6 @@ export function HomeScreen() {
           </button>
         </div>
       </div>
-
-      {notice !== null && (
-        <div className="mb-4 flex items-center justify-between gap-3 border border-amber/50 bg-amber/[0.08] px-3 py-2">
-          <span className="font-mono text-[11px] text-amber">{notice}</span>
-          <button
-            className="font-mono text-[11px] text-text3 hover:text-text"
-            onClick={() => setNotice(null)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Stats strip */}
       <div className="mb-8 grid grid-cols-4 gap-3">
@@ -680,7 +664,7 @@ export function HomeScreen() {
                 onResume={() => void handleResume(record.id)}
                 onResumeTranslation={() => void handleResumeTranslation(record.id)}
                 onRetry={() => handleRetry(record.id)}
-                onRemove={() => void deleteHistorySession(record.id)}
+                onRemove={() => void deleteSessionWithToast(record.id, t)}
               />
             ))}
           </div>

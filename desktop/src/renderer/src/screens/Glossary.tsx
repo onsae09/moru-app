@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LocaleFlag } from "@/components/LocaleFlag";
+import { toast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { formatInt, formatRelative } from "@/lib/format";
 import { WEB_URL } from "@/lib/web";
@@ -322,7 +323,6 @@ export function GlossaryScreen() {
   const [draftSource, setDraftSource] = useState("");
   const [draftTarget, setDraftTarget] = useState("");
   const [draftScope, setDraftScope] = useState("");
-  const [toast, setToast] = useState<{ id: number; text: string; tone: "ok" | "err" } | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -376,14 +376,8 @@ export function GlossaryScreen() {
   });
 
   const showToast = (text: string, tone: "ok" | "err" = "ok"): void => {
-    setToast({ id: Date.now(), text, tone });
+    toast(text, { tone });
   };
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2500);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -949,15 +943,6 @@ export function GlossaryScreen() {
         onConfirm={resetGlossary}
       />
 
-      {/* Toast */}
-      {toast && (
-        <div
-          key={toast.id}
-          className={`animate-fade-in-up fixed right-6 bottom-6 z-50 border px-3.5 py-2.5 font-mono text-[12px] text-text ${toast.tone === "ok" ? "border-accent" : "border-red"} bg-raised`}
-        >
-          {toast.text}
-        </div>
-      )}
     </div>
   );
 }

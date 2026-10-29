@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatInt, formatRelative, formatUsd, packInitials, parseTimestamp } from "@/lib/format";
@@ -17,7 +18,9 @@ import { useRouter } from "@/stores/router";
 import { useSessions, type SessionRecord } from "@/stores/sessions";
 import { useSettings } from "@/stores/settings";
 import { selectQueueActive, useTranslationQueue } from "@/stores/translationQueue";
-import { deleteHistorySession, useSessionJobs, useWizard } from "@/stores/wizard";
+import { useSessionJobs, useWizard } from "@/stores/wizard";
+
+import { deleteSessionWithToast } from "./sessionActions";
 
 type StatusFilter = "all" | "done" | "running" | "stopped";
 
@@ -336,7 +339,6 @@ export function HistoryScreen(): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     let done = 0;
@@ -395,15 +397,9 @@ export function HistoryScreen(): React.JSX.Element {
     }
     const resumable =
       useSessions.getState().sessions.find((s) => s.id === sessionId)?.resumable === true;
-    setNotice(
-      t(
-        result === "busy"
-          ? "history.reopen.busy"
-          : resumable
-            ? "history.reopen.resumable"
-            : "history.reopen.gone",
-      ),
-    );
+    if (result === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
+    else if (resumable) toast(t("history.reopen.resumable"), { tone: "warn" });
+    else toast(t("history.reopen.gone"), { tone: "err" });
   };
 
   const resume = async (sessionId: string): Promise<void> => {
@@ -416,13 +412,13 @@ export function HistoryScreen(): React.JSX.Element {
       go("w4");
       return;
     }
-    setNotice(
-      outcome === "busy"
-        ? t("history.reopen.busy")
-        : outcome === "gone"
-          ? t("history.resume.gone")
-          : t("history.resume.failed", { error: useWizard.getState().runError ?? "" }),
-    );
+    if (outcome === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
+    else if (outcome === "gone") toast(t("history.resume.gone"), { tone: "warn" });
+    else {
+      toast(t("history.resume.failed", { error: useWizard.getState().runError ?? "" }), {
+        tone: "err",
+      });
+    }
   };
 
   const handleImportSession = async (): Promise<void> => {
@@ -463,7 +459,7 @@ export function HistoryScreen(): React.JSX.Element {
         await reopen(rec.id, "w5");
       }
     } catch (err) {
-      setNotice(t("history.session.importFailed", { error: String(err) }));
+      toast(t("history.session.importFailed", { error: String(err) }), { tone: "err" });
     }
   };
 
@@ -474,9 +470,9 @@ export function HistoryScreen(): React.JSX.Element {
     try {
       const targetId = useSessionJobs.getState().jobs[s.id] ?? s.id;
       await api.exportSession(targetId, savePath);
-      setNotice(t("history.session.exported", { path: savePath }));
+      toast(t("history.session.exported", { path: savePath }), { tone: "ok" });
     } catch (err) {
-      setNotice(t("history.session.exportFailed", { error: String(err) }));
+      toast(t("history.session.exportFailed", { error: String(err) }), { tone: "err" });
     }
   };
 
@@ -537,18 +533,6 @@ export function HistoryScreen(): React.JSX.Element {
           ))}
         </div>
       </div>
-
-      {notice !== null && (
-        <div className="mb-4 flex items-center justify-between gap-3 border border-amber/50 bg-amber/[0.08] px-3 py-2">
-          <span className="font-mono text-[11px] text-amber">{notice}</span>
-          <button
-            className="font-mono text-[11px] text-text3 hover:text-text"
-            onClick={() => setNotice(null)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {sessions.length === 0 ? (
         <div className="border border-dashed border-edge p-12 text-center">
@@ -658,7 +642,7 @@ export function HistoryScreen(): React.JSX.Element {
         onConfirm={() => {
           // Also drops the engine's session file and checkpoint, or
           // the next reconcile would list the session again.
-          if (confirmTarget !== undefined) void deleteHistorySession(confirmTarget.id);
+          if (confirmTarget !== undefined) void deleteSessionWithToast(confirmTarget.id, t);
           setConfirmId(null);
         }}
       />

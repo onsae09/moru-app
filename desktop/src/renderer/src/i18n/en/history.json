@@ -61,5 +61,9 @@
     "importFailed": "Import failed: {{error}}",
     "exported": "Session saved: {{path}}",
     "exportFailed": "Export failed: {{error}}"
+  },
+  "delete": {
+    "running": "This job is still running, so it can't be deleted. Try again once it finishes or is cancelled.",
+    "failed": "Couldn't delete this history entry. Please try again shortly."
   }
 }

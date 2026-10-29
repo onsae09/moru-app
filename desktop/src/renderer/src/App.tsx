@@ -8,6 +8,7 @@ import { EngineGate } from "@/components/EngineGate";
 import { UpdateGate } from "@/components/UpdateGate";
 import { Sidebar } from "@/components/Sidebar";
 import { Titlebar } from "@/components/Titlebar";
+import { ToastHost } from "@/components/Toast";
 import { TranslationQueueRuntime } from "@/components/TranslationQueueRuntime";
 import { WizardLayout } from "@/components/WizardLayout";
 import { GlossaryScreen } from "@/screens/Glossary";
@@ -120,6 +121,7 @@ export default function App() {
           </EngineGate>
         </UpdateGate>
       </div>
+      <ToastHost />
     </div>
   );
 }

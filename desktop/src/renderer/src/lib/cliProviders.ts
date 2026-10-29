@@ -37,6 +37,12 @@ export function isCliProvider(provider: Provider): boolean {
   return provider.auth === "cli";
 }
 
+export function needsAccountRiskNotice(provider: Provider): boolean {
+  // Only the Claude subscription is read through Anthropic's consumer
+  // plan terms; Codex and Gemini carry no such warning.
+  return provider.id === "claude-code";
+}
+
 /**
  * What the user has to do next — the only thing these states differ by, and
  * the reason a boolean was never enough.

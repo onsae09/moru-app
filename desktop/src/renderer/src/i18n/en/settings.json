@@ -55,6 +55,7 @@
     "cliBlockedUnknown": "Signed in, but this subscription cannot serve a request yet. The CLI did not say why — run it in a terminal to see what it reports.",
     "cliTransport": "Connection path: {{transport}}",
     "cliRecheck": "Re-check",
+    "cliAccountRisk": "Using a subscription account through an outside app like this one may get the account suspended under Anthropic's policies. You accept all risk to your account, including suspension, yourself.",
     "cliDisabled": "Disabled",
     "cliDisabledHint": "The Claude Code connection is currently unavailable. Please choose another provider.",
     "cliTestFailUnknown": "the CLI gave no readable reason — run it in a terminal to see what it reports.",

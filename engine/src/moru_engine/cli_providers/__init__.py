@@ -5,8 +5,9 @@ addresses them with the same model-string contract as every hosted
 provider (``claude-code/claude-sonnet-4-6``, ``codex/gpt-5.6-terra``,
 ``gemini-cli/gemini-3.5-flash``) and ``build_lm`` needs no special case.
 
-Auth is the CLI's own OAuth grant read off disk — no API key, no login
-flow of our own. See ``credentials`` for the stores.
+Auth is the CLI's own login — no API key, no login flow of our own. Codex
+and Gemini borrow the OAuth grant off disk; Claude Code runs the official
+``claude`` binary headlessly. See ``credentials`` for the stores.
 """
 
 from __future__ import annotations
@@ -62,10 +63,6 @@ CLI_PROVIDER_CATALOG: tuple[dict[str, Any], ...] = (
         "name": "Claude Code",
         "env": None,
         "auth": "cli",
-        # Switched off: the handler's OAuth path is being replaced. Listed
-        # so a saved selection still has a card to explain itself, but no
-        # probe or completion is sent (see ClaudeCodeLLM).
-        "disabled": True,
         "models": [
             "claude-code/claude-sonnet-4-6",
             "claude-code/claude-haiku-4-5",

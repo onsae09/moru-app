@@ -1,13 +1,13 @@
-"""OAuth credential stores for locally installed coding CLIs.
+"""Credential stores for locally installed coding CLIs.
 
-Ported from oh-my-pi (``packages/ai/src/registry/oauth/{anthropic,
-openai-codex,google-gemini-cli}.ts``). Moru never runs its own login flow:
-it reads the credentials the user's own CLI already wrote, refreshes them
-when they expire, and writes the rotated tokens back **in the CLI's native
-format** so one grant keeps serving both moru and the CLI.
+Codex and the legacy Gemini CLI keep an OAuth grant on disk: moru reads it,
+refreshes it when it expires, and writes the rotated tokens back **in the
+CLI's native format** so one grant keeps serving both moru and the CLI.
+Client ids, endpoints and refresh payloads there are the CLIs' own.
 
-Client ids, endpoints and refresh payloads are the CLIs' own — a refresh
-issued here is indistinguishable from one the CLI would have issued.
+Claude Code is different: moru never touches its grant. The official
+``claude`` binary authenticates its own requests, and this module only asks
+it whether it is signed in.
 """
 
 from __future__ import annotations
@@ -342,22 +342,84 @@ class CliCredentialStore(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Claude Code — ~/.claude/.credentials.json (or the macOS keychain)
+# Claude Code — the official `claude` CLI is the only authority on its grant
 # ---------------------------------------------------------------------------
 
-#: Claude Code's OAuth client. Base64 in oh-my-pi's source; inlined here.
-_ANTHROPIC_CLIENT_ID = base64.b64decode(
-    "OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl"
-).decode()
-_ANTHROPIC_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
-_KEYCHAIN_SERVICE = "Claude Code-credentials"
+_CLAUDE_COMMAND = "claude"
+_CLAUDE_STATUS_TIMEOUT = 20.0
+#: `claude auth status` costs a process start, and GET /providers polls.
+_CLAUDE_STATUS_TTL_S = 5.0
+
+#: Variables that would silently move `claude` off the user's subscription
+#: onto pay-per-token API billing. A desktop-saved Anthropic key reaches the
+#: engine's environment, so they are removed from every `claude` child.
+_CLAUDE_BILLING_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def claude_path() -> Path | None:
+    """Filesystem path to the `claude` binary, or None when absent.
+
+    PATH alone is not enough: the installer drops `claude` in ~/.local/bin,
+    which a GUI-spawned sidecar's environment routinely omits (a packaged
+    Electron app does not inherit the login shell's PATH), so the documented
+    install locations are probed too. Same reasoning as `agy_path`.
+    """
+    found = shutil.which(_CLAUDE_COMMAND)
+    if found is not None:
+        return Path(found)
+    home = Path.home()
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    candidates = [
+        home / ".local" / "bin" / _CLAUDE_COMMAND,
+        # The legacy self-updating install.
+        (Path(config) if config else home / ".claude") / "local" / _CLAUDE_COMMAND,
+        Path("/opt/homebrew/bin") / _CLAUDE_COMMAND,
+        Path("/usr/local/bin") / _CLAUDE_COMMAND,
+        home / ".npm-global" / "bin" / _CLAUDE_COMMAND,
+        home / ".bun" / "bin" / _CLAUDE_COMMAND,
+    ]
+    if os.name == "nt":
+        candidates.append(home / ".local" / "bin" / f"{_CLAUDE_COMMAND}.exe")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def claude_env(binary: Path | None = None) -> dict[str, str]:
+    """Environment for a `claude` child process.
+
+    The binary's own directory and the usual tool directories lead PATH: an
+    npm-installed `claude` is a script that needs `node`, which the sidecar's
+    trimmed PATH may not reach. Billing variables are dropped (see
+    `_CLAUDE_BILLING_ENV`).
+    """
+    env = {k: v for k, v in os.environ.items() if k not in _CLAUDE_BILLING_ENV}
+    extra = [str(binary.parent)] if binary is not None else []
+    if os.name != "nt":
+        extra += ["/opt/homebrew/bin", "/usr/local/bin"]
+    current = env.get("PATH", "")
+    env["PATH"] = os.pathsep.join([*extra, current] if current else extra)
+    return env
 
 
 class ClaudeCodeStore(CliCredentialStore):
+    """Login state of the user's own `claude` CLI.
+
+    Moru never reads or writes this grant. The CLI keeps it in the macOS
+    keychain or ``.credentials.json`` and rotates it itself; asking
+    ``claude auth status`` is the one stable way to learn whether it is
+    signed in, whatever it is stored in on this machine.
+    """
+
     id = "claude-code"
     label = "Claude Code"
-    login_hint = "claude login"
-    cli_command = "claude"
+    login_hint = "claude auth login"
+    cli_command = _CLAUDE_COMMAND
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._status_cache: tuple[float, dict[str, Any] | None] | None = None
 
     @property
     def path(self) -> Path:
@@ -365,21 +427,40 @@ class ClaudeCodeStore(CliCredentialStore):
         base = Path(override) if override else Path.home() / ".claude"
         return base / ".credentials.json"
 
-    # macOS keeps the grant in the login keychain instead of a dotfile.
-    def _keychain_read(self) -> dict[str, Any] | None:
-        if platform.system() != "Darwin":
+    def cli_installed(self) -> bool:
+        return claude_path() is not None
+
+    def invalidate(self) -> None:
+        super().invalidate()
+        self._status_cache = None
+
+    def _auth_status(self) -> dict[str, Any] | None:
+        cached = self._status_cache
+        if cached is not None and time.monotonic() - cached[0] < _CLAUDE_STATUS_TTL_S:
+            return cached[1]
+        doc = self._run_auth_status()
+        self._status_cache = (time.monotonic(), doc)
+        return doc
+
+    @staticmethod
+    def _run_auth_status() -> dict[str, Any] | None:
+        binary = claude_path()
+        if binary is None:
             return None
         try:
-            out = subprocess.run(
-                ["security", "find-generic-password", "-s", _KEYCHAIN_SERVICE, "-w"],
+            out = subprocess.run(  # noqa: S603 - fixed binary, no shell
+                [str(binary), "auth", "status"],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+                timeout=_CLAUDE_STATUS_TIMEOUT,
+                env=claude_env(binary),
                 check=False,
             )
         except (OSError, subprocess.SubprocessError):
-            return None
-        if out.returncode != 0 or not out.stdout.strip():
+            logger.debug("claude auth status failed to run", exc_info=True)
             return None
         try:
             data = json.loads(out.stdout)
@@ -387,99 +468,26 @@ class ClaudeCodeStore(CliCredentialStore):
             return None
         return data if isinstance(data, dict) else None
 
-    def _keychain_write(self, doc: dict[str, Any]) -> bool:
-        if platform.system() != "Darwin":
-            return False
-        try:
-            out = subprocess.run(
-                [
-                    "security",
-                    "add-generic-password",
-                    "-U",
-                    "-s",
-                    _KEYCHAIN_SERVICE,
-                    "-a",
-                    os.environ.get("USER", "moru"),
-                    "-w",
-                    json.dumps(doc),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return out.returncode == 0
-
     def _load(self) -> OAuthCredentials | None:
-        doc = self._read_json() or self._keychain_read()
-        if doc is None:
+        doc = self._auth_status()
+        if not doc or doc.get("loggedIn") is not True:
             return None
-        oauth = doc.get("claudeAiOauth")
-        if not isinstance(oauth, dict):
-            return None
-        access = oauth.get("accessToken")
-        if not isinstance(access, str) or not access:
-            return None
-        expires = oauth.get("expiresAt")
+        # No token is held here: the CLI authenticates its own requests.
         return OAuthCredentials(
-            access=access,
-            refresh=oauth.get("refreshToken") or "",
-            expires=int(expires) if isinstance(expires, (int, float)) else 0,
-            account_id=oauth.get("accountUuid"),
-            email=oauth.get("emailAddress"),
+            access="managed-by-claude-cli",
+            email=doc.get("email") if isinstance(doc.get("email"), str) else None,
             raw=doc,
         )
 
     def _refresh(self, creds: OAuthCredentials) -> OAuthCredentials:
-        data = self._post_json(
-            _ANTHROPIC_TOKEN_URL,
-            {
-                "grant_type": "refresh_token",
-                "client_id": _ANTHROPIC_CLIENT_ID,
-                "refresh_token": creds.refresh,
-            },
-            # Claude Code sends these on refresh but not on code exchange.
-            headers={
-                "anthropic-beta": "oauth-2025-04-20",
-                "User-Agent": "anthropic-sdk-typescript/0.94.0 userOAuthProvider",
-                "Content-Type": "application/json",
-            },
-        )
-        access = data.get("access_token")
-        if not isinstance(access, str) or not access:
-            raise CliAuthError(
-                "Anthropic refresh response had no access_token",
-                code=REASON_LOGIN_REQUIRED,
-            )
-        expires_in = data.get("expires_in")
-        account = data.get("account") or {}
-        return OAuthCredentials(
-            access=access,
-            refresh=data.get("refresh_token") or creds.refresh,
-            expires=_now_ms() + int(expires_in) * 1000 if isinstance(expires_in, (int, float)) else 0,
-            account_id=account.get("uuid") or creds.account_id,
-            email=account.get("email_address") or creds.email,
-            raw=creds.raw,
+        raise CliAuthError(
+            f"{self.label} 로그인은 CLI가 직접 관리합니다. "
+            f"`{self.login_hint}`로 다시 로그인해 주세요.",
+            code=REASON_LOGIN_REQUIRED,
         )
 
     def _save(self, creds: OAuthCredentials) -> None:
-        doc = dict(creds.raw)
-        oauth = dict(doc.get("claudeAiOauth") or {})
-        oauth["accessToken"] = creds.access
-        oauth["refreshToken"] = creds.refresh
-        if creds.expires:
-            oauth["expiresAt"] = creds.expires
-        doc["claudeAiOauth"] = oauth
-        creds.raw = doc
-        if self.path.is_file():
-            _atomic_write_json(self.path, doc, private=True)
-            return
-        if not self._keychain_write(doc):
-            # Refresh still succeeded; only persistence failed. The token
-            # lives in this process's cache until it expires again.
-            logger.warning("Could not persist refreshed Claude Code credentials")
+        return None
 
 
 # ---------------------------------------------------------------------------

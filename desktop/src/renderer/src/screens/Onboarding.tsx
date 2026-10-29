@@ -14,7 +14,14 @@ import { ErrorDetails } from "@/components/ErrorDetails";
 import { MoruLogo } from "@/components/MoruLogo";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
-import { cliGuidance, cliSetupState, cliStatusChip, isCliProvider, providerLabel } from "@/lib/cliProviders";
+import {
+  cliGuidance,
+  cliSetupState,
+  cliStatusChip,
+  isCliProvider,
+  needsAccountRiskNotice,
+  providerLabel,
+} from "@/lib/cliProviders";
 import { LOCAL_PROVIDERS, PROVIDER_TIERS } from "@/lib/models";
 import { useAccount } from "@/stores/account";
 import { useRouter } from "@/stores/router";
@@ -275,6 +282,11 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                       ? t("onboarding.key.cliConnectedDetail", { account: selectedCli.account })
                       : cliGuidance(selectedCli, t)}
                   </div>
+                  {needsAccountRiskNotice(selected) && (
+                    <div className="mb-2 font-mono text-[11px] leading-relaxed text-amber">
+                      {t("settings.models.cliAccountRisk")}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

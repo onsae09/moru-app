@@ -1,14 +1,14 @@
 """Coding-CLI provider tests.
 
-The wire details here are ported from oh-my-pi, so the assertions pin the
-behaviour that a real Claude Code / Codex / Gemini CLI client produces —
-notably the ``cch`` attestation, whose golden vector was cross-checked
-against the original Bun implementation (``Bun.hash.xxHash64``).
+Codex and Gemini speak the CLIs' own OAuth wire formats, pinned here. Claude
+Code is driven through the official ``claude`` binary in headless mode, so
+its tests pin the invocation and the way a result envelope is read.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -26,126 +26,155 @@ from moru_engine.cli_providers import (
 )
 
 # --------------------------------------------------------------------------
-# Claude Code — billing header + cch attestation
+# Claude Code — headless `claude -p` transport
 # --------------------------------------------------------------------------
-
-FIRST_USER = "Translate these Minecraft modpack strings into Korean."
-
-#: Produced by the oh-my-pi TypeScript implementation for the payload built
-#: in `_golden_payload`. Any drift here means the port diverged.
-GOLDEN_BILLING = (
-    "x-anthropic-billing-header: cc_version=2.1.220.3a0; "
-    "cc_entrypoint=claude-desktop; cch=00000;"
-)
-GOLDEN_CCH = "ad4c2"
-
-
-def _golden_payload() -> dict[str, object]:
-    return {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 8192,
-        "system": [
-            {"type": "text", "text": claude_code.create_billing_header(FIRST_USER)},
-            {"type": "text", "text": claude_code.CLAUDE_CODE_SYSTEM_INSTRUCTION},
-            {"type": "text", "text": "너는 마인크래프트 번역가다."},
-        ],
-        "messages": [{"role": "user", "content": FIRST_USER}],
-        "stream": False,
+def _claude_proc(**fields) -> subprocess.CompletedProcess[str]:
+    body = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "result": "고대 잔해",
+        "stop_reason": "end_turn",
+        "usage": {
+            "input_tokens": 2,
+            "cache_read_input_tokens": 100,
+            "cache_creation_input_tokens": 10,
+            "output_tokens": 4,
+        },
     }
-
-
-def test_billing_header_matches_claude_code_fingerprint() -> None:
-    assert claude_code.create_billing_header(FIRST_USER) == GOLDEN_BILLING
-
-
-def test_billing_header_pads_short_messages() -> None:
-    # Fingerprint reads msg[4], msg[7], msg[20]; missing chars become "0".
-    short = claude_code.create_billing_header("hi")
-    assert short.startswith("x-anthropic-billing-header: cc_version=2.1.220.")
-    assert short != GOLDEN_BILLING
-
-
-def test_cch_attestation_matches_bun_reference() -> None:
-    body = bytearray(
-        json.dumps(_golden_payload(), ensure_ascii=False, separators=(",", ":")).encode()
+    body.update(fields)
+    return subprocess.CompletedProcess(
+        args=["claude"], returncode=0, stdout=json.dumps(body), stderr=""
     )
-    assert claude_code.patch_cch(body) == "patched"
-    assert f"cch={GOLDEN_CCH}".encode() in bytes(body)
-    # The hash covers the body with the placeholder still in place, so the
-    # patched bytes must differ from a re-hash of themselves.
-    assert b"cch=00000" not in bytes(body)
 
 
-def test_cch_skips_bodies_without_a_billing_header() -> None:
-    body = bytearray(b'{"system":[{"type":"text","text":"plain"}]}')
-    assert claude_code.patch_cch(body) == "no-billing-header"
-
-
-def test_cch_reports_unanchored_placeholder() -> None:
-    # Placeholder present but pushed beyond the search window after the marker.
-    filler = "x" * 300
-    body = bytearray(
-        f'{{"system":[{{"type":"text","text":"x-anthropic-billing-header:{filler}cch=00000"}}]}}'.encode()
-    )
-    assert claude_code.patch_cch(body) == "unanchored"
-
-
-def test_serialize_is_compact_so_the_marker_anchors() -> None:
-    raw = claude_code.serialize(_golden_payload())
-    # Pretty-printed JSON would break the byte marker the attestation needs.
-    assert b'"system":[{"type":"text","text":"x-anthropic-billing-header:' in raw
-    assert f"cch={GOLDEN_CCH}".encode() in raw
-
-
-# --------------------------------------------------------------------------
-# Claude Code — payload shape
-# --------------------------------------------------------------------------
-
-
-def test_claude_payload_puts_identity_block_before_user_system_prompts() -> None:
-    payload = claude_code.build_payload(
-        "sonnet",
+def test_claude_invocation_isolates_the_run_from_the_users_setup() -> None:
+    """Every flag here keeps a translation batch a plain completion."""
+    args, stdin = claude_code.build_invocation(
+        "claude-code/claude-sonnet-4-6",
         [
             {"role": "system", "content": "번역가 지침"},
             {"role": "user", "content": "hello"},
         ],
-        {"max_tokens": 1024, "temperature": 0.3},
+        {},
     )
-    texts = [block["text"] for block in payload["system"]]
-    assert texts[0].startswith("x-anthropic-billing-header:")
-    assert texts[1] == claude_code.CLAUDE_CODE_SYSTEM_INSTRUCTION
-    assert texts[2] == "번역가 지침"
-    assert payload["model"] == "claude-sonnet-4-6"  # alias resolved
-    assert payload["messages"] == [{"role": "user", "content": "hello"}]
-    assert payload["temperature"] == 0.3
+    assert args[0] == "-p"
+    assert args[args.index("--model") + 1] == "claude-sonnet-4-6"
+    assert args[args.index("--system-prompt") + 1] == "번역가 지침"
+    assert stdin == "hello"
+    assert args[args.index("--tools") + 1] == ""  # no tools: a turn can only answer
+    assert args[args.index("--setting-sources") + 1] == ""
+    for flag in ("--safe-mode", "--no-session-persistence", "--disable-slash-commands"):
+        assert flag in args
+    assert args[args.index("--output-format") + 1] == "json"
+    # The prompt never rides argv, where a long batch would hit a size cap.
+    assert "hello" not in args
 
 
-def test_claude_payload_opens_on_a_user_turn() -> None:
-    payload = claude_code.build_payload(
-        "claude-haiku-4-5", [{"role": "assistant", "content": "prior"}], {}
-    )
-    assert payload["messages"][0]["role"] == "user"
+def test_claude_effort_defaults_low_and_follows_reasoning_effort() -> None:
+    msgs = [{"role": "user", "content": "hi"}]
+    low, _ = claude_code.build_invocation("sonnet", msgs, {})
+    assert low[low.index("--effort") + 1] == "low"
+    high, _ = claude_code.build_invocation("sonnet", msgs, {"reasoning_effort": "high"})
+    assert high[high.index("--effort") + 1] == "high"
+    junk, _ = claude_code.build_invocation("sonnet", msgs, {"reasoning_effort": "disable"})
+    assert junk[junk.index("--effort") + 1] == "low"
 
 
-def test_claude_thinking_drops_sampling_and_reserves_budget() -> None:
-    payload = claude_code.build_payload(
+def test_claude_oversized_system_prompt_moves_to_stdin() -> None:
+    big = "규칙. " * 40_000
+    args, stdin = claude_code.build_invocation(
         "sonnet",
-        [{"role": "user", "content": "hi"}],
-        {"max_tokens": 2048, "temperature": 0.7, "reasoning_effort": "medium"},
+        [{"role": "system", "content": big}, {"role": "user", "content": "go"}],
+        {},
     )
-    assert payload["thinking"] == {"type": "enabled", "budget_tokens": 8192}
-    # Anthropic rejects temperature alongside extended thinking.
-    assert "temperature" not in payload
-    assert payload["max_tokens"] > payload["thinking"]["budget_tokens"]
+    assert big not in args
+    assert big in stdin
+    assert stdin.endswith("go")
 
 
-def test_claude_headers_carry_the_oauth_fingerprint() -> None:
-    headers = claude_code.build_headers("tok-123")
-    assert headers["Authorization"] == "Bearer tok-123"
-    assert headers["User-Agent"] == claude_code.COWORK_USER_AGENT
-    assert headers["x-app"] == "cli"
-    assert headers["anthropic-version"] == "2023-06-01"
-    assert "structured-outputs-2025-12-15" in headers["anthropic-beta"]
+def test_claude_model_aliases_resolve_to_pinned_ids() -> None:
+    assert claude_code.resolve_model("sonnet") == "claude-sonnet-4-6"
+    assert claude_code.resolve_model("@/claude-haiku-4-5") == "claude-haiku-4-5"
+    assert claude_code.resolve_model("claude-code/claude-opus-4-8") == "claude-opus-4-8"
+
+
+def test_claude_response_reads_text_and_counts_cache_as_prompt() -> None:
+    envelope = claude_code.read_envelope(_claude_proc())
+    out = claude_code._fill_response(ModelResponse(), "sonnet", envelope)
+    assert out.choices[0].message.content == "고대 잔해"
+    assert out.usage.prompt_tokens == 112
+    assert out.usage.completion_tokens == 4
+    assert out.usage.prompt_tokens_details.cached_tokens == 100
+
+
+def test_claude_login_failures_are_auth_errors_not_transport_errors() -> None:
+    for fields in (
+        {"is_error": True, "result": "Not logged in · Please run /login", "api_error_status": None},
+        {"is_error": True, "result": "boom", "api_error_status": 401},
+    ):
+        with pytest.raises(credentials.CliAuthError) as info:
+            claude_code.read_envelope(_claude_proc(**fields))
+        assert info.value.code == credentials.REASON_LOGIN_REQUIRED
+        assert "claude auth login" in str(info.value)
+
+
+def test_claude_usage_limit_is_reported_as_resumable() -> None:
+    with pytest.raises(claude_code.ClaudeCliError, match="이어서 번역"):
+        claude_code.read_envelope(
+            _claude_proc(is_error=True, result="5-hour usage limit reached", api_error_status=429)
+        )
+
+
+def test_claude_empty_output_surfaces_stderr() -> None:
+    proc = subprocess.CompletedProcess(args=["claude"], returncode=1, stdout="", stderr="kaput")
+    with pytest.raises(claude_code.ClaudeCliError, match="kaput"):
+        claude_code.read_envelope(proc)
+
+
+def test_claude_process_cap_defaults_to_fifteen_and_can_be_raised(monkeypatch) -> None:
+    monkeypatch.delenv(claude_code.MAX_PROCESSES_ENV, raising=False)
+    monkeypatch.setattr(claude_code, "_memory_budget_mb", lambda: 64_000.0)
+    assert claude_code.process_cap() == 15  # memory alone never exceeds the default
+    monkeypatch.setattr(claude_code, "_memory_budget_mb", lambda: 2_000.0)
+    assert claude_code.process_cap() == 5
+    monkeypatch.setattr(claude_code, "_memory_budget_mb", lambda: None)
+    assert claude_code.process_cap() == claude_code._UNKNOWN_MEMORY_PROCESSES
+    # The operator override is the way past 15, and is never below one.
+    monkeypatch.setenv(claude_code.MAX_PROCESSES_ENV, "40")
+    assert claude_code.process_cap() == 40
+    monkeypatch.setenv(claude_code.MAX_PROCESSES_ENV, "0")
+    assert claude_code.process_cap() == 1
+    monkeypatch.setenv(claude_code.MAX_PROCESSES_ENV, "many")
+    assert claude_code.process_cap() == claude_code._UNKNOWN_MEMORY_PROCESSES
+
+
+def test_claude_child_env_drops_api_billing_keys_and_widens_path(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    binary = tmp_path / "bin" / "claude"
+    env = credentials.claude_env(binary)
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["PATH"].split(os.pathsep)[0] == str(binary.parent)
+    assert env["PATH"].endswith("/usr/bin")
+
+
+def test_claude_is_found_off_path_at_its_documented_install_location(
+    tmp_path, monkeypatch
+) -> None:
+    """The installer writes ~/.local/bin/claude, which a sidecar's PATH omits."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(credentials.shutil, "which", lambda _cmd: None)
+    assert credentials.claude_path() is None
+
+    binary = tmp_path / ".local" / "bin" / "claude"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\n")
+    assert credentials.claude_path() == binary
 
 
 # --------------------------------------------------------------------------
@@ -350,89 +379,65 @@ def test_gemini_cli_headers_identify_as_the_real_cli() -> None:
 
 
 @pytest.fixture
-def claude_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
-    # Never read the developer's real macOS login keychain.
-    monkeypatch.setattr(credentials.ClaudeCodeStore, "_keychain_read", lambda self: None)
-    monkeypatch.setattr(credentials.ClaudeCodeStore, "_keychain_write", lambda self, doc: False)
-    return tmp_path
+def claude_cli(monkeypatch):
+    """A `claude` whose `auth status` answers are scripted by the test."""
+    answers: dict[str, object] = {"doc": None}
+    monkeypatch.setattr(
+        credentials.ClaudeCodeStore,
+        "_run_auth_status",
+        staticmethod(lambda: answers["doc"]),
+    )
+    monkeypatch.setattr(credentials, "claude_path", lambda: Path("/fake/claude"))
+    return answers
 
 
-def test_claude_store_reports_disconnected_without_a_file(claude_home) -> None:
+def test_claude_store_reports_logged_out_when_the_cli_says_so(claude_cli) -> None:
+    claude_cli["doc"] = {"loggedIn": False}
     store = credentials.ClaudeCodeStore()
     assert store.available() is False
-    assert store.status()["connected"] is False
+    status = store.status()
+    assert status["connected"] is False
+    assert status["state"] == credentials.STATE_LOGGED_OUT
 
 
-def test_claude_store_ignores_a_logged_out_credential(claude_home) -> None:
-    (claude_home / ".credentials.json").write_text(
-        json.dumps({"claudeAiOauth": {"accessToken": "", "refreshToken": "", "expiresAt": 0}})
-    )
-    assert credentials.ClaudeCodeStore().available() is False
+def test_claude_store_reports_cli_missing_without_a_binary(monkeypatch) -> None:
+    monkeypatch.setattr(credentials, "claude_path", lambda: None)
+    status = credentials.ClaudeCodeStore().status()
+    assert status["state"] == credentials.STATE_CLI_MISSING
+    assert status["cli_installed"] is False
 
 
-def test_claude_store_refreshes_and_writes_back_preserving_other_keys(
-    claude_home, monkeypatch
-) -> None:
-    path = claude_home / ".credentials.json"
-    path.write_text(
-        json.dumps(
-            {
-                "claudeAiOauth": {
-                    "accessToken": "old-access",
-                    "refreshToken": "old-refresh",
-                    "expiresAt": 1,  # long expired
-                    "subscriptionType": "max",
-                },
-                # Unrelated block the CLI owns; a write must not drop it.
-                "mcpOAuth": {"figma": {"accessToken": "keep-me"}},
-            }
-        )
-    )
+def test_claude_store_is_ready_and_names_the_account(claude_cli) -> None:
+    claude_cli["doc"] = {"loggedIn": True, "email": "me@example.com", "subscriptionType": "max"}
+    status = credentials.ClaudeCodeStore().status()
+    assert status["connected"] is True
+    assert status["state"] == credentials.STATE_READY
+    assert status["email"] == "me@example.com"
+
+
+def test_claude_store_never_touches_the_grant_itself(claude_cli) -> None:
+    """No token is read, refreshed or written: the CLI owns all of that."""
+    claude_cli["doc"] = {"loggedIn": True}
+    creds = credentials.ClaudeCodeStore().credentials()
+    assert creds.access == "managed-by-claude-cli"
+    assert creds.stale() is False
+
+
+def test_claude_store_caches_the_status_probe_briefly(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    def fake() -> dict:
+        calls["n"] += 1
+        return {"loggedIn": True}
+
+    monkeypatch.setattr(credentials.ClaudeCodeStore, "_run_auth_status", staticmethod(fake))
     store = credentials.ClaudeCodeStore()
-    monkeypatch.setattr(
-        store,
-        "_post_json",
-        lambda *a, **kw: {
-            "access_token": "new-access",
-            "refresh_token": "new-refresh",
-            "expires_in": 3600,
-            "account": {"uuid": "acc-1", "email_address": "me@example.com"},
-        },
-    )
-
-    creds = store.credentials()
-    assert creds.access == "new-access"
-    assert creds.email == "me@example.com"
-
-    written = json.loads(path.read_text())
-    assert written["claudeAiOauth"]["accessToken"] == "new-access"
-    assert written["claudeAiOauth"]["refreshToken"] == "new-refresh"
-    # Rotation must not clobber the CLI's own unrelated state.
-    assert written["mcpOAuth"]["figma"]["accessToken"] == "keep-me"
-    assert written["claudeAiOauth"]["subscriptionType"] == "max"
-
-
-def test_claude_store_keeps_a_live_token_untouched(claude_home, monkeypatch) -> None:
-    path = claude_home / ".credentials.json"
-    path.write_text(
-        json.dumps(
-            {
-                "claudeAiOauth": {
-                    "accessToken": "live",
-                    "refreshToken": "r",
-                    "expiresAt": credentials._now_ms() + 60 * 60 * 1000,
-                }
-            }
-        )
-    )
-    store = credentials.ClaudeCodeStore()
-
-    def _boom(*a, **kw):
-        raise AssertionError("must not refresh a live token")
-
-    monkeypatch.setattr(store, "_post_json", _boom)
-    assert store.token() == "live"
+    store._load()
+    store._load()
+    assert calls["n"] == 1
+    store.invalidate()
+    store._load()
+    assert calls["n"] == 2
 
 
 def test_credentials_are_stale_inside_the_refresh_skew() -> None:

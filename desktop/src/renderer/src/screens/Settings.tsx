@@ -20,6 +20,7 @@ import {
   cliSetupState,
   cliStatusChip,
   isCliProvider,
+  needsAccountRiskNotice,
   providerLabel,
 } from "@/lib/cliProviders";
 import { LOCAL_PROVIDERS, modelDisplayName } from "@/lib/models";
@@ -411,6 +412,11 @@ function CliProviderCard({ provider }: { provider: Provider }) {
           {transport !== null && (
             <div className="mt-[6px] font-mono text-[10px] text-text3">
               {t("settings.models.cliTransport", { transport })}
+            </div>
+          )}
+          {needsAccountRiskNotice(provider) && (
+            <div className="mt-[8px] font-mono text-[11px] leading-[1.6] text-amber">
+              {t("settings.models.cliAccountRisk")}
             </div>
           )}
         </div>

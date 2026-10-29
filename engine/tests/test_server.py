@@ -1946,30 +1946,53 @@ def test_providers_expose_cli_subscriptions(
     assert entry["has_key"] == entry["connected"]
 
 
-def test_claude_code_is_listed_disabled_and_never_probed(
+def test_a_disabled_catalog_provider_is_listed_but_never_probed(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The switch-off mechanism: a flagged entry reads no credentials."""
     import moru_engine.server.app as app_module
 
     def boom(provider: str) -> dict:
         raise AssertionError(f"probed {provider}")
 
-    monkeypatch.setattr(app_module, "provider_status", lambda p: (
-        boom(p) if p == "claude-code" else {"connected": False}
-    ))
+    switched_off = tuple(
+        {**p, "disabled": True} if p["id"] == "codex" else p
+        for p in app_module._PROVIDER_CATALOG
+    )
+    monkeypatch.setattr(app_module, "_PROVIDER_CATALOG", switched_off)
+    monkeypatch.setattr(
+        app_module,
+        "provider_status",
+        lambda p: boom(p) if p == "codex" else {"connected": False},
+    )
     body = client.get("/providers", headers=AUTH).json()
-    entry = next(p for p in body if p["id"] == "claude-code")
+    entry = next(p for p in body if p["id"] == "codex")
     assert entry["auth"] == "cli"
     assert entry["disabled"] is True
     assert entry["connected"] is False
 
 
-def test_claude_code_test_probe_refuses_without_a_request(client: TestClient) -> None:
-    body = client.post(
-        "/providers/test", headers=AUTH, json={"provider": "claude-code"}
-    ).json()
-    assert body["ok"] is False
-    assert "사용할 수 없습니다" in body["error"]
+def test_claude_code_is_enabled_and_reports_its_cli_state(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import moru_engine.server.app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "provider_status",
+        lambda p: {
+            "connected": True,
+            "state": "ready",
+            "email": "me@example.com",
+            "login_hint": "claude auth login",
+            "cli": "claude",
+        },
+    )
+    body = client.get("/providers", headers=AUTH).json()
+    entry = next(p for p in body if p["id"] == "claude-code")
+    assert "disabled" not in entry
+    assert entry["state"] == "ready"
+    assert entry["account"] == "me@example.com"
 
 
 @pytest.mark.parametrize("provider_id", ["claude-code", "gemini-cli"])
@@ -2505,8 +2528,15 @@ def test_deleting_a_running_session_is_refused(
 
 
 def test_translate_with_a_switched_off_provider_is_refused(
-    client: TestClient, tmp_path: Path
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import moru_engine.cli_providers as cli_providers
+
+    switched_off = tuple(
+        {**p, "disabled": True} if p["id"] == "claude-code" else p
+        for p in cli_providers.CLI_PROVIDER_CATALOG
+    )
+    monkeypatch.setattr(cli_providers, "CLI_PROVIDER_CATALOG", switched_off)
     res = client.post(
         "/jobs",
         json={

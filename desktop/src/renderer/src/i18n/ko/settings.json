@@ -55,6 +55,7 @@
     "cliBlockedUnknown": "로그인은 되어 있지만 아직 요청을 처리할 수 없어요. CLI가 이유를 알려주지 않았으니 터미널에서 직접 실행해 어떤 문제인지 확인해 주세요.",
     "cliTransport": "연결 경로: {{transport}}",
     "cliRecheck": "다시 확인",
+    "cliAccountRisk": "구독 계정을 이 앱처럼 외부 프로그램에서 쓰면 Anthropic 정책에 따라 계정이 정지될 수 있어요. 정지 등 계정에 생기는 모든 위험과 책임은 사용자 본인에게 있습니다.",
     "cliDisabled": "사용 중지",
     "cliDisabledHint": "Claude Code 연결은 현재 사용할 수 없어요. 다른 공급자를 선택해 주세요.",
     "cliTestFailUnknown": "CLI가 알아볼 수 있는 이유를 주지 않았어요. 터미널에서 직접 실행해 확인해 주세요.",

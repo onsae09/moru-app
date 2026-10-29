@@ -24,6 +24,7 @@ import {
   cliSetupState,
   cliStatusChip,
   isCliProvider,
+  needsAccountRiskNotice,
   providerLabel,
   type CliSetupState,
 } from "@/lib/cliProviders";
@@ -195,6 +196,11 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
         {transport !== null && (
           <div className="mt-[6px] font-mono text-[10px] text-text3">
             {t("settings.models.cliTransport", { transport })}
+          </div>
+        )}
+        {needsAccountRiskNotice(provider) && (
+          <div className="mt-1 font-mono text-[11px] leading-[1.6] text-amber">
+            {t("settings.models.cliAccountRisk")}
           </div>
         )}
         {probeFailure !== null && (

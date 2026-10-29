@@ -164,7 +164,7 @@ function testStatusOf(mutation: {
 function ConnectionBadge({ connected }: { connected: boolean }) {
   const { t } = useTranslation();
   return connected ? (
-    <span className="flex items-center gap-1 bg-[rgba(61,220,132,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-accent">
+    <span className="flex items-center gap-1 bg-accent/8 px-[5px] py-[2px] font-mono text-[10px] text-accent">
       <div className="h-[5px] w-[5px] bg-accent" />
       {t("settings.models.connected")}
     </span>
@@ -295,7 +295,7 @@ function ProviderCard({
 
         <div className="flex gap-[6px]">
           <button
-            className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={test.isPending || (savedKey === null && input.trim().length === 0 && !provider.has_key)}
             onClick={() => {
               test.mutate(savedKey ?? (input.trim().length > 0 ? input.trim() : undefined));
@@ -388,7 +388,7 @@ function CliProviderCard({ provider }: { provider: Provider }) {
         <div className="min-w-0 flex-1">
           <div className="mb-[2px] flex items-center gap-2">
             <span className="text-sm font-bold text-text">{providerLabel(provider, t)}</span>
-            <span className="bg-[rgba(61,220,132,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-accent">
+            <span className="bg-accent/8 px-[5px] py-[2px] font-mono text-[10px] text-accent">
               {t("settings.models.cliSubscription")}
             </span>
           </div>
@@ -415,7 +415,7 @@ function CliProviderCard({ provider }: { provider: Provider }) {
         </div>
         <button
           type="button"
-          className="shrink-0 border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="shrink-0 border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-40"
           disabled={disabled || recheck.isPending}
           onClick={() => recheck.mutate()}
         >
@@ -454,18 +454,18 @@ function OllamaCard({ provider }: { provider: Provider | undefined }) {
       <div
         className="absolute -top-2 -right-2 h-[60px] w-[60px] opacity-20"
         style={{
-          backgroundImage: "radial-gradient(circle at 2px 2px, #A78BFA 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-purple) 1px, transparent 1px)",
           backgroundSize: "6px 6px",
         }}
       />
       <div className="flex items-center gap-[14px] border-b border-line2 px-5 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-purple font-mono text-sm font-bold text-[#0A100D]">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-purple font-mono text-sm font-bold text-sel-ink">
           L
         </div>
         <div className="min-w-0 flex-1">
           <div className="mb-[2px] flex items-center gap-2">
             <span className="text-sm font-bold text-text">{t("settings.models.ollamaTitle")}</span>
-            <span className="bg-[rgba(167,139,250,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-purple">
+            <span className="bg-purple/8 px-[5px] py-[2px] font-mono text-[10px] text-purple">
               {t("settings.models.ollamaFree")}
             </span>
           </div>
@@ -491,7 +491,7 @@ function OllamaCard({ provider }: { provider: Provider | undefined }) {
           className="min-w-0 border border-edge bg-card px-3 py-2 font-mono text-xs text-text placeholder:text-text4 focus:border-edge2"
         />
         <button
-          className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-40"
           disabled={test.isPending}
           onClick={() => test.mutate()}
         >
@@ -587,7 +587,7 @@ function CompatCard({
         }}
       />
       <div className="flex items-center gap-[14px] border-b border-line2 px-5 py-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#38BDF8] font-mono text-sm font-bold text-[#0A100D]">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#38BDF8] font-mono text-sm font-bold text-sel-ink">
           C
         </div>
         <div className="min-w-0 flex-1">
@@ -622,7 +622,7 @@ function CompatCard({
           className="min-w-0 border border-edge bg-card px-3 py-2 font-mono text-xs text-text placeholder:text-text4 focus:border-edge2"
         />
         <button
-          className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-40"
           disabled={test.isPending || models.length === 0}
           onClick={() => test.mutate()}
         >
@@ -725,7 +725,7 @@ function ModelsTab() {
             <div
               className="mb-3 border border-line2 px-5 py-6 text-center font-mono text-[11px] text-text3"
               style={{
-                backgroundImage: "radial-gradient(circle at 2px 2px, #1F2B25 1px, transparent 1px)",
+                backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-line2) 1px, transparent 1px)",
                 backgroundSize: "8px 8px",
               }}
             >
@@ -1050,7 +1050,7 @@ function AccountTab() {
         <div className="flex items-center gap-3">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center text-[15px] font-bold text-bar"
-            style={{ background: "linear-gradient(135deg, #3DDC84, #1F8A5B)" }}
+            style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-lo))" }}
           >
             {(account.name ?? "").slice(0, 2).toUpperCase() || "?"}
           </div>
@@ -1062,7 +1062,7 @@ function AccountTab() {
             </div>
           </div>
           {profile !== undefined && (
-            <span className="bg-[rgba(167,139,250,0.08)] px-[6px] py-[3px] font-mono text-[10px] text-purple">
+            <span className="bg-purple/8 px-[6px] py-[3px] font-mono text-[10px] text-purple">
               {t("settings.account.score", { score: formatInt(profile.contributionScore) })}
             </span>
           )}
@@ -1175,7 +1175,7 @@ function AboutTab({
             </button>
           ) : (
             <button
-              className="shrink-0 border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-40"
               disabled={busy}
               onClick={onCheck}
             >

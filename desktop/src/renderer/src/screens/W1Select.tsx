@@ -27,7 +27,7 @@ const LAUNCHER_CLASS: Record<DetectedInstance["launcher"], string> = {
 };
 
 const DASHED_RULE_STYLE: React.CSSProperties = {
-  backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+  backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
   backgroundSize: "6px 1px",
 };
 
@@ -38,7 +38,7 @@ function SectionHeader({ label, count, action }: { label: string; count?: number
         {label}
       </div>
       {count !== undefined && (
-        <div className="bg-[rgba(61,220,132,0.08)] px-[6px] py-[2px] font-mono text-[11px] text-accent">
+        <div className="bg-accent/8 px-[6px] py-[2px] font-mono text-[11px] text-accent">
           {count}
         </div>
       )}
@@ -72,7 +72,7 @@ function PackRow({ name, path, launcher, selected, probe, translated, onSelect }
         <div className="mb-[2px] flex items-center gap-2">
           <span className="text-sm font-bold tracking-[-0.01em] text-text">{name}</span>
           {probe?.hasMods === true && (
-            <span className="bg-[rgba(61,220,132,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-accent">
+            <span className="bg-accent/8 px-[5px] py-[2px] font-mono text-[10px] text-accent">
               mods/
             </span>
           )}
@@ -83,7 +83,7 @@ function PackRow({ name, path, launcher, selected, probe, translated, onSelect }
             <span className="bg-bar px-[5px] py-[2px] font-mono text-[10px] text-text3">kubejs</span>
           )}
           {translated && (
-            <span className="bg-[rgba(245,180,84,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-amber">
+            <span className="bg-amber/8 px-[5px] py-[2px] font-mono text-[10px] text-amber">
               {t("w1.badge.translated")}
             </span>
           )}
@@ -428,7 +428,7 @@ export function W1Select() {
 
       {/* Invalid folder */}
       {probeError !== null && (
-        <div className="mb-5 flex items-center gap-3 border border-[rgba(242,107,107,0.4)] bg-[rgba(242,107,107,0.06)] px-4 py-3">
+        <div className="mb-5 flex items-center gap-3 border border-red/40 bg-red/6 px-4 py-3">
           <div className="flex h-5 w-5 shrink-0 items-center justify-center bg-red">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#0A0F0C" strokeWidth="2">
               <path d="M6 2.5 V7" />
@@ -482,7 +482,7 @@ export function W1Select() {
           <SkeletonRow />
         </div>
       ) : detected.isError ? (
-        <div className="flex items-center justify-between gap-3 border border-[rgba(242,107,107,0.4)] bg-[rgba(242,107,107,0.06)] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border border-red/40 bg-red/6 px-4 py-3">
           <span className="text-xs text-red">{t("w1.detected.error")}</span>
           <button
             type="button"
@@ -598,7 +598,7 @@ export function W1Select() {
               className={`border-t px-4 py-2.5 text-[11px] ${
                 migrationReady
                   ? "border-accent-lo bg-tint text-accent"
-                  : "border-amber/30 bg-[rgba(245,180,84,0.05)] text-amber"
+                  : "border-amber/30 bg-amber/5 text-amber"
               }`}
             >
               {migrationReady ? t("w1.migration.ready") : t("w1.migration.incomplete")}

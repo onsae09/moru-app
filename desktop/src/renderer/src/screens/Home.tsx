@@ -30,7 +30,7 @@ const TOKENS_PER_ENTRY = 40;
 const USD_PER_MILLION_TOKENS = 3;
 
 const DOT_PATTERN: React.CSSProperties = {
-  backgroundImage: "radial-gradient(circle at 2px 2px, #3DDC84 1px, transparent 1px)",
+  backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-accent) 1px, transparent 1px)",
   backgroundSize: "4px 4px",
 };
 
@@ -188,7 +188,7 @@ function RecentJobCard({
             <div
               style={{
                 flex: pct,
-                background: "#3DDC84",
+                background: "var(--color-accent)",
                 backgroundImage:
                   "repeating-linear-gradient(90deg, transparent 0 3px, rgba(0,0,0,0.2) 3px 4px)",
               }}
@@ -268,7 +268,7 @@ function RecentJobCard({
             {record.resumable ? (
               <button
                 onClick={onResumeTranslation}
-                className="bg-accent p-2 text-[11px] font-bold text-bar hover:bg-accent-hi"
+                className="bg-accent p-2 text-[11px] font-bold text-sel-ink hover:bg-accent-hi"
               >
                 {t("home.recent.resumeTranslation")}
               </button>
@@ -614,7 +614,7 @@ export function HomeScreen() {
         {/* Contribution ranking - web platform not launched yet */}
         <div
           className="relative border border-accent-lo px-[18px] py-4"
-          style={{ background: "linear-gradient(135deg, #14201A 0%, #141C18 100%)" }}
+          style={{ background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)" }}
         >
           <div className="absolute top-2 right-2 h-6 w-6 opacity-40" style={DOT_PATTERN} />
           <div className="mb-2 text-[11px] font-semibold tracking-[0.06em] text-accent uppercase">
@@ -654,7 +654,7 @@ export function HomeScreen() {
                   if (queueActive) go("queue");
                   else requestReset("w1");
                 }}
-                className="bg-accent px-4 py-2.5 text-[13px] font-bold text-bar hover:bg-accent-hi"
+                className="bg-accent px-4 py-2.5 text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
               >
                 {t("home.empty.cta")}
               </button>
@@ -707,7 +707,7 @@ export function HomeScreen() {
           <div className="flex gap-2">
             <button
               onClick={() => void handleImport()}
-              className="flex items-center gap-1.5 bg-accent px-4 py-2.5 text-[13px] font-bold text-bar hover:bg-accent-hi"
+              className="flex items-center gap-1.5 bg-accent px-4 py-2.5 text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
             >
               <FolderIcon />
               {t("home.quick.pickFolder")}

@@ -332,7 +332,7 @@ export function W5Review() {
       <div
         className="h-px flex-1"
         style={{
-          backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+          backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
           backgroundSize: "6px 1px",
         }}
       />
@@ -347,7 +347,7 @@ export function W5Review() {
         <div
           className="flex flex-col items-center justify-center gap-2 border border-line2 bg-raised py-20"
           style={{
-            backgroundImage: "radial-gradient(#1A231F 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(var(--color-line) 1px, transparent 1px)",
             backgroundSize: "12px 12px",
           }}
         >
@@ -355,7 +355,7 @@ export function W5Review() {
           <p className="m-0 text-[13px] text-text2">{t("w5.empty.desc")}</p>
           <button
             onClick={() => go(scanState === "done" ? "w4" : "w1")}
-            className="mt-3 bg-accent px-5 py-[10px] text-[13px] font-bold text-[#0A100D] hover:bg-accent-hi"
+            className="mt-3 bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
           >
             {t("w5.empty.cta")}
           </button>
@@ -471,7 +471,7 @@ export function W5Review() {
           onClick={() => setColorPreview((v) => !v)}
           className={`flex items-center gap-[6px] border px-[10px] py-[6px] text-[11px] font-semibold ${
             colorPreview
-              ? "border-accent bg-[rgba(61,220,132,0.08)] text-accent"
+              ? "border-accent bg-accent/8 text-accent"
               : "border-edge text-text2 hover:border-edge2 hover:text-text"
           }`}
         >
@@ -539,7 +539,7 @@ export function W5Review() {
                 </div>
                 <button
                   onClick={() => void pageQuery.refetch()}
-                  className="border border-red px-3 py-[6px] text-[11px] font-semibold text-red hover:bg-[rgba(242,107,107,0.08)]"
+                  className="border border-red px-3 py-[6px] text-[11px] font-semibold text-red hover:bg-red/8"
                 >
                   {t("common.action.retry")}
                 </button>
@@ -732,7 +732,7 @@ export function W5Review() {
                 <button
                   onClick={() => requestRetranslate(selected)}
                   disabled={retransMut.isPending}
-                  className="flex items-center justify-center gap-[6px] bg-accent p-[10px] text-[12px] font-bold text-[#0A100D] hover:bg-accent-hi disabled:opacity-60"
+                  className="flex items-center justify-center gap-[6px] bg-accent p-[10px] text-[12px] font-bold text-sel-ink hover:bg-accent-hi disabled:opacity-60"
                 >
                   <svg
                     className={retransMut.isPending ? "animate-pxspin" : ""}
@@ -818,7 +818,7 @@ export function W5Review() {
           )}
           <button
             onClick={() => go("w6")}
-            className="flex items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-[#0A100D] hover:bg-accent-hi"
+            className="flex items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
           >
             {t("w5.next")}
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">

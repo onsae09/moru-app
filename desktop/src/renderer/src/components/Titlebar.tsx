@@ -23,7 +23,7 @@ export function Titlebar() {
       <div
         className="h-full flex-1"
         style={{
-          backgroundImage: "radial-gradient(circle at 2px 2px, #1A231F 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-line) 1px, transparent 1px)",
           backgroundSize: "8px 8px",
           backgroundPosition: "center",
         }}

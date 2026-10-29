@@ -280,7 +280,7 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                     onClick={() => {
                       void queryClient.invalidateQueries({ queryKey: ["providers"] });
                     }}
-                    className="border border-accent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)]"
+                    className="border border-accent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-accent/8"
                   >
                     {t("onboarding.key.cliRecheck")}
                   </button>
@@ -305,7 +305,7 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                     <button
                       disabled={localTest.isPending || urlInput.trim().length === 0}
                       onClick={connectLocal}
-                      className="shrink-0 border border-accent bg-transparent px-4 py-2 text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="shrink-0 border border-accent bg-transparent px-4 py-2 text-[12px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {localTest.isPending
                         ? t("onboarding.key.connecting")
@@ -359,7 +359,7 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                     <button
                       disabled={keyTest.isPending || keyInput.trim().length === 0}
                       onClick={() => keyTest.mutate({ provider: selected, key: keyInput.trim() })}
-                      className="shrink-0 border border-accent bg-transparent px-4 py-2 text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="shrink-0 border border-accent bg-transparent px-4 py-2 text-[12px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {keyTest.isPending ? t("onboarding.key.testing") : t("onboarding.key.test")}
                     </button>
@@ -401,7 +401,7 @@ function AccountStep() {
         <div className="flex items-center gap-3 border border-line2 bg-raised px-4 py-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center text-[15px] font-bold text-bar"
-            style={{ background: "linear-gradient(135deg, #3DDC84, #1F8A5B)" }}
+            style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-lo))" }}
           >
             {(account.name ?? "?").charAt(0).toUpperCase()}
           </div>

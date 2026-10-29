@@ -23,12 +23,12 @@ import { selectedScanTotals, useWizard } from "@/stores/wizard";
 /* ---- screen-local helpers ---- */
 
 const DOT_PATTERN = {
-  backgroundImage: "radial-gradient(circle at 2px 2px, #3DDC84 1px, transparent 1px)",
+  backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-accent) 1px, transparent 1px)",
   backgroundSize: "4px 4px",
 } as const;
 
 const DASH_LINE = {
-  backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+  backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
   backgroundSize: "6px 1px",
 } as const;
 
@@ -235,8 +235,8 @@ function FailedState() {
   return (
     <div className="animate-fade-in-up px-10 py-8">
       <StepHeader label={t("w2.stepLabel")} />
-      <div className="mx-auto mt-16 max-w-[520px] border border-[rgba(242,107,107,0.4)] bg-card p-8 text-center">
-        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center bg-[rgba(242,107,107,0.12)]">
+      <div className="mx-auto mt-16 max-w-[520px] border border-red/40 bg-card p-8 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center bg-red/12">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#F26B6B" strokeWidth="2">
             <path d="M3 3 L13 13 M13 3 L3 13" />
           </svg>
@@ -996,7 +996,7 @@ function CategoryRow({
         aria-expanded={expanded}
         className={`flex cursor-pointer items-center gap-2.5 px-3.5 py-2.5 ${
           expanded
-            ? "border-l-[3px] border-l-accent bg-[rgba(61,220,132,0.06)]"
+            ? "border-l-[3px] border-l-accent bg-accent/6"
             : checked
               ? "hover:bg-raised-hover"
               : "opacity-60 hover:bg-raised-hover hover:opacity-100"
@@ -1247,7 +1247,7 @@ function DoneState() {
       {/* Top summary stats */}
       <div
         className="relative mb-6 grid grid-cols-5 gap-2 border border-accent-lo p-4"
-        style={{ background: "linear-gradient(135deg, #14201A 0%, #141C18 100%)" }}
+        style={{ background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)" }}
       >
         <div className="absolute top-2 right-2 h-8 w-8 opacity-30" style={DOT_PATTERN} />
         <div>
@@ -1292,7 +1292,7 @@ function DoneState() {
       </div>
 
       {scanResult?.migration !== null && scanResult?.migration !== undefined && (
-        <div className="-mt-4 mb-6 flex items-center justify-between gap-4 border border-purple/40 bg-[rgba(167,139,250,0.06)] px-3.5 py-2.5">
+        <div className="-mt-4 mb-6 flex items-center justify-between gap-4 border border-purple/40 bg-purple/6 px-3.5 py-2.5">
           <div className="min-w-0">
             <div className="mb-0.5 flex items-center gap-2 text-[12px] font-bold text-purple">
               <span className="h-1.5 w-1.5 bg-purple" />

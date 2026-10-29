@@ -515,7 +515,7 @@ export function W4Progress() {
         <div
           className="h-px flex-1"
           style={{
-            backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+            backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
             backgroundSize: "6px 1px",
           }}
         />
@@ -560,8 +560,8 @@ export function W4Progress() {
         </div>
       )}
       {runState === "failed" && (
-        <div className="mb-4 flex items-center gap-3 border border-[rgba(242,107,107,0.4)] bg-[rgba(242,107,107,0.06)] px-4 py-3">
-          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-[rgba(242,107,107,0.16)]">
+        <div className="mb-4 flex items-center gap-3 border border-red/40 bg-red/6 px-4 py-3">
+          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-red/16">
             <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#F26B6B" strokeWidth="2">
               <path d="M2 2 L6 6 M6 2 L2 6" />
             </svg>
@@ -575,7 +575,7 @@ export function W4Progress() {
           {resumable && sessionId !== null && (
             <button
               onClick={() => void resumeTranslate(sessionId)}
-              className="shrink-0 bg-red px-4 py-2 text-[12px] font-bold text-sel-ink hover:bg-[#f58585]"
+              className="shrink-0 bg-red px-4 py-2 text-[12px] font-bold text-sel-ink hover:bg-red-hi"
             >
               {t("w4.banner.resume")}
             </button>
@@ -591,8 +591,8 @@ export function W4Progress() {
         </div>
       )}
       {runState === "cancelled" && (
-        <div className="mb-4 flex items-center gap-3 border border-[rgba(245,180,84,0.4)] bg-[rgba(245,180,84,0.06)] px-4 py-3">
-          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-[rgba(245,180,84,0.16)]">
+        <div className="mb-4 flex items-center gap-3 border border-amber/40 bg-amber/6 px-4 py-3">
+          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-amber/16">
             <svg width="8" height="8" viewBox="0 0 8 8" shapeRendering="crispEdges">
               <rect x="1" y="1" width="6" height="6" fill="#F5B454" />
             </svg>
@@ -618,8 +618,8 @@ export function W4Progress() {
         </div>
       )}
       {runState === "interrupted" && (
-        <div className="mb-4 flex items-center gap-3 border border-[rgba(245,180,84,0.4)] bg-[rgba(245,180,84,0.06)] px-4 py-3">
-          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-[rgba(245,180,84,0.16)]">
+        <div className="mb-4 flex items-center gap-3 border border-amber/40 bg-amber/6 px-4 py-3">
+          <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-amber/16">
             <svg width="8" height="8" viewBox="0 0 8 8" shapeRendering="crispEdges">
               <rect x="1" y="1" width="2" height="6" fill="#F5B454" />
               <rect x="5" y="1" width="2" height="6" fill="#F5B454" />
@@ -657,7 +657,7 @@ export function W4Progress() {
         {/* Progress ring */}
         <div
           className="relative overflow-hidden border border-accent-lo p-6 text-center"
-          style={{ background: "linear-gradient(135deg, #14201A 0%, #141C18 100%)" }}
+          style={{ background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)" }}
         >
           <div
             className="absolute inset-0"
@@ -714,7 +714,7 @@ export function W4Progress() {
               )}
             </div>
           </div>
-          <div className="relative flex justify-center gap-6 border-t border-[rgba(61,220,132,0.12)] pt-3">
+          <div className="relative flex justify-center gap-6 border-t border-accent/12 pt-3">
             <div>
               <div className="font-mono text-[10px] font-semibold tracking-[0.08em] text-text3 uppercase">
                 {t("w4.ring.elapsed")}
@@ -870,7 +870,7 @@ export function W4Progress() {
                         : "—"}
                   </span>
                   {cachePercent !== null && cachePercent > 0 && (
-                    <span className="bg-[rgba(61,220,132,0.08)] px-1 text-accent">
+                    <span className="bg-accent/8 px-1 text-accent">
                       {t("w4.stats.cacheHit", { value: cachePercent })}
                     </span>
                   )}
@@ -944,8 +944,8 @@ export function W4Progress() {
 
         {/* Log panel (collapsible) */}
         <div
-          className={`flex flex-col border bg-[#0A0D0B] ${
-            runState === "failed" ? "border-[rgba(242,107,107,0.4)]" : "border-line2"
+          className={`flex flex-col border bg-well ${
+            runState === "failed" ? "border-red/40" : "border-line2"
           }`}
         >
           <div
@@ -986,7 +986,7 @@ export function W4Progress() {
                 <div
                   key={`${line.ts}-${idx}`}
                   className={
-                    line.level === "error" ? "-mx-[14px] bg-[rgba(242,107,107,0.06)] px-[14px]" : ""
+                    line.level === "error" ? "-mx-[14px] bg-red/6 px-[14px]" : ""
                   }
                 >
                   <span className="text-text3">{timeOf(line.ts)}</span>{" "}

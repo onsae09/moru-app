@@ -98,8 +98,8 @@ export function Sidebar() {
           onClick={startNewTranslation}
           className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] font-bold text-bar hover:brightness-110 active:translate-y-px"
           style={{
-            background: "linear-gradient(180deg, #3DDC84 0%, #2FB86B 100%)",
-            boxShadow: "0 1px 0 #56ea99 inset, 0 2px 0 #1F8A5B, 0 6px 12px rgba(61,220,132,0.15)",
+            background: "linear-gradient(180deg, var(--color-accent) 0%, var(--color-accent-mid) 100%)",
+            boxShadow: "0 1px 0 var(--color-accent-hi) inset, 0 2px 0 var(--color-accent-lo), 0 6px 12px rgba(61,220,132,0.15)",
           }}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" shapeRendering="crispEdges">
@@ -205,7 +205,7 @@ export function Sidebar() {
             <div
               className="absolute top-0 right-0 h-6 w-6 opacity-30"
               style={{
-                backgroundImage: "radial-gradient(circle at 2px 2px, #3DDC84 1px, transparent 1px)",
+                backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-accent) 1px, transparent 1px)",
                 backgroundSize: "4px 4px",
               }}
             />
@@ -249,7 +249,7 @@ export function Sidebar() {
         <div className="mt-1 flex items-center gap-2.5 border border-line bg-hover px-3 py-2">
           <div
             className="flex h-6 w-6 items-center justify-center text-[11px] font-bold text-bar"
-            style={{ background: "linear-gradient(135deg, #3DDC84, #1F8A5B)" }}
+            style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-lo))" }}
           >
             {account.status === "connected" ? (account.name ?? "").slice(0, 2).toUpperCase() || "?" : "?"}
           </div>

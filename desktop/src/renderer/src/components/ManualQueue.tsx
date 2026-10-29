@@ -144,7 +144,7 @@ export function ManualQueue(): ReactNode {
           onClick={() => setFlaggedOnly(!flaggedOnly)}
           className={`flex items-center gap-1 border px-[8px] py-[4px] text-[10px] font-semibold ${
             flaggedOnly
-              ? "border-amber bg-[rgba(245,180,84,0.08)] text-amber"
+              ? "border-amber bg-amber/8 text-amber"
               : "border-edge text-text2 hover:border-edge2 hover:text-text"
           }`}
         >

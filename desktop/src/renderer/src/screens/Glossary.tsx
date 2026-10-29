@@ -29,10 +29,10 @@ const TARGET_LOCALES = [
 ] as const;
 
 const ORIGIN_STYLE: Record<GlossaryOrigin, string> = {
-  vanilla: "text-accent bg-[rgba(61,220,132,0.08)]",
-  extracted: "text-purple bg-[rgba(167,139,250,0.08)]",
-  manual: "text-blue bg-[rgba(107,179,245,0.08)]",
-  community: "text-amber bg-[rgba(245,180,84,0.08)]",
+  vanilla: "text-accent bg-accent/8",
+  extracted: "text-purple bg-purple/8",
+  manual: "text-blue bg-blue/8",
+  community: "text-amber bg-amber/8",
 };
 
 const ORIGINS: GlossaryOrigin[] = ["vanilla", "extracted", "manual", "community"];
@@ -570,7 +570,7 @@ export function GlossaryScreen() {
 
   const filterChip = (active: boolean): string =>
     active
-      ? "border border-accent bg-[rgba(61,220,132,0.08)] px-2.5 py-[5px] text-[11px] font-semibold text-accent"
+      ? "border border-accent bg-accent/8 px-2.5 py-[5px] text-[11px] font-semibold text-accent"
       : "border border-edge bg-transparent px-2.5 py-[5px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text";
 
   return (
@@ -644,7 +644,7 @@ export function GlossaryScreen() {
           <button
             onClick={beginAdd}
             disabled={busy || query.isPending || query.isError}
-            className="flex items-center gap-1.5 bg-accent px-3.5 py-2 text-[13px] font-bold text-bar hover:bg-accent-hi disabled:opacity-50"
+            className="flex items-center gap-1.5 bg-accent px-3.5 py-2 text-[13px] font-bold text-sel-ink hover:bg-accent-hi disabled:opacity-50"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges">
               <rect x="5" y="1" width="2" height="10" fill="currentColor" />
@@ -670,7 +670,7 @@ export function GlossaryScreen() {
 
       {/* Filter row */}
       <div className="flex items-center gap-2 border border-b-0 border-line2 bg-raised px-3.5 py-2.5">
-        <div className="flex items-center gap-1.5 border border-accent bg-[rgba(61,220,132,0.08)] px-3 py-1.5">
+        <div className="flex items-center gap-1.5 border border-accent bg-accent/8 px-3 py-1.5">
           <LocaleFlag locale={SOURCE_LANG} className="h-3 w-[18px] shrink-0" />
           <span className="font-mono text-[11px] text-text">{SOURCE_LANG}</span>
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#3DDC84" strokeWidth="1.8">
@@ -744,7 +744,7 @@ export function GlossaryScreen() {
           {/* Add row */}
           {adding && (
             <div
-              className={`${GRID} items-center border-b border-line border-l-[3px] border-l-accent bg-[rgba(61,220,132,0.03)] px-3.5 py-3`}
+              className={`${GRID} items-center border-b border-line border-l-[3px] border-l-accent bg-accent/3 px-3.5 py-3`}
             >
               <RowInput
                 value={draftSource}
@@ -817,7 +817,7 @@ export function GlossaryScreen() {
               <div
                 className="h-16 w-16"
                 style={{
-                  backgroundImage: "radial-gradient(#1F2B25 1.5px, transparent 1.5px)",
+                  backgroundImage: "radial-gradient(var(--color-line2) 1.5px, transparent 1.5px)",
                   backgroundSize: "8px 8px",
                 }}
               />
@@ -825,7 +825,7 @@ export function GlossaryScreen() {
               <div className="text-[12px] text-text3">{t("glossary.empty.desc")}</div>
               <button
                 onClick={beginAdd}
-                className="mt-1 flex items-center gap-1.5 bg-accent px-3.5 py-2 text-[13px] font-bold text-bar hover:bg-accent-hi"
+                className="mt-1 flex items-center gap-1.5 bg-accent px-3.5 py-2 text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges">
                   <rect x="5" y="1" width="2" height="10" fill="currentColor" />
@@ -849,7 +849,7 @@ export function GlossaryScreen() {
                 editIndex === index ? (
                   <div
                     key={`${term.source}-${index}`}
-                    className={`${GRID} h-11 items-center border-b border-line border-l-[3px] border-l-accent bg-[rgba(61,220,132,0.03)] px-3.5`}
+                    className={`${GRID} h-11 items-center border-b border-line border-l-[3px] border-l-accent bg-accent/3 px-3.5`}
                   >
                     <RowInput
                       value={draftSource}

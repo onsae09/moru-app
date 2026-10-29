@@ -175,7 +175,7 @@ export function W6Export() {
       <div
         className="h-px flex-1"
         style={{
-          backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+          backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
           backgroundSize: "6px 1px",
         }}
       />
@@ -197,7 +197,7 @@ export function W6Export() {
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.05]"
             style={{
-              backgroundImage: "radial-gradient(circle at 2px 2px, #3DDC84 1px, transparent 1px)",
+              backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-accent) 1px, transparent 1px)",
               backgroundSize: "10px 10px",
             }}
           />
@@ -354,7 +354,7 @@ export function W6Export() {
       {/* Success banner */}
       <div
         className={`relative mb-7 flex items-center gap-5 overflow-hidden border px-6 py-5 ${cancelled ? "border-amber/50" : "border-accent-lo"}`}
-        style={{ background: "linear-gradient(135deg, #14201A 0%, #141C18 100%)" }}
+        style={{ background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)" }}
       >
         <div
           className="absolute -right-5 -top-5 h-[140px] w-[140px] opacity-10"
@@ -463,7 +463,7 @@ export function W6Export() {
                   <div className="text-[15px] font-bold tracking-[-0.01em] text-text">
                     {t("w6.export.zipTitle")}
                   </div>
-                  <span className="bg-[rgba(61,220,132,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-accent">
+                  <span className="bg-accent/8 px-[5px] py-[2px] font-mono text-[10px] text-accent">
                     {t("w6.export.badgeRecommended")}
                   </span>
                 </div>
@@ -568,7 +568,7 @@ export function W6Export() {
                   <div className="text-[15px] font-bold tracking-[-0.01em] text-text">
                     {t("w6.export.ovTitle")}
                   </div>
-                  <span className="bg-[rgba(245,180,84,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-amber">
+                  <span className="bg-amber/8 px-[5px] py-[2px] font-mono text-[10px] text-amber">
                     {t("w6.export.badgeAdvanced")}
                   </span>
                 </div>
@@ -637,7 +637,7 @@ export function W6Export() {
                     <div className="text-[15px] font-bold tracking-[-0.01em] text-text">
                       {t(title)}
                     </div>
-                    <span className="bg-[rgba(167,139,250,0.08)] px-[5px] py-[2px] font-mono text-[10px] text-purple">
+                    <span className="bg-purple/8 px-[5px] py-[2px] font-mono text-[10px] text-purple">
                       {t("w6.export.bilingual")}
                     </span>
                   </div>
@@ -677,12 +677,12 @@ export function W6Export() {
           </div>
           <div
             className="relative flex-1 overflow-hidden border border-[#5B3EBD] p-6"
-            style={{ background: "linear-gradient(135deg, #16141F 0%, #141C18 100%)" }}
+            style={{ background: "linear-gradient(135deg, #16141F 0%, var(--color-raised) 100%)" }}
           >
             <div
               className="absolute -bottom-[30px] -right-[30px] h-[120px] w-[120px] opacity-15"
               style={{
-                backgroundImage: "radial-gradient(circle at 2px 2px, #A78BFA 1px, transparent 1px)",
+                backgroundImage: "radial-gradient(circle at 2px 2px, var(--color-purple) 1px, transparent 1px)",
                 backgroundSize: "6px 6px",
               }}
             />
@@ -692,7 +692,7 @@ export function W6Export() {
               {account.status === "connected" ? (
                 <div
                   className="flex h-6 w-6 items-center justify-center font-mono text-[10px] font-bold text-bar"
-                  style={{ background: "linear-gradient(135deg, #3DDC84, #1F8A5B)" }}
+                  style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-lo))" }}
                 >
                   {(account.name ?? "").slice(0, 2).toUpperCase() || "?"}
                 </div>
@@ -713,7 +713,7 @@ export function W6Export() {
                 </div>
               </div>
               {account.status === "connected" ? (
-                <span className="bg-[rgba(167,139,250,0.08)] px-[6px] py-[3px] font-mono text-[10px] text-purple">
+                <span className="bg-purple/8 px-[6px] py-[3px] font-mono text-[10px] text-purple">
                   {t("w6.share.badgeConnected")}
                 </span>
               ) : (
@@ -780,7 +780,7 @@ export function W6Export() {
                     </div>
                   </div>
                   {autoPack !== null ? (
-                    <span className="shrink-0 bg-[rgba(61,220,132,0.08)] px-[6px] py-[3px] font-mono text-[10px] text-accent">
+                    <span className="shrink-0 bg-accent/8 px-[6px] py-[3px] font-mono text-[10px] text-accent">
                       {t("w6.share.cfAutoDetected")}
                     </span>
                   ) : (
@@ -1187,7 +1187,7 @@ function UndeliverableBand(): React.JSX.Element | null {
   const { files, entries, mods } = found;
 
   return (
-    <div className="mb-7 border border-amber/40 bg-[rgba(245,180,84,0.05)] px-5 py-4">
+    <div className="mb-7 border border-amber/40 bg-amber/5 px-5 py-4">
       <div className="mb-1.5 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.06em] text-amber">
         <div className="h-3 w-1 bg-amber" />
         {t("w6.undeliverable.header")}

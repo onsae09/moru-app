@@ -184,10 +184,10 @@ export function useTokenPatterns(): void {
 
 /** accent -> blue -> purple -> amber, cycling; same token = same color. */
 const TOKEN_PALETTE = [
-  { color: "#3DDC84", bg: "rgba(61,220,132,0.15)", border: "rgba(61,220,132,0.3)" },
-  { color: "#6BB3F5", bg: "rgba(107,179,245,0.15)", border: "rgba(107,179,245,0.3)" },
-  { color: "#A78BFA", bg: "rgba(167,139,250,0.15)", border: "rgba(167,139,250,0.3)" },
-  { color: "#F5B454", bg: "rgba(245,180,84,0.15)", border: "rgba(245,180,84,0.3)" },
+  { color: "var(--color-accent)", bg: "rgba(61,220,132,0.15)", border: "rgba(61,220,132,0.3)" },
+  { color: "var(--color-blue)", bg: "rgba(107,179,245,0.15)", border: "rgba(107,179,245,0.3)" },
+  { color: "var(--color-purple)", bg: "rgba(167,139,250,0.15)", border: "rgba(167,139,250,0.3)" },
+  { color: "var(--color-amber)", bg: "rgba(245,180,84,0.15)", border: "rgba(245,180,84,0.3)" },
 ];
 
 export function tokenColorMap(...texts: string[]): Map<string, number> {

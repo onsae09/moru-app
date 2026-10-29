@@ -19,12 +19,12 @@ function statusClass(status: TranslationQueueItemStatus): string {
     case "done":
       return "border-accent-lo bg-tint text-accent";
     case "failed":
-      return "border-red/40 bg-[rgba(242,107,107,0.08)] text-red";
+      return "border-red/40 bg-red/8 text-red";
     case "cancelled":
-      return "border-amber/40 bg-[rgba(245,180,84,0.08)] text-amber";
+      return "border-amber/40 bg-amber/8 text-amber";
     case "scanning":
     case "translating":
-      return "border-blue/40 bg-[rgba(96,165,250,0.08)] text-blue";
+      return "border-blue/40 bg-blue/8 text-blue";
     default:
       return "border-line2 bg-bar text-text3";
   }
@@ -278,7 +278,7 @@ export function TranslationQueueScreen() {
       </div>
 
       {(selectionErrors.length > 0 || lastError !== null) && (
-        <div className="mb-5 border border-red/40 bg-[rgba(242,107,107,0.06)] px-4 py-3 text-[11px] text-red">
+        <div className="mb-5 border border-red/40 bg-red/6 px-4 py-3 text-[11px] text-red">
           {lastError !== null && <div>{lastError}</div>}
           {selectionErrors.map((error) => (
             <div key={error}>{error}</div>
@@ -308,7 +308,7 @@ export function TranslationQueueScreen() {
               type="button"
               disabled={phase === "pausing"}
               onClick={pauseTranslationQueue}
-              className="border border-amber/50 px-4 py-2 text-[12px] font-bold text-amber enabled:hover:bg-[rgba(245,180,84,0.08)] disabled:opacity-50"
+              className="border border-amber/50 px-4 py-2 text-[12px] font-bold text-amber enabled:hover:bg-amber/8 disabled:opacity-50"
             >
               {phase === "pausing" ? t("queue.action.pausing") : t("queue.action.pause")}
             </button>

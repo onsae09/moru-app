@@ -199,12 +199,12 @@ export function ManualContextPanel({
                         ? {
                             background: "rgba(61,220,132,0.12)",
                             borderColor: "rgba(61,220,132,0.3)",
-                            color: "#3DDC84",
+                            color: "var(--color-accent)",
                           }
                         : {
                             background: "rgba(242,107,107,0.12)",
                             borderColor: "rgba(242,107,107,0.4)",
-                            color: "#F26B6B",
+                            color: "var(--color-red)",
                           }
                     }
                   >

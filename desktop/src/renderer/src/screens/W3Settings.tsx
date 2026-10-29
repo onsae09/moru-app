@@ -210,7 +210,7 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
         type="button"
         disabled={disabled || recheck.isPending}
         onClick={() => recheck.mutate()}
-        className="shrink-0 cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="shrink-0 cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {recheck.isPending ? t("settings.models.testing") : t("settings.models.cliRecheck")}
       </button>
@@ -585,7 +585,7 @@ export function W3Settings() {
         <div
           className="h-px flex-1"
           style={{
-            backgroundImage: "linear-gradient(90deg, #24322B 50%, transparent 50%)",
+            backgroundImage: "linear-gradient(90deg, var(--color-edge) 50%, transparent 50%)",
             backgroundSize: "6px 1px",
           }}
         />
@@ -790,7 +790,7 @@ export function W3Settings() {
                 model: RECOMMENDED_MODEL,
               })
             }
-            className="cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)]"
+            className="cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-accent/8"
           >
             {t("w3.recommend.apply")}
           </button>
@@ -938,7 +938,7 @@ export function W3Settings() {
             type="button"
             disabled={keyTest.isPending || keyInput.trim().length === 0}
             onClick={() => keyTest.mutate(keyInput.trim())}
-            className="cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-accent/8 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {keyTest.isPending ? t("w3.key.testing") : t("w3.key.test")}
           </button>
@@ -1044,8 +1044,8 @@ export function W3Settings() {
                 style={
                   selected
                     ? {
-                        background: "linear-gradient(135deg, #14201A 0%, #141C18 100%)",
-                        border: "2px solid #3DDC84",
+                        background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)",
+                        border: "2px solid var(--color-accent)",
                         boxShadow: "0 0 24px rgba(61,220,132,0.12)",
                       }
                     : undefined

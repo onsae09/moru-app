@@ -15,6 +15,7 @@
   /* neutrals */
   --color-ink: #06090a; /* page backdrop */
   --color-bar: #0a100d; /* titlebar, deep wells */
+  --color-well: #0a0d0b; /* log / graph terminal wells */
   --color-panel: #0b1310; /* sidebar */
   --color-bg: #0e1512; /* main content */
   --color-card: #0f1613; /* card wells */
@@ -220,12 +221,12 @@ select:focus-visible {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #24322b;
-  border: 2px solid #0e1512;
+  background: var(--color-edge);
+  border: 2px solid var(--color-bg);
   border-radius: 0;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a4f45;
+  background: var(--color-edge2);
 }
 ::-webkit-scrollbar-corner {
   background: transparent;

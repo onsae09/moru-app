@@ -138,9 +138,9 @@ function SessionRow({
   const rate = passRatePercent(s);
 
   const rowBg = running
-    ? "bg-[rgba(61,220,132,0.03)] hover:bg-[rgba(61,220,132,0.06)]"
+    ? "bg-accent/3 hover:bg-accent/6"
     : stopped
-      ? "bg-[rgba(242,107,107,0.03)] hover:bg-[rgba(242,107,107,0.06)]"
+      ? "bg-red/3 hover:bg-red/6"
       : "hover:bg-raised-hover";
 
   const actionBase = "border px-2 py-1 font-mono text-[10px] font-semibold";
@@ -204,7 +204,7 @@ function SessionRow({
       >
         {canResume && (
           <button
-            className={`${actionBase} border-accent bg-[rgba(61,220,132,0.08)] text-accent hover:bg-[rgba(61,220,132,0.15)]`}
+            className={`${actionBase} border-accent bg-accent/8 text-accent hover:bg-accent/15`}
             onClick={onResume}
           >
             {t("history.action.resume")}
@@ -212,7 +212,7 @@ function SessionRow({
         )}
         {running && canView && (
           <button
-            className={`${actionBase} border-accent bg-[rgba(61,220,132,0.08)] text-accent hover:bg-[rgba(61,220,132,0.15)]`}
+            className={`${actionBase} border-accent bg-accent/8 text-accent hover:bg-accent/15`}
             onClick={onView}
           >
             {t("history.action.view")}
@@ -543,7 +543,7 @@ export function HistoryScreen(): React.JSX.Element {
               onClick={() => setFilter(f.id)}
               className={
                 filter === f.id
-                  ? "border border-accent bg-[rgba(61,220,132,0.08)] px-3 py-1.5 text-[11px] font-semibold text-accent"
+                  ? "border border-accent bg-accent/8 px-3 py-1.5 text-[11px] font-semibold text-accent"
                   : "border border-edge bg-transparent px-3 py-1.5 text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
               }
             >
@@ -559,7 +559,7 @@ export function HistoryScreen(): React.JSX.Element {
           <p className="m-0 mb-5 text-[12px] text-text3">{t("history.empty.desc")}</p>
           <div className="flex items-center justify-center gap-3">
             <button
-              className="flex items-center gap-1.5 bg-accent px-4 py-2 text-[13px] font-bold text-[#0A100D] hover:bg-accent-hi"
+              className="flex items-center gap-1.5 bg-accent px-4 py-2 text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
               onClick={() => go("w1")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges">

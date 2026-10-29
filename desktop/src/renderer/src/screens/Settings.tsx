@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatInt } from "@/lib/format";
@@ -184,6 +185,7 @@ function ProviderCard({
   const decor = providerDecor(provider);
   const [input, setInput] = useState("");
   const [reveal, setReveal] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const queryClient = useQueryClient();
   /* W3 reads keys through react-query; refresh its caches on every write */
@@ -230,6 +232,18 @@ function ProviderCard({
 
   return (
     <div className="mb-3 border border-line2 bg-raised">
+      <ConfirmDialog
+        open={confirmRemove}
+        variant="danger"
+        title={t("settings.models.removeConfirm.title", { provider: provider.name })}
+        body={t("settings.models.removeConfirm.body")}
+        confirmLabel={t("settings.models.remove")}
+        onCancel={() => setConfirmRemove(false)}
+        onConfirm={() => {
+          setConfirmRemove(false);
+          void remove();
+        }}
+      />
       <div className="flex items-center gap-[14px] border-b border-line2 px-5 py-4">
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center font-mono text-sm font-bold"
@@ -288,7 +302,7 @@ function ProviderCard({
           {savedKey !== null ? (
             <button
               className="border border-edge bg-transparent px-3 py-2 text-[11px] font-semibold text-text2 hover:border-red hover:text-red"
-              onClick={() => void remove()}
+              onClick={() => setConfirmRemove(true)}
             >
               {t("settings.models.remove")}
             </button>
@@ -502,6 +516,7 @@ function CompatCard({
   const baseUrl = useSettings((s) => s.openaiCompatBaseUrl);
   const set = useSettings((s) => s.set);
   const [keyInput, setKeyInput] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const queryClient = useQueryClient();
   const invalidateKeyCaches = async () => {
@@ -548,6 +563,18 @@ function CompatCard({
 
   return (
     <div className="relative mb-3 overflow-hidden border border-[#38BDF8] bg-raised">
+      <ConfirmDialog
+        open={confirmRemove}
+        variant="danger"
+        title={t("settings.models.removeConfirm.title", { provider: t("settings.models.compatTitle") })}
+        body={t("settings.models.removeConfirm.body")}
+        confirmLabel={t("settings.models.remove")}
+        onCancel={() => setConfirmRemove(false)}
+        onConfirm={() => {
+          setConfirmRemove(false);
+          void removeKey();
+        }}
+      />
       <div
         className="absolute -top-2 -right-2 h-[60px] w-[60px] opacity-20"
         style={{
@@ -617,7 +644,7 @@ function CompatCard({
         {savedKey !== null ? (
           <button
             className="border border-edge bg-transparent px-3 py-2 text-[11px] font-semibold text-text2 hover:border-red hover:text-red"
-            onClick={() => void removeKey()}
+            onClick={() => setConfirmRemove(true)}
           >
             {t("settings.models.remove")}
           </button>

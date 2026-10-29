@@ -64,6 +64,8 @@
     "copyFailed": "Failed to copy to clipboard",
     "imported": "Imported {{count}} terms",
     "importFailed": "Could not read the CSV",
-    "saveFailed": "Failed to save"
+    "saveFailed": "Failed to save",
+    "deleted": "Deleted \"{{source}}\"",
+    "undo": "Undo"
   }
 }

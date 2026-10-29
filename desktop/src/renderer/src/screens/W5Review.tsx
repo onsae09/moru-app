@@ -26,6 +26,7 @@ import {
   useTokenPatterns,
 } from "@/components/EntryText";
 import { activateOnKey } from "@/components/a11y";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -224,6 +225,14 @@ export function W5Review() {
     onSettled: () => invalidate(),
   });
 
+  /* Retranslating overwrites the entry; a hand-edited one asks first. */
+  const [confirmRetrans, setConfirmRetrans] = useState<EntryRef | null>(null);
+  const requestRetranslate = (entry: Entry): void => {
+    const ref = { key: entry.key, file: entry.file };
+    if (entry.status === "modified") setConfirmRetrans(ref);
+    else retransMut.mutate(ref);
+  };
+
   const bulkMut = useMutation({
     // Retries every failed entry, not just the ones on screen: `rows` holds
     // one PAGE_SIZE slice, so a run with more failures than that used to
@@ -300,9 +309,14 @@ export function W5Review() {
       } else if (e.key === "e" || e.key === "E") {
         e.preventDefault();
         editRef.current?.focus();
-      } else if ((e.key === "r" || e.key === "R") && selected !== null && !retransMut.isPending) {
+      } else if (
+        (e.key === "r" || e.key === "R") &&
+        selected !== null &&
+        !retransMut.isPending &&
+        confirmRetrans === null
+      ) {
         e.preventDefault();
-        retransMut.mutate({ key: selected.key, file: selected.file });
+        requestRetranslate(selected);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -716,7 +730,7 @@ export function W5Review() {
               {/* Actions */}
               <div className="grid grid-cols-2 gap-[6px]">
                 <button
-                  onClick={() => retransMut.mutate({ key: selected.key, file: selected.file })}
+                  onClick={() => requestRetranslate(selected)}
                   disabled={retransMut.isPending}
                   className="flex items-center justify-center gap-[6px] bg-accent p-[10px] text-[12px] font-bold text-[#0A100D] hover:bg-accent-hi disabled:opacity-60"
                 >
@@ -813,6 +827,19 @@ export function W5Review() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRetrans !== null}
+        variant="danger"
+        title={t("w5.retransConfirm.title")}
+        body={t("w5.retransConfirm.body")}
+        confirmLabel={t("w5.detail.retranslate")}
+        onCancel={() => setConfirmRetrans(null)}
+        onConfirm={() => {
+          if (confirmRetrans !== null) retransMut.mutate(confirmRetrans);
+          setConfirmRetrans(null);
+        }}
+      />
     </div>
   );
 }

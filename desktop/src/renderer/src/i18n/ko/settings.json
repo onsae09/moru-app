@@ -59,7 +59,11 @@
     "cliDisabled": "사용 중지",
     "cliDisabledHint": "Claude Code 연결은 현재 사용할 수 없어요. 다른 공급자를 선택해 주세요.",
     "cliTestFailUnknown": "CLI가 알아볼 수 있는 이유를 주지 않았어요. 터미널에서 직접 실행해 확인해 주세요.",
-    "baseUrlPlaceholder": "http://localhost:1234/v1"
+    "baseUrlPlaceholder": "http://localhost:1234/v1",
+    "removeConfirm": {
+      "title": "{{provider}} API 키를 삭제할까요?",
+      "body": "저장된 키가 이 컴퓨터에서 지워져요. 다시 쓰려면 키를 새로 입력해야 해요."
+    }
   },
   "general": {
     "title": "앱 기본 설정",

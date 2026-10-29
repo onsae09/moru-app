@@ -51,5 +51,9 @@
   "loadError": "Failed to load the review list",
   "failedRemain": "⚠ {{n}} failed remaining (warnings can be ignored)",
   "next": "Next: Export",
-  "listLabel": "Translation entries"
+  "listLabel": "Translation entries",
+  "retransConfirm": {
+    "title": "Overwrite your edited translation?",
+    "body": "You edited this entry by hand. Retranslating with AI replaces your edit with a new translation."
+  }
 }

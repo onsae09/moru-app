@@ -483,8 +483,40 @@ export function GlossaryScreen() {
     saveMutation.mutate(next, { onSuccess: () => setEditIndex(null) });
   };
 
+  /* Delete saves at once; the toast's undo writes the row back at its old
+     position into whatever the list is by then (it may have been refetched). */
   const removeTerm = (index: number): void => {
-    saveMutation.mutate(terms.filter((_, i) => i !== index));
+    const removed = terms[index];
+    if (removed === undefined) return;
+    const lang = targetLang;
+    const queryKey = ["glossary", SOURCE_LANG, lang];
+    saveMutation.mutate(
+      terms.filter((_, i) => i !== index),
+      {
+        onSuccess: () => {
+          toast(t("glossary.toast.deleted", { source: removed.source }), {
+            tone: "ok",
+            duration: 6000,
+            action: {
+              label: t("glossary.toast.undo"),
+              onClick: () => {
+                const cached = queryClient.getQueryData<{ terms?: unknown }>(queryKey);
+                const current = Array.isArray(cached?.terms) ? (cached.terms as GlossaryTerm[]) : [];
+                // upsertTerm keeps a row the cache still holds from replacing
+                // into a duplicate; otherwise put it back where it was.
+                const present = upsertTerm(current, removed, "end").length === current.length;
+                const restored = present ? upsertTerm(current, removed, "end") : [...current];
+                if (!present) restored.splice(Math.min(index, restored.length), 0, removed);
+                void api
+                  .putGlossary({ source_lang: SOURCE_LANG, target_lang: lang, terms: restored })
+                  .then(() => queryClient.invalidateQueries({ queryKey }))
+                  .catch(() => showToast(t("glossary.toast.saveFailed"), "err"));
+              },
+            },
+          });
+        },
+      },
+    );
   };
 
   /* Reset: drop user-generated rows (manual + extracted). Vanilla/community

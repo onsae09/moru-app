@@ -64,6 +64,8 @@
     "copyFailed": "클립보드 복사에 실패했습니다",
     "imported": "{{count}}개 용어를 가져왔습니다",
     "importFailed": "CSV를 읽지 못했습니다",
-    "saveFailed": "저장에 실패했습니다"
+    "saveFailed": "저장에 실패했습니다",
+    "deleted": "\"{{source}}\" 용어를 삭제했어요",
+    "undo": "되돌리기"
   }
 }

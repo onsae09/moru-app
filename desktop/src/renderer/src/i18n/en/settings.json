@@ -59,7 +59,11 @@
     "cliDisabled": "Disabled",
     "cliDisabledHint": "The Claude Code connection is currently unavailable. Please choose another provider.",
     "cliTestFailUnknown": "the CLI gave no readable reason — run it in a terminal to see what it reports.",
-    "baseUrlPlaceholder": "http://localhost:1234/v1"
+    "baseUrlPlaceholder": "http://localhost:1234/v1",
+    "removeConfirm": {
+      "title": "Remove the {{provider}} API key?",
+      "body": "The saved key is erased from this computer. You'll need to enter it again to use this provider."
+    }
   },
   "general": {
     "title": "App preferences",

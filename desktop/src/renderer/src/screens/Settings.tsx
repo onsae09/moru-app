@@ -26,7 +26,7 @@ import { LOCAL_PROVIDERS, modelDisplayName } from "@/lib/models";
 import { WEB_URL, WebApiError, web } from "@/lib/web";
 import { useAccount } from "@/stores/account";
 import { type SettingsTab, useRouter } from "@/stores/router";
-import { useSettings } from "@/stores/settings";
+import { useSettings, type ThemeSetting } from "@/stores/settings";
 import type { LauncherId, UpdateState } from "../../../shared/bridge";
 import type { Provider } from "../../../shared/engine";
 
@@ -811,6 +811,7 @@ function SelectChip({
 function GeneralTab() {
   const { t } = useTranslation();
   const uiLanguage = useSettings((s) => s.uiLanguage);
+  const theme = useSettings((s) => s.theme);
   const outputDir = useSettings((s) => s.outputDir);
   const set = useSettings((s) => s.set);
   const replayOnboarding = useRouter((s) => s.replayOnboarding);
@@ -835,8 +836,13 @@ function GeneralTab() {
           </SelectChip>
         </SettingRow>
 
-        {/* Theme row hidden until a light theme exists: a picker with one
-            selectable value offered nothing. */}
+        <SettingRow title={t("settings.general.theme")} desc={t("settings.general.themeDesc")}>
+          <SelectChip value={theme} onChange={(v) => set({ theme: v as ThemeSetting })}>
+            <option value="dark">{t("settings.general.themeDark")}</option>
+            <option value="light">{t("settings.general.themeLight")}</option>
+            <option value="system">{t("settings.general.themeSystem")}</option>
+          </SelectChip>
+        </SettingRow>
 
         <SettingRow title={t("settings.general.outputDir")} desc={t("settings.general.outputDirDesc")}>
           <div className="flex min-w-0 items-center gap-[6px]">

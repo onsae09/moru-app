@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { moru } from "@/lib/bridge";
 import { formatInt } from "@/lib/format";
 import { useRouter } from "@/stores/router";
@@ -342,43 +343,18 @@ export function TranslationQueueScreen() {
         </div>
       )}
 
-      {confirmClear && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setConfirmClear(false)}
-        >
-          <div
-            className="w-[380px] border border-line2 bg-raised p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 text-[14px] font-bold text-text">
-              {t("queue.confirmClear.title")}
-            </div>
-            <p className="m-0 mb-5 text-[12px] leading-relaxed text-text2">
-              {t("queue.confirmClear.body")}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="border border-edge px-3.5 py-2 text-[12px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-                onClick={() => setConfirmClear(false)}
-              >
-                {t("common.action.cancel")}
-              </button>
-              <button
-                type="button"
-                className="bg-red px-3.5 py-2 text-[12px] font-bold text-[#0A100D] hover:bg-[#f58585]"
-                onClick={() => {
-                  clear();
-                  setConfirmClear(false);
-                }}
-              >
-                {t("queue.action.clear")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmClear}
+        variant="danger"
+        title={t("queue.confirmClear.title")}
+        body={t("queue.confirmClear.body")}
+        confirmLabel={t("queue.action.clear")}
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          clear();
+          setConfirmClear(false);
+        }}
+      />
     </div>
   );
 }

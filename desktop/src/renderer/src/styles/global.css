@@ -43,6 +43,7 @@
 
   /* status */
   --color-red: #f26b6b;
+  --color-red-hi: #f58585; /* danger button hover */
   --color-amber: #f5b454;
   --color-blue: #6bb3f5;
   --color-purple: #a78bfa;

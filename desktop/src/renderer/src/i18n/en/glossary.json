@@ -44,7 +44,6 @@
   "rowEdit": "Edit",
   "rowDelete": "Delete",
   "rowSave": "Save",
-  "rowCancel": "Cancel",
   "sourcePlaceholder": "Source text",
   "targetPlaceholder": "Translation",
   "noMatch": "No matching terms",

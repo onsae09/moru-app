@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LocaleFlag } from "@/components/LocaleFlag";
 import { api } from "@/lib/api";
 import { formatInt, formatRelative } from "@/lib/format";
@@ -751,7 +752,7 @@ export function GlossaryScreen() {
                 onCancel={cancelRow}
                 disabled={busy}
                 saveLabel={t("glossary.rowSave")}
-                cancelLabel={t("glossary.rowCancel")}
+                cancelLabel={t("common.action.cancel")}
               />
             </div>
           )}
@@ -856,7 +857,7 @@ export function GlossaryScreen() {
                       onCancel={cancelRow}
                       disabled={busy}
                       saveLabel={t("glossary.rowSave")}
-                      cancelLabel={t("glossary.rowCancel")}
+                      cancelLabel={t("common.action.cancel")}
                     />
                   </div>
                 ) : (
@@ -937,37 +938,16 @@ export function GlossaryScreen() {
       </div>
 
       {/* Reset confirmation dialog */}
-      {confirmReset && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setConfirmReset(false)}
-        >
-          <div
-            className="w-[380px] border border-line2 bg-raised p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 text-[14px] font-bold text-text">{t("glossary.reset.title")}</div>
-            <p className="m-0 mb-5 text-[12px] leading-relaxed text-text2">
-              {t("glossary.reset.body", { count: resettableCount })}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                className="border border-edge px-3.5 py-2 text-[12px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-                onClick={() => setConfirmReset(false)}
-              >
-                {t("glossary.rowCancel")}
-              </button>
-              <button
-                disabled={busy}
-                className="bg-red px-3.5 py-2 text-[12px] font-bold text-[#0A100D] hover:bg-[#f58585] disabled:opacity-50"
-                onClick={resetGlossary}
-              >
-                {t("glossary.reset.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmReset}
+        variant="danger"
+        title={t("glossary.reset.title")}
+        body={t("glossary.reset.body", { count: resettableCount })}
+        confirmLabel={t("glossary.reset.confirm")}
+        busy={busy}
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={resetGlossary}
+      />
 
       {/* Toast */}
       {toast && (

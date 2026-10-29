@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
 import {
   formatCompact,
@@ -1019,42 +1020,20 @@ export function W4Progress() {
       )}
 
       {/* Cancel confirmation dialog */}
-      {showCancel && (
-        <div
-          onClick={() => setShowCancel(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-[400px] border border-edge bg-panel p-6"
-          >
-            <div className="mb-2 font-mono text-[10px] font-semibold tracking-[0.08em] text-text3 uppercase">
-              04 · {t("w4.controls.cancel")}
-            </div>
-            <div className="text-[15px] font-bold text-text">{t("w4.cancelDialog.title")}</div>
-            <div className="mt-2 text-[12.5px] leading-relaxed text-text2">
-              {t("w4.cancelDialog.body")}
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setShowCancel(false)}
-                className="border border-edge px-4 py-2 text-[12px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-              >
-                {t("w4.cancelDialog.keep")}
-              </button>
-              <button
-                onClick={() => {
-                  void cancelTranslate();
-                  setShowCancel(false);
-                }}
-                className="border border-red bg-[rgba(242,107,107,0.12)] px-4 py-2 text-[12px] font-bold text-red hover:bg-red hover:text-sel-ink"
-              >
-                {t("w4.cancelDialog.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showCancel}
+        variant="danger"
+        eyebrow={`04 · ${t("w4.controls.cancel")}`}
+        title={t("w4.cancelDialog.title")}
+        body={t("w4.cancelDialog.body")}
+        cancelLabel={t("w4.cancelDialog.keep")}
+        confirmLabel={t("w4.cancelDialog.confirm")}
+        onCancel={() => setShowCancel(false)}
+        onConfirm={() => {
+          void cancelTranslate();
+          setShowCancel(false);
+        }}
+      />
     </div>
   );
 }

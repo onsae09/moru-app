@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatInt, formatRelative, formatUsd, packInitials, parseTimestamp } from "@/lib/format";
@@ -647,41 +648,20 @@ export function HistoryScreen(): React.JSX.Element {
         </div>
       )}
 
-      {confirmTarget !== undefined && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setConfirmId(null)}
-        >
-          <div
-            className="w-[380px] border border-line2 bg-raised p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 text-[14px] font-bold text-text">{t("history.confirm.title")}</div>
-            <p className="m-0 mb-5 text-[12px] leading-relaxed text-text2">
-              {t("history.confirm.body", { name: confirmTarget.modpackName })}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                className="border border-edge px-3.5 py-2 text-[12px] font-semibold text-text2 hover:border-edge2 hover:text-text"
-                onClick={() => setConfirmId(null)}
-              >
-                {t("common.action.cancel")}
-              </button>
-              <button
-                className="bg-red px-3.5 py-2 text-[12px] font-bold text-[#0A100D] hover:bg-[#f58585]"
-                onClick={() => {
-                  // Also drops the engine's session file and checkpoint, or
-                  // the next reconcile would list the session again.
-                  void deleteHistorySession(confirmTarget.id);
-                  setConfirmId(null);
-                }}
-              >
-                {t("common.action.delete")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmTarget !== undefined}
+        variant="danger"
+        title={t("history.confirm.title")}
+        body={t("history.confirm.body", { name: confirmTarget?.modpackName ?? "" })}
+        confirmLabel={t("common.action.delete")}
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => {
+          // Also drops the engine's session file and checkpoint, or
+          // the next reconcile would list the session again.
+          if (confirmTarget !== undefined) void deleteHistorySession(confirmTarget.id);
+          setConfirmId(null);
+        }}
+      />
     </div>
   );
 }

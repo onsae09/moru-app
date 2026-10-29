@@ -69,5 +69,9 @@
     "wizardBusy": "Another translation is already running. Finish or stop it before starting the queue.",
     "recovery": "Could not restore the queue: {{error}}",
     "interruptedTranslation": "The translation was interrupted. Continue it with \"Resume translation\" in History."
+  },
+  "locales": {
+    "label": "Target languages",
+    "multi": "Each pack is queued once per language ({{count}})"
   }
 }

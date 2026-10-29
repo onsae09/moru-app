@@ -2,13 +2,16 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { LocaleFlag, type LocaleFlagCode } from "@/components/LocaleFlag";
 import { moru } from "@/lib/bridge";
 import { formatInt } from "@/lib/format";
 import { useRouter } from "@/stores/router";
+import { useSettings } from "@/stores/settings";
 import {
   pauseTranslationQueue,
   startTranslationQueue,
   useTranslationQueue,
+  type TranslationQueueInput,
   type TranslationQueueItem,
   type TranslationQueueItemStatus,
 } from "@/stores/translationQueue";
@@ -28,6 +31,13 @@ function statusClass(status: TranslationQueueItemStatus): string {
     default:
       return "border-line2 bg-bar text-text3";
   }
+}
+
+/** Target languages a queued pack can be translated into (same set as W3). */
+const QUEUE_LOCALES = ["ko_kr", "ja_jp", "zh_cn", "zh_tw"] as const satisfies readonly LocaleFlagCode[];
+
+function isFlagLocale(code: string): code is LocaleFlagCode {
+  return (QUEUE_LOCALES as readonly string[]).includes(code) || code === "en_us";
 }
 
 function QueueRow({
@@ -70,6 +80,17 @@ function QueueRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13px] font-bold text-text">{item.name}</span>
+            {item.targetLocale != null && item.targetLocale !== "" && (
+              <span
+                className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-text2"
+                title={t(`w3.lang.${item.targetLocale}`, { defaultValue: item.targetLocale })}
+              >
+                {isFlagLocale(item.targetLocale) && (
+                  <LocaleFlag locale={item.targetLocale} className="h-2.5 w-[15px]" />
+                )}
+                {item.targetLocale}
+              </span>
+            )}
             <span
               className={`shrink-0 border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusClass(item.status)}`}
             >
@@ -180,6 +201,18 @@ export function TranslationQueueScreen() {
   const [adding, setAdding] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [selectionErrors, setSelectionErrors] = useState<string[]>([]);
+  // Each picked pack is queued once per selected language.
+  const [locales, setLocales] = useState<string[]>(() => [
+    useSettings.getState().targetLocale || "ko_kr",
+  ]);
+  const toggleLocale = (code: string): void =>
+    setLocales((current) =>
+      current.includes(code)
+        ? current.length > 1
+          ? current.filter((c) => c !== code)
+          : current
+        : QUEUE_LOCALES.filter((c) => c === code || current.includes(c)),
+    );
 
   const counts = useMemo(() => {
     let pending = 0;
@@ -204,7 +237,7 @@ export function TranslationQueueScreen() {
     setSelectionErrors([]);
     try {
       const paths = await moru.pickFolders();
-      const inputs: { path: string; name: string }[] = [];
+      const inputs: TranslationQueueInput[] = [];
       const errors: string[] = [];
       for (const path of paths) {
         try {
@@ -212,7 +245,11 @@ export function TranslationQueueScreen() {
           if (!probe.exists) errors.push(t("queue.validation.notFound", { path }));
           else if (!probe.isDirectory) errors.push(t("queue.validation.notDirectory", { path }));
           else if (!probe.hasMods) errors.push(t("queue.validation.noMods", { path }));
-          else inputs.push({ path, name: probe.name });
+          else {
+            for (const targetLocale of locales) {
+              inputs.push({ path, name: probe.name, targetLocale });
+            }
+          }
         } catch (error) {
           errors.push(t("queue.validation.failed", { path, error: String(error) }));
         }
@@ -249,6 +286,37 @@ export function TranslationQueueScreen() {
         >
           {adding ? t("queue.action.checking") : t("queue.action.addPacks")}
         </button>
+      </div>
+
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <span className="mr-1 font-mono text-[11px] font-semibold text-text3">
+          {t("queue.locales.label")}
+        </span>
+        {QUEUE_LOCALES.map((code) => {
+          const on = locales.includes(code);
+          return (
+            <button
+              key={code}
+              type="button"
+              role="checkbox"
+              aria-checked={on}
+              onClick={() => toggleLocale(code)}
+              className={`flex items-center gap-1.5 border px-2.5 py-[5px] text-[11px] font-semibold ${
+                on
+                  ? "border-accent bg-accent/8 text-accent"
+                  : "border-line2 text-text3 hover:border-edge2 hover:text-text"
+              }`}
+            >
+              <LocaleFlag locale={code} className="h-3 w-[18px]" />
+              {t(`w3.lang.${code}`)}
+            </button>
+          );
+        })}
+        {locales.length > 1 && (
+          <span className="font-mono text-[11px] text-text3">
+            {t("queue.locales.multi", { count: locales.length })}
+          </span>
+        )}
       </div>
 
       <div className="mb-5 grid grid-cols-4 gap-3">

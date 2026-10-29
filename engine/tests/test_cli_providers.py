@@ -1622,6 +1622,30 @@ def test_reason_codes_stay_a_small_closed_set() -> None:
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not hasattr(__import__("os"), "fchmod"), reason="POSIX modes")
+def test_private_credentials_are_never_world_readable(tmp_path, monkeypatch) -> None:
+    """Written under the default umask and chmodded after, fresh tokens sat
+    world-readable in between. The mode must be right from creation."""
+    import os
+    import stat
+
+    target = tmp_path / "auth.json"
+    stale_tmp = tmp_path / "auth.json.moru-tmp"
+    stale_tmp.write_text("{}")
+    stale_tmp.chmod(0o644)
+    # A chmod-after-write never runs here, as if the process died between
+    # the two steps: whatever mode the file was created with is what stays.
+    monkeypatch.setattr(Path, "chmod", lambda self, mode: None)
+    old = os.umask(0o022)
+    try:
+        credentials._atomic_write_json(target, {"token": "t"}, private=True)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert json.loads(target.read_text()) == {"token": "t"}
+    assert not stale_tmp.exists()
+
+
 def _off_loop_probe(seen: list[bool]):
     import threading
 

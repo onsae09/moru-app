@@ -51,6 +51,9 @@ COMPACT_THRESHOLD = 2000
 #: Journal suffix, alongside the session's own "<id>.moru".
 JOURNAL_SUFFIX = ".manual.jsonl"
 
+#: Tags a line a compaction carried over rather than a new edit.
+_CARRY_MARK = b'"carry":true'
+
 
 class StaleState(str, Enum):
     """Whether a recorded translation still matches the text it was written for.
@@ -91,7 +94,7 @@ class ManualEntryState:
     pipeline, and the pipeline has no business carrying them.
     """
 
-    __slots__ = ("draft", "flagged", "origin", "src_sha", "text")
+    __slots__ = ("draft", "flagged", "origin", "reviewed", "src_sha", "text")
 
     def __init__(self) -> None:
         #: Last committed text, or None if only drafts exist.
@@ -99,6 +102,9 @@ class ManualEntryState:
         #: Uncommitted in-progress text. Survives a crash; never ships.
         self.draft: str | None = None
         self.flagged: bool = False
+        #: The reviewer looked at this entry on the review screen and signed
+        #: it off. A bookmark about the review, not about the text.
+        self.reviewed: bool = False
         self.origin: str | None = None
         self.src_sha: str | None = None
 
@@ -120,7 +126,11 @@ class ManualJournal:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.Lock()
-        self._lines = self._count_lines()
+        #: Lines a compaction carried over (flags, review marks, drafts) are
+        #: tagged ``"carry":true``. They are not new edits, so they must not
+        #: count toward the next compaction, or a large carried-over set
+        #: would trigger one on every save.
+        self._lines, self._carried = self._count_lines()
 
     @staticmethod
     def for_session(session_file: Path) -> ManualJournal:
@@ -130,15 +140,29 @@ class ManualJournal:
     def line_count(self) -> int:
         return self._lines
 
-    def _count_lines(self) -> int:
+    @property
+    def lines_since_compaction(self) -> int:
+        return max(0, self._lines - self._carried)
+
+    def _count_lines(self) -> tuple[int, int]:
+        """(all lines, carried-over lines).
+
+        The marker cannot occur inside a string value: JSON escapes the
+        quotes it would need.
+        """
         if not self.path.is_file():
-            return 0
+            return 0, 0
+        lines = carried = 0
         try:
             with self.path.open("rb") as fh:
-                return sum(1 for _ in fh)
+                for raw in fh:
+                    lines += 1
+                    if _CARRY_MARK in raw:
+                        carried += 1
         except OSError:
             logger.exception("Failed to size manual journal %s", self.path)
-            return 0
+            return 0, 0
+        return lines, carried
 
     def _append(self, record: dict[str, Any]) -> None:
         """One line + fsync. Serialized: two interleaved appends would tear.
@@ -191,6 +215,49 @@ class ManualJournal:
     def flag(self, *, file: str, key: str, on: bool) -> None:
         self._append({"t": "flag", "file": file, "key": key, "on": on})
 
+    def review(self, *, refs: list[tuple[str, str]], on: bool) -> None:
+        """Mark many entries reviewed (or not) in ONE line.
+
+        Signing off a whole page is a single reviewer action; one fsync'd
+        append per entry would make it a hundred.
+        """
+        if not refs:
+            return
+        self._append({"t": "review", "refs": [list(r) for r in refs], "on": on})
+
+    def rewrite(self, records: list[dict[str, Any]]) -> None:
+        """Replace the journal with ``records`` — compaction that keeps state.
+
+        The snapshot written before a compaction carries committed text only;
+        flags, review marks and drafts live nowhere but here, so a plain
+        truncate would silently drop them. The replacement is written to a
+        sibling file, fsync'd and renamed over the journal, so a crash leaves
+        either the old journal or the new one, never neither.
+        """
+        if not records:
+            self.truncate()
+            return
+        stamp = datetime.now(UTC).isoformat()
+        body = "".join(
+            json.dumps(
+                {**record, "carry": True, "v": JOURNAL_VERSION, "ts": stamp},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n"
+            for record in records
+        )
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp.open("w", encoding="utf-8") as fh:
+                fh.write(body)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, self.path)
+            self._lines = len(records)
+            self._carried = len(records)
+
     def replay(self) -> dict[str, ManualEntryState]:
         """Fold the journal into per-entry state, in file order.
 
@@ -219,12 +286,29 @@ class ManualJournal:
                 continue
             if not isinstance(record, dict):
                 continue
+            kind = record.get("t")
+            refs = record.get("refs")
+            if isinstance(refs, list):
+                # Batched form: one line covering many entries.
+                on = bool(record.get("on"))
+                for ref in refs:
+                    if (
+                        not isinstance(ref, list)
+                        or len(ref) != 2
+                        or not all(isinstance(part, str) for part in ref)
+                    ):
+                        continue
+                    many = state.setdefault(entry_ref(ref[0], ref[1]), ManualEntryState())
+                    if kind == "review":
+                        many.reviewed = on
+                    elif kind == "flag":
+                        many.flagged = on
+                continue
             file = record.get("file")
             key = record.get("key")
             if not isinstance(file, str) or not isinstance(key, str):
                 continue
             entry = state.setdefault(entry_ref(file, key), ManualEntryState())
-            kind = record.get("t")
             if kind == "commit":
                 entry.text = str(record.get("text", ""))
                 entry.src_sha = record.get("src_sha") or None
@@ -235,6 +319,8 @@ class ManualJournal:
                 entry.draft = str(record.get("text", ""))
             elif kind == "flag":
                 entry.flagged = bool(record.get("on"))
+            elif kind == "review":
+                entry.reviewed = bool(record.get("on"))
         return state
 
     def truncate(self) -> None:
@@ -247,6 +333,7 @@ class ManualJournal:
                 logger.exception("Failed to truncate manual journal %s", self.path)
                 return
             self._lines = 0
+            self._carried = 0
 
     def delete(self) -> None:
         self.truncate()

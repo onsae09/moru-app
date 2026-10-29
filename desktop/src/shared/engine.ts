@@ -41,7 +41,7 @@ export type EntryStatus =
   | "skipped"
   | "pending";
 
-/** Entry buckets the engine can filter by. Two are views, not statuses. */
+/** Entry buckets the engine can filter by. Some are views, not statuses. */
 export type EntryFilter =
   | "all"
   | "pending"
@@ -49,7 +49,9 @@ export type EntryFilter =
   | "warning"
   | "modified"
   | "flagged"
-  | "stale_source";
+  | "stale_source"
+  | "reviewed"
+  | "unreviewed";
 
 /** Who produced `translated_text`. Absent on entries written before it existed. */
 export type EntryOrigin = "machine" | "human" | "tm" | "community";
@@ -63,6 +65,8 @@ export interface Entry {
   errors: string[];
   origin?: EntryOrigin | null;
   flagged?: boolean;
+  /** Signed off on the review screen. Absent means not yet. */
+  reviewed?: boolean;
   /**
    * The entry holds a human translation whose recorded source hash no longer
    * matches the scanned source: the pack changed the string underneath it.

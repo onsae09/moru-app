@@ -4,15 +4,21 @@
   "summary": {
     "passRate": "Pass rate",
     "warnings": "Warnings",
-    "failed": "Failed"
+    "failed": "Failed",
+    "reviewed": "Reviewed {{done}}/{{total}}",
+    "reviewedLabel": "Review progress"
   },
   "searchPlaceholder": "Search key · source · translation...",
   "filter": {
     "all": "All",
     "failed": "Failed",
     "warning": "Warning",
-    "modified": "Modified"
+    "modified": "Modified",
+    "unreviewed": "Unreviewed",
+    "reviewed": "Reviewed"
   },
+  "markPage": "Mark {{n}} on this page reviewed",
+  "unmarkPage": "Unmark {{n}} on this page",
   "colorPreview": "§ color preview",
   "handRefine": "Translate by hand",
   "bulkRetranslate": "Retranslate {{n}} failed",
@@ -41,7 +47,9 @@
     "exportSession": "Save session (.moru)",
     "file": "File:",
     "model": "Model:",
-    "noSelection": "Select an entry from the list"
+    "noSelection": "Select an entry from the list",
+    "markReviewed": "Mark as reviewed",
+    "unmarkReviewed": "Reviewed · undo"
   },
   "empty": {
     "title": "Run a translation first",

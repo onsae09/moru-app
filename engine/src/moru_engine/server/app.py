@@ -213,6 +213,20 @@ class RetranslateRequest(BaseModel):
     file: str | None = None
 
 
+class EntryRef(BaseModel):
+    key: str
+    file: str
+
+
+class ReviewMark(BaseModel):
+    """Sign entries off on the review screen, or take the mark back."""
+
+    #: A page at most is what the review screen marks at once; the bound
+    #: keeps one request from writing an unbounded journal line.
+    refs: list[EntryRef] = Field(min_length=1, max_length=1000)
+    reviewed: bool
+
+
 class ValidateRequest(BaseModel):
     """Live validation of a candidate translation the user is still typing."""
 
@@ -685,6 +699,24 @@ def create_app(
         _, result = _get_pipeline_result(job_id)
         return manual.counts(job_id, result.entries, search)
 
+    @api.post("/translate/{job_id}/entries/reviewed")
+    async def mark_reviewed(job_id: str, body: ReviewMark) -> dict[str, int]:
+        """Mark entries reviewed. One journal line, whatever the batch size.
+
+        Unknown refs are skipped rather than failing the batch: the list was
+        built from a page the client fetched, and an entry vanishing between
+        fetch and mark must not cost the reviewer the rest of the page.
+        """
+        _, result = _get_pipeline_result(job_id)
+        by_ref = {(e.file, e.key): e for e in result.entries}
+        picked = [
+            entry
+            for ref in body.refs
+            if (entry := by_ref.get((ref.file, ref.key))) is not None
+        ]
+        changed = await manual.record_review(job_id, picked, body.reviewed)
+        return {"matched": len(picked), "changed": changed}
+
     @api.get("/translate/{job_id}/entries")
     async def translate_entries(
         job_id: str,
@@ -869,9 +901,12 @@ def create_app(
             ) from exc
         finally:
             pipeline.close()
+        # New model text was never looked at, so a sign-off of the old text
+        # must not carry over to it.
+        await manual.record_review(job_id, [entry], False)
         manager.refresh_translate_stats(record)
         await _persist_session(record)
-        return _entry_payload(entry)
+        return manual.enrich(_entry_payload(entry), job_id, entry)
 
     @api.get("/translate/{job_id}/stats")
     async def translate_stats(job_id: str) -> dict[str, Any]:

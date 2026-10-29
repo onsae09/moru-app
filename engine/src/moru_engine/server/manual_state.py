@@ -31,8 +31,9 @@ if TYPE_CHECKING:
 
 
 #: Every bucket ``GET /entries`` accepts, and every key ``/entries/counts``
-#: returns. ``flagged`` and ``stale_source`` are views over journal state, not
-#: entry statuses, so they cannot be answered by comparing ``status.value``.
+#: returns. ``flagged``, ``stale_source``, ``reviewed`` and ``unreviewed`` are
+#: views over journal state, not entry statuses, so they cannot be answered by
+#: comparing ``status.value``.
 #:
 #: Declared as a Literal so FastAPI can validate the query parameter, with the
 #: tuple derived from it — one definition, not two that can drift.
@@ -44,6 +45,8 @@ EntryBucket = Literal[
     "modified",
     "flagged",
     "stale_source",
+    "reviewed",
+    "unreviewed",
 ]
 ENTRY_BUCKETS: tuple[str, ...] = get_args(EntryBucket)
 
@@ -118,6 +121,7 @@ class ManualStore:
             return payload
         payload["origin"] = manual.origin
         payload["flagged"] = manual.flagged
+        payload["reviewed"] = manual.reviewed
         payload["stale_source"] = (
             manual.stale_against(entry.source_text) is not StaleState.CLEAN
         )
@@ -148,6 +152,18 @@ class ManualStore:
                 elif manual.flagged:
                     picked.append(e)
             selected = picked
+        elif bucket in ("reviewed", "unreviewed"):
+            state = self.state(job_id)
+            want = bucket == "reviewed"
+            selected = [
+                e
+                for e in entries
+                if (
+                    (m := state.get(entry_ref(e.file, e.key))) is not None
+                    and m.reviewed
+                )
+                is want
+            ]
         elif bucket != "all":
             selected = [e for e in entries if e.status.value == bucket]
 
@@ -186,6 +202,28 @@ class ManualStore:
             self.journal(job_id).flag, file=entry.file, key=entry.key, on=on
         )
         manual.flagged = on
+
+    async def record_review(
+        self, job_id: str, entries: Sequence[EntryResult], on: bool
+    ) -> int:
+        """Mark entries reviewed (or not). Returns how many actually changed.
+
+        Entries already in the requested state are skipped, and the rest go to
+        the journal as one batched line however many there are.
+        """
+        changed = [
+            e for e in entries if self.entry_state(job_id, e).reviewed is not on
+        ]
+        if not changed:
+            return 0
+        await asyncio.to_thread(
+            self.journal(job_id).review,
+            refs=[(e.file, e.key) for e in changed],
+            on=on,
+        )
+        for e in changed:
+            self.entry_state(job_id, e).reviewed = on
+        return len(changed)
 
     async def record_draft(
         self, job_id: str, entry: EntryResult, text: str, src_sha: str | None
@@ -228,8 +266,41 @@ class ManualStore:
         manual.src_sha = src_sha
         manual.origin = origin
         manual.draft = None
-        return journal.line_count >= COMPACT_THRESHOLD
+        return journal.lines_since_compaction >= COMPACT_THRESHOLD
+
+    def _residual_records(self, job_id: str) -> list[dict[str, Any]]:
+        """What a snapshot cannot hold: flags, review marks, unsaved drafts.
+
+        Flags and review marks collapse into one batched line each, so the
+        carried-over journal stays a handful of lines however many entries
+        were marked.
+        """
+        flagged: list[list[str]] = []
+        reviewed: list[list[str]] = []
+        records: list[dict[str, Any]] = []
+        for ref, manual in self.state(job_id).items():
+            file, _, key = ref.partition("\u0000")
+            if not key:
+                continue
+            if manual.flagged:
+                flagged.append([file, key])
+            if manual.reviewed:
+                reviewed.append([file, key])
+            if manual.draft is not None:
+                records.append(
+                    {"t": "draft", "file": file, "key": key, "text": manual.draft}
+                )
+        if flagged:
+            records.append({"t": "flag", "refs": flagged, "on": True})
+        if reviewed:
+            records.append({"t": "review", "refs": reviewed, "on": True})
+        return records
 
     async def compacted(self, job_id: str) -> None:
-        """Drop the journal after its contents were folded into a snapshot."""
-        await asyncio.to_thread(self.journal(job_id).truncate)
+        """Fold the journal after its committed text reached a snapshot.
+
+        Committed text is in the snapshot now; everything else is carried
+        over into a fresh journal rather than dropped with the old one.
+        """
+        records = self._residual_records(job_id)
+        await asyncio.to_thread(self.journal(job_id).rewrite, records)

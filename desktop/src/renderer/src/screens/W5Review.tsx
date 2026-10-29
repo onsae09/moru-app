@@ -36,29 +36,72 @@ import { useRouter } from "@/stores/router";
 import { useSettings } from "@/stores/settings";
 import { useSessionJobs, useWizard } from "@/stores/wizard";
 
+import { type EntryRef, entryId, nextRowId, reviewedPercent } from "./w5ReviewModel";
+
 const PAGE_SIZE = 100;
 
-/** One entry's identity. A key is only unique within its own source file. */
-interface EntryRef {
-  key: string;
-  file: string;
-}
+/** Table columns: reviewed check, status, key, source, translation, status text. */
+const ROW_GRID = "grid-cols-[16px_20px_200px_1fr_1fr_80px]";
+
+/** Matches `--color-purple`; a hex literal because chips append alpha to it. */
+const REVIEWED_COLOR = "#A78BFA";
 
 /**
  * The review screen's chip set: a subset of the engine's `EntryFilter`
  * buckets. Review triages a finished run, so it shows only the outcomes a
- * run produces; `pending`/`flagged`/`stale_source` belong to hand
- * translation and live on W5Manual.
+ * run produces plus the reviewer's own sign-off; `pending`/`flagged`/
+ * `stale_source` belong to hand translation and live on W5Manual.
  */
-type ReviewFilter = "all" | "failed" | "warning" | "modified";
-const FILTERS: readonly ReviewFilter[] = ["all", "failed", "warning", "modified"];
+type ReviewFilter = "all" | "failed" | "warning" | "modified" | "unreviewed" | "reviewed";
+const STATUS_FILTERS: readonly ReviewFilter[] = ["all", "failed", "warning", "modified"];
+const REVIEW_FILTERS: readonly ReviewFilter[] = ["unreviewed", "reviewed"];
+const FILTERS: readonly ReviewFilter[] = [...STATUS_FILTERS, ...REVIEW_FILTERS];
 
 const FILTER_COLOR: Record<ReviewFilter, string> = {
   all: "#3DDC84",
   failed: "#F26B6B",
   warning: "#F5B454",
   modified: "#6BB3F5",
+  unreviewed: "#8A9A93",
+  reviewed: REVIEWED_COLOR,
 };
+
+/** The reviewed checkbox at the head of each row. */
+function ReviewCheck({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: () => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className="mt-[1px] flex h-[14px] w-[14px] items-center justify-center border"
+      style={
+        checked
+          ? { background: REVIEWED_COLOR, borderColor: REVIEWED_COLOR }
+          : { borderColor: "var(--color-edge2)" }
+      }
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--color-sel-ink)" strokeWidth="1.8">
+          <path d="M2 5 L4 7 L8 3" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 /* ---- small pieces ------------------------------------------------------ */
 
@@ -142,7 +185,7 @@ export function W5Review() {
   }, [query]);
 
   const pageQuery = useQuery({
-    queryKey: ["w5", translateJobId, "entries", filter, page, query],
+    queryKey: ["w5", translateJobId, "entries", filter, page, query] as const,
     queryFn: () => api.entries(translateJobId as string, filter, page, PAGE_SIZE, query),
     enabled: translateJobId !== null,
     placeholderData: keepPreviousData,
@@ -160,6 +203,17 @@ export function W5Review() {
     for (const f of FILTERS) map[f] = countsQuery.data?.[f] ?? null;
     return map;
   }, [countsQuery.data]);
+  // Review progress is over the whole run, never the searched subset; with
+  // no search this is the same query as `countsQuery` and is deduplicated.
+  const progressQuery = useQuery({
+    queryKey: ["w5", translateJobId, "counts", ""],
+    queryFn: () => api.entryCounts(translateJobId as string, ""),
+    enabled: translateJobId !== null,
+    placeholderData: keepPreviousData,
+  });
+  const reviewedTotal = progressQuery.data?.reviewed ?? null;
+  const reviewTotal = progressQuery.data?.all ?? null;
+  const reviewPct = reviewedPercent(reviewedTotal, reviewTotal);
 
   const entries = pageQuery.data?.entries ?? [];
   const total = pageQuery.data?.total ?? 0;
@@ -230,6 +284,57 @@ export function W5Review() {
     else retransMut.mutate(ref);
   };
 
+  /* Review sign-off. Persisted by the engine in the session's journal. */
+  const pageKey = ["w5", translateJobId, "entries", filter, page, query] as const;
+  const reviewMut = useMutation({
+    mutationFn: ({ refs, reviewed }: { refs: EntryRef[]; reviewed: boolean }) =>
+      api.markReviewed(translateJobId as string, refs, reviewed),
+    // Optimistic: the check flips at once instead of after the refetch, so
+    // Space-driven review keeps pace with the reviewer.
+    onMutate: ({ refs, reviewed }) => {
+      const ids = new Set(refs.map(entryId));
+      queryClient.setQueryData<typeof pageQuery.data>(pageKey, (old) =>
+        old === undefined
+          ? old
+          : {
+              ...old,
+              entries: old.entries.map((e) => (ids.has(entryId(e)) ? { ...e, reviewed } : e)),
+            },
+      );
+    },
+    onError: (err) => setActionError(errorText(err)),
+    onSettled: () => invalidate(),
+  });
+
+  /**
+   * Toggle one entry's sign-off. Signing off moves the cursor on, which is
+   * the review flow; on a review filter the row also leaves the list, so
+   * the cursor goes to its neighbour rather than back to the top.
+   */
+  const toggleReviewed = (entry: Entry): void => {
+    const reviewed = entry.reviewed !== true;
+    const id = entryId(entry);
+    const leavesList =
+      (filter === "unreviewed" && reviewed) || (filter === "reviewed" && !reviewed);
+    if (reviewed || leavesList) {
+      const next = nextRowId(rows, id);
+      if (next !== null && next !== id) {
+        setSelectedKey(next);
+        scrollRowIntoView(next);
+      }
+    }
+    reviewMut.mutate({ refs: [{ key: entry.key, file: entry.file }], reviewed });
+  };
+
+  const pageAllReviewed = rows.length > 0 && rows.every((e) => e.reviewed === true);
+  const markPage = (): void => {
+    const reviewed = !pageAllReviewed;
+    const refs = rows
+      .filter((e) => (e.reviewed === true) !== reviewed)
+      .map((e) => ({ key: e.key, file: e.file }));
+    if (refs.length > 0) reviewMut.mutate({ refs, reviewed });
+  };
+
   const bulkMut = useMutation({
     // Retries every failed entry, not just the ones on screen: `rows` holds
     // one PAGE_SIZE slice, so a run with more failures than that used to
@@ -281,12 +386,16 @@ export function W5Review() {
         ? 0
         : rows.findIndex((e) => e.file === selected.file && e.key === selected.key);
     const next = Math.min(rows.length - 1, Math.max(0, idx + delta));
-    const entryId = `${rows[next].file}:${rows[next].key}`;
-    setSelectedKey(entryId);
-    listRef.current
-      ?.querySelector(`[data-key="${CSS.escape(entryId)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    const id = entryId(rows[next]);
+    setSelectedKey(id);
+    scrollRowIntoView(id);
   };
+
+  function scrollRowIntoView(id: string): void {
+    listRef.current
+      ?.querySelector(`[data-key="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -425,6 +534,33 @@ export function W5Review() {
           <p className="m-0 text-[13px] text-text2">{t("w5.subtitle")}</p>
         </div>
         <div className="flex gap-2">
+          <div className="min-w-[120px] border border-line2 bg-raised px-[14px] py-[10px] text-center">
+            <div
+              className="font-mono text-[20px] font-bold tracking-[-0.02em]"
+              style={{ color: REVIEWED_COLOR }}
+            >
+              {reviewPct !== null ? `${Math.floor(reviewPct)}%` : "—"}
+            </div>
+            <div
+              role="progressbar"
+              aria-label={t("w5.summary.reviewedLabel")}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={reviewPct !== null ? Math.floor(reviewPct) : undefined}
+              className="mt-[4px] h-[3px] bg-line2"
+            >
+              <div
+                className="h-full"
+                style={{ width: `${reviewPct ?? 0}%`, background: REVIEWED_COLOR }}
+              />
+            </div>
+            <div className="mt-[3px] font-mono text-[10px] text-text3">
+              {t("w5.summary.reviewed", {
+                done: reviewedTotal !== null ? formatInt(reviewedTotal) : "—",
+                total: reviewTotal !== null ? formatInt(reviewTotal) : "—",
+              })}
+            </div>
+          </div>
           <SummaryBox
             value={passRate !== null ? `${passRate.toFixed(1)}%` : "—"}
             label={t("w5.summary.passRate")}
@@ -462,7 +598,9 @@ export function W5Review() {
           <span className="bg-bar px-1 py-px font-mono text-[10px] text-text4">⌘F</span>
         </div>
         <div className="mx-1 h-5 w-px bg-edge" />
-        {FILTERS.map((f) => chip(f))}
+        {STATUS_FILTERS.map((f) => chip(f))}
+        <div className="mx-1 h-5 w-px bg-edge" />
+        {REVIEW_FILTERS.map((f) => chip(f))}
         <div className="mx-1 h-5 w-px bg-edge" />
         <button
           onClick={() => setColorPreview((v) => !v)}
@@ -480,6 +618,18 @@ export function W5Review() {
           {t("w5.colorPreview")}
         </button>
         <div className="flex-1" />
+        <button
+          onClick={markPage}
+          disabled={rows.length === 0 || reviewMut.isPending}
+          className="flex items-center gap-[6px] border border-edge px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text disabled:cursor-default disabled:opacity-50"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M2 6 L5 9 L10 3" />
+          </svg>
+          {pageAllReviewed
+            ? t("w5.unmarkPage", { n: formatInt(rows.length) })
+            : t("w5.markPage", { n: formatInt(rows.length) })}
+        </button>
         <button
           onClick={() => bulkMut.mutate()}
           disabled={failedTotal === 0 || bulkMut.isPending}
@@ -506,7 +656,8 @@ export function W5Review() {
       <div className="grid grid-cols-[1fr_400px] border border-t-0 border-line2 bg-raised">
         {/* Table */}
         <div className="border-r border-line2">
-          <div className="grid grid-cols-[20px_200px_1fr_1fr_80px] gap-[10px] border-b border-line2 bg-hover px-[14px] py-2 font-mono text-[10px] font-bold tracking-[0.06em] text-text3 uppercase">
+          <div className={`grid ${ROW_GRID} gap-[10px] border-b border-line2 bg-hover px-[14px] py-2 font-mono text-[10px] font-bold tracking-[0.06em] text-text3 uppercase`}>
+            <div />
             <div />
             <div>{t("w5.col.key")}</div>
             <div>{t("w5.col.source")}</div>
@@ -519,8 +670,9 @@ export function W5Review() {
               Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className="grid grid-cols-[20px_200px_1fr_1fr_80px] gap-[10px] border-b border-line px-[14px] py-[10px]"
+                  className={`grid ${ROW_GRID} gap-[10px] border-b border-line px-[14px] py-[10px]`}
                 >
+                  <div className="h-3 w-3 animate-pxpulse bg-hover" />
                   <div className="h-3 w-3 animate-pxpulse bg-hover" />
                   <div className="h-3 animate-pxpulse bg-hover" style={{ width: `${60 + ((i * 13) % 35)}%` }} />
                   <div className="h-3 animate-pxpulse bg-hover" style={{ width: `${45 + ((i * 23) % 50)}%` }} />
@@ -567,7 +719,7 @@ export function W5Review() {
                       tabIndex={isSel || (selected === null && e === rows[0]) ? 0 : -1}
                       onClick={() => setSelectedKey(`${e.file}:${e.key}`)}
                       onKeyDown={activateOnKey(() => setSelectedKey(`${e.file}:${e.key}`))}
-                      className={`grid cursor-pointer grid-cols-[20px_200px_1fr_1fr_80px] gap-[10px] border-b border-line px-[14px] py-[10px] ${
+                      className={`grid cursor-pointer ${ROW_GRID} gap-[10px] border-b border-line px-[14px] py-[10px] ${
                         isSel ? "" : "hover:bg-raised-hover"
                       }`}
                       style={
@@ -579,6 +731,11 @@ export function W5Review() {
                           : undefined
                       }
                     >
+                      <ReviewCheck
+                        checked={e.reviewed === true}
+                        label={t("w5.filter.reviewed")}
+                        onToggle={() => toggleReviewed(e)}
+                      />
                       <div className="mt-[2px]">
                         <StatusIcon status={e.status} />
                       </div>
@@ -723,6 +880,28 @@ export function W5Review() {
                   ))}
                 </div>
               )}
+
+              {/* Review sign-off */}
+              <button
+                type="button"
+                aria-pressed={selected.reviewed === true}
+                onClick={() => toggleReviewed(selected)}
+                className="flex items-center justify-center gap-[6px] border p-[8px] text-[12px] font-semibold"
+                style={
+                  selected.reviewed === true
+                    ? {
+                        background: `${REVIEWED_COLOR}14`,
+                        borderColor: REVIEWED_COLOR,
+                        color: REVIEWED_COLOR,
+                      }
+                    : { borderColor: "var(--color-edge)", color: "var(--color-text2)" }
+                }
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 6 L5 9 L10 3" />
+                </svg>
+                {selected.reviewed === true ? t("w5.detail.unmarkReviewed") : t("w5.detail.markReviewed")}
+              </button>
 
               {/* Actions */}
               <div className="grid grid-cols-2 gap-[6px]">

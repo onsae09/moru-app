@@ -185,6 +185,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ file }),
     }),
+  /**
+   * Sign entries off on the review screen (or take the mark back). The
+   * engine journals the whole batch as one line, so a page is one write.
+   */
+  markReviewed: (jobId: string, refs: { key: string; file: string }[], reviewed: boolean) =>
+    request<{ matched: number; changed: number }>(`/translate/${jobId}/entries/reviewed`, {
+      method: "POST",
+      body: JSON.stringify({ refs, reviewed }),
+    }),
   /** Every bucket's count in one server-side pass over the result. */
   entryCounts: (jobId: string, search = "") =>
     request<EntryCounts>(

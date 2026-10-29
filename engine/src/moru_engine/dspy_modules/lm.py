@@ -56,6 +56,19 @@ DEFAULT_OLLAMA_TIMEOUT = 600.0
 #: (see the pipeline's transport-failure path); leave one cheap retry here
 #: for a genuinely dropped connection.
 DEFAULT_OLLAMA_NUM_RETRIES = 1
+#: Every other provider: dspy defaults to num_retries=3 inside litellm,
+#: which nests under the pipeline's own MAX_TRANSPORT_RETRIES and its
+#: admission limiter — up to 12 attempts of one batch, each invisible to
+#: the limiter's backoff. One cheap retry for a dropped connection; the
+#: pipeline owns the real budget.
+DEFAULT_NUM_RETRIES = 1
+#: The CLI providers are not HTTP clients to litellm: whatever they raise
+#: (a missing login included) comes back wrapped as APIConnectionError, so
+#: a litellm retry only repeats a subprocess or OAuth call already failed.
+DEFAULT_CLI_NUM_RETRIES = 0
+#: litellm's default request_timeout is 6000s for hosted providers too: a
+#: wedged connection would hold an admission slot for 100 minutes.
+DEFAULT_TIMEOUT = 600.0
 #: Fraction of the configured context window at which an observed
 #: prompt_tokens count means the window is full and ollama truncated.
 _CONTEXT_FULL_RATIO = 0.98
@@ -185,6 +198,12 @@ def build_lm(
         if "reasoning_effort" not in allowed:
             allowed.append("reasoning_effort")
         extra["allowed_openai_params"] = allowed
+    # Ollama set its own above; setdefault keeps those and any caller value.
+    extra.setdefault(
+        "num_retries",
+        DEFAULT_CLI_NUM_RETRIES if provider in CLI_PROVIDER_IDS else DEFAULT_NUM_RETRIES,
+    )
+    extra.setdefault("timeout", DEFAULT_TIMEOUT)
     kwargs.update(extra)
     if api_key:
         kwargs["api_key"] = api_key

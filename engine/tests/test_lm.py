@@ -20,10 +20,13 @@ import pytest
 from litellm.utils import get_optional_params
 
 from moru_engine.dspy_modules.lm import (
+    DEFAULT_CLI_NUM_RETRIES,
+    DEFAULT_NUM_RETRIES,
     DEFAULT_OLLAMA_KEEP_ALIVE,
     DEFAULT_OLLAMA_NUM_CTX,
     DEFAULT_OLLAMA_NUM_RETRIES,
     DEFAULT_OLLAMA_TIMEOUT,
+    DEFAULT_TIMEOUT,
     build_lm,
     context_window_filled,
     is_transport_error,
@@ -112,8 +115,31 @@ def test_explicit_values_beat_the_ollama_defaults():
 def test_hosted_providers_keep_their_defaults(model: str):
     """The local-runtime policy must not leak into hosted providers."""
     lm = build_lm(model, cache=False)
-    for key in ("num_ctx", "keep_alive", "timeout"):
+    for key in ("num_ctx", "keep_alive"):
         assert key not in lm.kwargs
+
+
+@pytest.mark.parametrize(
+    "model", ["openai/gpt-4.1", "anthropic/claude-sonnet-4-6", "openrouter/x/y"]
+)
+def test_hosted_providers_get_a_timeout_and_one_retry(model: str):
+    """dspy's num_retries=3 nests under MAX_TRANSPORT_RETRIES, and litellm's
+    own timeout is 6000s: one wedged call would hold an admission slot for
+    100 minutes and a failing batch would be attempted up to 12 times."""
+    lm = build_lm(model, cache=False)
+    assert lm.kwargs["timeout"] == DEFAULT_TIMEOUT
+    assert lm.num_retries == DEFAULT_NUM_RETRIES <= 1
+
+
+def test_cli_providers_are_not_retried_inside_litellm():
+    lm = build_lm("codex/gpt-5.5", cache=False)
+    assert lm.num_retries == DEFAULT_CLI_NUM_RETRIES == 0
+    assert lm.kwargs["timeout"] == DEFAULT_TIMEOUT
+
+
+def test_explicit_retry_and_timeout_beat_the_hosted_defaults():
+    lm = build_lm("openai/gpt-4.1", cache=False, timeout=30.0, num_retries=3)
+    assert lm.kwargs["timeout"] == 30.0
     assert lm.num_retries == 3
 
 

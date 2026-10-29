@@ -72,10 +72,6 @@
     "languageDesc": "Applies to menus and helper text",
     "korean": "한국어",
     "english": "English",
-    "theme": "Theme",
-    "themeDesc": "Dark theme is the default",
-    "themeDark": "Dark",
-    "themeLightSoon": "Light (coming soon)",
     "outputDir": "Output folder",
     "outputDirDesc": "Where translated results are saved",
     "outputDirDefault": "Default location (next to the modpack)",
@@ -119,10 +115,6 @@
     "downloading": "Downloading v{{version}} {{percent}}%",
     "ready": "v{{version}} ready to install",
     "installRestart": "Restart to install",
-    "updateError": "Update check failed: {{message}}",
-    "licenses": "Open source licenses",
-    "licensesDesc": "Open source software used by Moru",
-    "view": "View",
-    "preparing": "Coming soon"
+    "updateError": "Update check failed: {{message}}"
   }
 }

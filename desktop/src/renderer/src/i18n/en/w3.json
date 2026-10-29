@@ -115,11 +115,7 @@
     "tmTitle": "Reuse translation memory",
     "tmSub": "{{n}} stored segments available for reuse",
     "tmLoading": "Checking translation memory…",
-    "tmError": "Could not load translation memory info",
-    "placeholderTitle": "Preserve color codes (§) & placeholders",
-    "placeholderSub": "%s, {player}, §e §r etc. kept as-is",
-    "shareTitle": "Auto-share with the community when done",
-    "shareSub": "Discord sign-in required · coming soon"
+    "tmError": "Could not load translation memory info"
   },
   "sourceExport": {
     "badge": "No translation",

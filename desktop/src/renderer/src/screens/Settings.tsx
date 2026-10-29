@@ -808,7 +808,6 @@ function SelectChip({
 function GeneralTab() {
   const { t } = useTranslation();
   const uiLanguage = useSettings((s) => s.uiLanguage);
-  const theme = useSettings((s) => s.theme);
   const outputDir = useSettings((s) => s.outputDir);
   const set = useSettings((s) => s.set);
   const replayOnboarding = useRouter((s) => s.replayOnboarding);
@@ -833,14 +832,8 @@ function GeneralTab() {
           </SelectChip>
         </SettingRow>
 
-        <SettingRow title={t("settings.general.theme")} desc={t("settings.general.themeDesc")}>
-          <SelectChip value={theme} onChange={() => set({ theme: "dark" })}>
-            <option value="dark">{t("settings.general.themeDark")}</option>
-            <option value="light" disabled>
-              {t("settings.general.themeLightSoon")}
-            </option>
-          </SelectChip>
-        </SettingRow>
+        {/* Theme row hidden until a light theme exists: a picker with one
+            selectable value offered nothing. */}
 
         <SettingRow title={t("settings.general.outputDir")} desc={t("settings.general.outputDirDesc")}>
           <div className="flex min-w-0 items-center gap-[6px]">
@@ -1188,18 +1181,6 @@ function AboutTab({
             </button>
           )}
         </div>
-
-        <SettingRow title={t("settings.about.licenses")} desc={t("settings.about.licensesDesc")}>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-text3">{t("settings.about.preparing")}</span>
-            <button
-              disabled
-              className="cursor-not-allowed border border-edge bg-transparent px-3 py-2 text-[11px] font-semibold text-text2 opacity-40"
-            >
-              {t("settings.about.view")}
-            </button>
-          </div>
-        </SettingRow>
       </div>
     </>
   );

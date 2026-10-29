@@ -115,11 +115,7 @@
     "tmTitle": "번역 메모리 재사용",
     "tmSub": "저장된 문장 {{n}}개 재사용 가능",
     "tmLoading": "번역 메모리 확인 중…",
-    "tmError": "번역 메모리 정보를 불러오지 못했어요",
-    "placeholderTitle": "색코드(§)·플레이스홀더 보존",
-    "placeholderSub": "%s, {player}, §e §r 등 원본 유지",
-    "shareTitle": "완료 후 자동으로 커뮤니티에 공유",
-    "shareSub": "Discord 로그인 필요 · 준비 중"
+    "tmError": "번역 메모리 정보를 불러오지 못했어요"
   },
   "sourceExport": {
     "badge": "번역 없이",

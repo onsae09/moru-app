@@ -1294,17 +1294,6 @@ export function W3Settings() {
                 : t("w3.options.tmSub", { n: formatInt(tmQuery.data.entries) })
           }
         />
-        <OptionCheck
-          checked
-          title={t("w3.options.placeholderTitle")}
-          sub={t("w3.options.placeholderSub")}
-        />
-        <OptionCheck
-          checked={false}
-          disabled
-          title={t("w3.options.shareTitle")}
-          sub={t("w3.options.shareSub")}
-        />
       </div>
 
       {/* Export as source text — no API connection, no translation. The

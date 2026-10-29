@@ -47,6 +47,11 @@ class SNBTParser(BaseParser):
         except OSError as e:
             raise ParseError(self.path, f"Could not read file: {e}") from e
 
+        if "\x00" in content:
+            # A zero-filled or binary file (seen in shipped packs). The lexer
+            # would print one "Illegal character" line per byte, every parse.
+            raise ParseError(self.path, "file contains NUL bytes (corrupt or binary)")
+
         if HAS_SNBT_LIB:
             try:
                 # Try parsing with ftb_snbt_lib

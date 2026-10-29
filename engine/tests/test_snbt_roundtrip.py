@@ -45,3 +45,16 @@ async def test_untranslated_tags_keep_their_types(tmp_path: Path) -> None:
 def test_ampersand_escape_is_idempotent() -> None:
     once = SNBTParser._replace_ampersand("a & b")
     assert SNBTParser._replace_ampersand(once) == once == "a \\& b"
+
+
+@pytest.mark.asyncio
+async def test_a_zero_filled_file_is_refused_without_lexing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from moru_engine.parsers.base import ParseError
+
+    broken = tmp_path / "reward.snbt"
+    broken.write_bytes(b"\x00" * 539)
+    with pytest.raises(ParseError, match="NUL"):
+        await SNBTParser(broken).parse()
+    assert "Illegal character" not in capsys.readouterr().out

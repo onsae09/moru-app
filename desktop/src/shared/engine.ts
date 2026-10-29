@@ -416,6 +416,8 @@ export interface Provider {
   has_key: boolean;
   /** Present only for coding-CLI subscriptions (Claude Code, Codex, Gemini CLI). */
   auth?: "cli";
+  /** Switched off engine-side: listed, never probed, cannot be selected. */
+  disabled?: boolean;
   connected?: boolean;
   /** What the UI should branch on. `connected` is a bool kept for older
    *  clients and cannot separate "install it" from "sign in" from "signed

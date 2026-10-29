@@ -61,6 +61,10 @@ CLI_PROVIDER_CATALOG: tuple[dict[str, Any], ...] = (
         "name": "Claude Code",
         "env": None,
         "auth": "cli",
+        # Switched off: the handler's OAuth path is being replaced. Listed
+        # so a saved selection still has a card to explain itself, but no
+        # probe or completion is sent (see ClaudeCodeLLM).
+        "disabled": True,
         "models": [
             "claude-code/claude-sonnet-4-6",
             "claude-code/claude-haiku-4-5",

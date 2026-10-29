@@ -148,7 +148,8 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["providers"] }),
   });
 
-  const ready = state.kind === "ready";
+  const disabled = provider.disabled === true;
+  const ready = !disabled && state.kind === "ready";
   const tone = ready
     ? { border: "border-accent-lo", chip: "rgba(61,220,132,0.12)", ink: "#3DDC84" }
     : { border: "border-amber", chip: "rgba(245,180,84,0.12)", ink: "#F5B454" };
@@ -156,9 +157,13 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
   const name = providerLabel(provider, t);
   const title = ready
     ? t("w3.key.cliConfirmed", { provider: name })
-    : t("w3.key.cliBlocked", { provider: name, status: cliStatusChip(state, t).label });
-  const detail =
-    ready && state.account !== null
+    : t("w3.key.cliBlocked", {
+        provider: name,
+        status: disabled ? t("settings.models.cliDisabled") : cliStatusChip(state, t).label,
+      });
+  const detail = disabled
+    ? t("settings.models.cliDisabledHint")
+    : ready && state.account !== null
       ? `${cliGuidance(state, t)} · ${state.account}`
       : cliGuidance(state, t);
   const transport =
@@ -201,7 +206,7 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
       </div>
       <button
         type="button"
-        disabled={recheck.isPending}
+        disabled={disabled || recheck.isPending}
         onClick={() => recheck.mutate()}
         className="shrink-0 cursor-pointer border border-accent bg-transparent px-[14px] py-[7px] text-[12px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
       >
@@ -687,8 +692,10 @@ export function W3Settings() {
             const name = entry === undefined ? (PROVIDER_LABELS[id] ?? id) : providerLabel(entry, t);
             /* Word-for-word the chip the Settings card shows, so a provider
                cannot read 설정 필요 there and 연결됨 here. */
-            const status =
-              tileCli !== null
+            const off = entry?.disabled === true;
+            const status = off
+              ? t("settings.models.cliDisabled")
+              : tileCli !== null
                 ? cliStatusChip(tileCli, t).label
                 : isConnected
                   ? t("w3.provider.connected")
@@ -699,9 +706,12 @@ export function W3Settings() {
               <button
                 key={id}
                 type="button"
+                disabled={off}
                 onClick={() => settings.set({ provider: id })}
                 className={
-                  active
+                  off
+                    ? "cursor-not-allowed border border-edge bg-transparent px-3 py-[8px] text-left opacity-40"
+                    : active
                     ? "cursor-pointer border border-accent px-3 py-[8px] text-left"
                     : "cursor-pointer border border-edge bg-transparent px-3 py-[8px] text-left hover:border-edge2"
                 }

@@ -118,9 +118,9 @@ _PROVIDER_CATALOG: tuple[dict[str, Any], ...] = (
         "name": "Anthropic",
         "env": "ANTHROPIC_API_KEY",
         "models": [
-            "anthropic/claude-sonnet-4-6",
-            "anthropic/claude-haiku-4-5",
-            "anthropic/claude-opus-4-8",
+            "anthropic/claude-sonnet-5-5",
+            "anthropic/claude-haiku-5-5",
+            "anthropic/claude-opus-5-5",
         ],
     },
     {
@@ -150,8 +150,8 @@ _PROVIDER_CATALOG: tuple[dict[str, Any], ...] = (
         "name": "OpenRouter",
         "env": "OPENROUTER_API_KEY",
         "models": [
-            "openrouter/anthropic/claude-sonnet-4.6",
-            "openrouter/anthropic/claude-haiku-4.5",
+            "openrouter/anthropic/claude-sonnet-5.5",
+            "openrouter/anthropic/claude-haiku-5.5",
             "openrouter/openai/gpt-5.6-luna",
             "openrouter/google/gemini-3.5-flash",
             "openrouter/deepseek/deepseek-chat-v3-0324",
@@ -1197,7 +1197,13 @@ def create_app(
                 "models": list(p["models"]),
                 "has_key": p["env"] is None or bool(os.environ.get(p["env"])),
             }
-            if p["id"] in CLI_PROVIDER_IDS:
+            if p.get("disabled"):
+                # Never probed: a disabled provider reads no credentials.
+                entry["auth"] = "cli"
+                entry["disabled"] = True
+                entry["has_key"] = False
+                entry["connected"] = False
+            elif p["id"] in CLI_PROVIDER_IDS:
                 # No API key exists for these: "ready" means the user's own
                 # CLI is logged in AND its grant can actually serve a
                 # request, which for the legacy Gemini CLI includes

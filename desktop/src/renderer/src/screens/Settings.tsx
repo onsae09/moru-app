@@ -333,8 +333,11 @@ function CliProviderCard({ provider }: { provider: Provider }) {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["providers"] }),
   });
 
-  const status = cliStatusChip(state, t);
-  const guidance = cliGuidance(state, t);
+  const disabled = provider.disabled === true;
+  const status = disabled
+    ? { label: t("settings.models.cliDisabled"), tone: "text-text4" }
+    : cliStatusChip(state, t);
+  const guidance = disabled ? t("settings.models.cliDisabledHint") : cliGuidance(state, t);
   /* Which backend a request would take, and where its config came from.
      Only shown while something is wrong: it is support information, and a
      working provider does not need to explain its plumbing. */
@@ -395,7 +398,7 @@ function CliProviderCard({ provider }: { provider: Provider }) {
         <button
           type="button"
           className="shrink-0 border border-accent bg-transparent px-3 py-2 text-[11px] font-semibold text-accent hover:bg-[rgba(61,220,132,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={recheck.isPending}
+          disabled={disabled || recheck.isPending}
           onClick={() => recheck.mutate()}
         >
           {t("settings.models.cliRecheck")}

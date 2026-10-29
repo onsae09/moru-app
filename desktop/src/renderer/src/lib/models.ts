@@ -24,9 +24,10 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "openai/gpt-5.6-luna": { input: 1.0, output: 6.0, cacheRead: 0.1 },
   "openai/gpt-4.1": { input: 2.0, output: 8.0, cacheRead: 0.5 },
   "openai/gpt-4.1-mini": { input: 0.4, output: 1.6, cacheRead: 0.1 },
-  "anthropic/claude-opus-4-8": { input: 5.0, output: 25.0, cacheRead: 0.5 },
-  "anthropic/claude-sonnet-4-6": { input: 3.0, output: 15.0, cacheRead: 0.3 },
-  "anthropic/claude-haiku-4-5": { input: 1.0, output: 5.0, cacheRead: 0.1 },
+  "anthropic/claude-opus-5-5": { input: 4.0, output: 20.0, cacheRead: 0.2 },
+  "anthropic/claude-sonnet-5-5": { input: 2.0, output: 10.0, cacheRead: 0.2 },
+  // Prompts up to 100K tokens; a batch request stays far below that.
+  "anthropic/claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01 },
   "gemini/gemini-3.1-pro-preview": { input: 2.0, output: 12.0, cacheRead: 0.2 },
   "gemini/gemini-3.5-flash": { input: 1.5, output: 9.0, cacheRead: 0.15 },
   "gemini/gemini-3.1-flash-lite": { input: 0.25, output: 1.5, cacheRead: 0.025 },
@@ -43,6 +44,9 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "openai/gpt-4o": { input: 2.5, output: 10.0, cacheRead: 1.25 },
   "openai/gpt-4o-mini": { input: 0.15, output: 0.6, cacheRead: 0.075 },
   "openai/o4-mini": { input: 1.1, output: 4.4, cacheRead: 0.275 },
+  "anthropic/claude-opus-4-8": { input: 5.0, output: 25.0, cacheRead: 0.5 },
+  "anthropic/claude-sonnet-4-6": { input: 3.0, output: 15.0, cacheRead: 0.3 },
+  "anthropic/claude-haiku-4-5": { input: 1.0, output: 5.0, cacheRead: 0.1 },
   "anthropic/claude-sonnet-4-5": { input: 3.0, output: 15.0, cacheRead: 0.3 },
   "anthropic/claude-opus-4-1": { input: 15.0, output: 75.0, cacheRead: 1.5 },
   "gemini/gemini-2.5-pro": { input: 1.25, output: 10.0, cacheRead: 0.31 },
@@ -116,9 +120,9 @@ export const PROVIDER_TIERS: Record<string, Record<PresetId, string>> = {
     best: "openai/gpt-5.6-sol",
   },
   anthropic: {
-    fast: "anthropic/claude-haiku-4-5",
-    balanced: "anthropic/claude-sonnet-4-6",
-    best: "anthropic/claude-opus-4-8",
+    fast: "anthropic/claude-haiku-5-5",
+    balanced: "anthropic/claude-sonnet-5-5",
+    best: "anthropic/claude-opus-5-5",
   },
   gemini: {
     fast: "gemini/gemini-3.1-flash-lite",
@@ -137,8 +141,8 @@ export const PROVIDER_TIERS: Record<string, Record<PresetId, string>> = {
   },
   openrouter: {
     fast: "openrouter/deepseek/deepseek-v4-flash",
-    balanced: "openrouter/anthropic/claude-haiku-4.5",
-    best: "openrouter/anthropic/claude-sonnet-4.6",
+    balanced: "openrouter/anthropic/claude-haiku-5.5",
+    best: "openrouter/anthropic/claude-sonnet-5.5",
   },
   "claude-code": {
     fast: "claude-code/claude-haiku-4-5",

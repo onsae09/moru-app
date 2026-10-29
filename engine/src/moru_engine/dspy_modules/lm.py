@@ -13,6 +13,7 @@ ride the CLI's own OAuth grant instead of an API key.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Literal
 
 import dspy
@@ -28,6 +29,9 @@ register_cli_providers()
 
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 8192
+#: Claude with thinking on: room for thinking plus a full batch, while
+#: staying a non-streaming request (Anthropic guidance: ~16k).
+THINKING_CLAUDE_MAX_TOKENS = 16000
 
 #: Ollama's own default context window is VRAM-tiered and only 4096 tokens
 #: below 24 GiB (ollama server/routes.go), while the compiled instructions
@@ -55,6 +59,26 @@ DEFAULT_OLLAMA_NUM_RETRIES = 1
 #: Fraction of the configured context window at which an observed
 #: prompt_tokens count means the window is full and ollama truncated.
 _CONTEXT_FULL_RATIO = 0.98
+
+
+#: "claude-sonnet-5-5", "claude-opus-5", OpenRouter's "claude-sonnet-4.6".
+_CLAUDE_ID_RE = re.compile(r"claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:[.-](\d+))?")
+
+
+def _claude_version(model: str) -> tuple[int, int] | None:
+    """(major, minor) of a Claude model id on any route, else None."""
+    match = _CLAUDE_ID_RE.search(model.rsplit("/", 1)[-1].lower())
+    if match is None:
+        return None
+    minor = match.group(2)
+    # A trailing 8-digit date suffix ("claude-haiku-4-5-20251001") never
+    # reaches group 2, which stops at the first numeric segment.
+    return int(match.group(1)), int(minor) if minor is not None else 0
+
+
+def _claude_rejects_temperature(model: str) -> bool:
+    version = _claude_version(model)
+    return version is not None and version >= (4, 7)
 
 
 def build_lm(
@@ -94,6 +118,19 @@ def build_lm(
     # default applies.
     if model.rsplit("/", 1)[-1].lower().startswith("gpt-5"):
         kwargs["temperature"] = None
+    # Claude Opus 4.7+ and the whole 5.x line reject any non-default
+    # sampling parameter (400; LiteLLM raises UnsupportedParamsError before
+    # sending), and extended thinking on any Claude runs only at the
+    # default temperature.
+    claude = _claude_version(model)
+    claude_thinks = claude is not None and (claude >= (5, 0) or "reasoning_effort" in extra)
+    if _claude_rejects_temperature(model) or claude_thinks:
+        kwargs["temperature"] = None
+    # Thinking tokens count against max_tokens, and the 5.x line thinks by
+    # default. 8192 then truncates a large batch mid-JSON, which costs a
+    # split-and-retry. A ceiling, not a charge; explicit values are kept.
+    if claude_thinks and max_tokens == DEFAULT_MAX_TOKENS:
+        kwargs["max_tokens"] = THINKING_CLAUDE_MAX_TOKENS
     if model.startswith("ollama"):
         if "reasoning_effort" not in extra:
             # Local thinking models (qwen3 family) burn the whole completion
@@ -127,6 +164,17 @@ def build_lm(
             body["reasoning"] = reasoning
         else:
             extra["extra_body"] = {"reasoning": reasoning}
+    if model.startswith(("anthropic/", "openrouter/anthropic/")):
+        # Anthropic caches nothing unless a block is marked, unlike OpenAI,
+        # Gemini, DeepSeek and xAI which cache a repeated prefix on their
+        # own. The system message carries the compiled instructions (~36k
+        # characters, identical on every batch of a run), so marking it
+        # bills every batch after the first at the cache-read rate. The
+        # prompt text is unchanged, so output is too.
+        extra.setdefault(
+            "cache_control_injection_points",
+            [{"location": "message", "role": "system"}],
+        )
     provider = model.partition("/")[0]
     if provider in CLI_PROVIDER_IDS and "reasoning_effort" in extra:
         # LiteLLM validates OpenAI-style parameters before dispatching to a

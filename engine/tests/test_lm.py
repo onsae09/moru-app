@@ -11,6 +11,7 @@ asserted on its assembled kwargs, and the pipeline tests inject a fake
 translator at the same seam test_orchestrator.py uses.
 """
 
+import json
 from pathlib import Path
 
 import dspy
@@ -335,3 +336,129 @@ def test_hosted_reasoning_effort_does_not_gain_cli_override():
 
     assert lm.kwargs["reasoning_effort"] == "high"
     assert "allowed_openai_params" not in lm.kwargs
+
+
+@pytest.mark.parametrize(
+    "model", ["anthropic/claude-sonnet-4-6", "openrouter/anthropic/claude-sonnet-4.6"]
+)
+def test_anthropic_models_cache_the_system_prompt(model: str):
+    """Anthropic caches nothing unless asked. The compiled instructions are
+    the same ~36k characters on every batch, so mark the system message."""
+    lm = build_lm(model, cache=False)
+    assert lm.kwargs["cache_control_injection_points"] == [
+        {"location": "message", "role": "system"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "model", ["openai/gpt-4.1", "gemini/gemini-3.5-flash", "ollama_chat/qwen3:8b"]
+)
+def test_auto_caching_providers_get_no_injection(model: str):
+    lm = build_lm(model, cache=False)
+    assert "cache_control_injection_points" not in lm.kwargs
+
+
+def test_anthropic_cache_control_reaches_the_wire(monkeypatch):
+    """The injection point must survive litellm into the request body."""
+    sent: dict = {}
+
+    def fake_post(self, url, *args, **kwargs):
+        import json as _json
+
+        sent["body"] = _json.loads(kwargs.get("data") or _json.dumps(kwargs["json"]))
+        raise RuntimeError("stop before network")
+
+    monkeypatch.setattr(
+        "litellm.llms.custom_httpx.http_handler.HTTPHandler.post", fake_post
+    )
+    lm = build_lm("anthropic/claude-sonnet-4-6", api_key="sk-test", cache=False)
+    with pytest.raises(Exception):
+        litellm.completion(
+            model=lm.model,
+            messages=[
+                {"role": "system", "content": "instructions"},
+                {"role": "user", "content": "batch"},
+            ],
+            num_retries=0,
+            **{k: v for k, v in lm.kwargs.items() if k != "cache"},
+        )
+    system = sent["body"]["system"]
+    assert system[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "anthropic/claude-haiku-5-5",
+        "anthropic/claude-sonnet-5-5",
+        "anthropic/claude-opus-5-5",
+        "anthropic/claude-opus-4-8",
+        "openrouter/anthropic/claude-sonnet-5.5",
+    ],
+)
+def test_claude_models_without_sampling_params_omit_temperature(model: str):
+    """Opus 4.7+ and the 5.x line reject any non-default temperature."""
+    lm = build_lm(model, temperature=0.3, cache=False)
+    assert lm.kwargs["temperature"] is None
+
+
+def test_claude_thinking_omits_temperature():
+    """Extended thinking only runs at the default temperature."""
+    lm = build_lm(
+        "anthropic/claude-sonnet-4-6", temperature=0.3, reasoning_effort="low", cache=False
+    )
+    assert lm.kwargs["temperature"] is None
+
+
+@pytest.mark.parametrize(
+    ("model", "extra"),
+    [
+        ("anthropic/claude-haiku-5-5", {}),
+        ("anthropic/claude-haiku-5-5", {"reasoning_effort": "low"}),
+        ("anthropic/claude-sonnet-5-5", {"reasoning_effort": "high"}),
+    ],
+)
+def test_claude_55_request_passes_litellm_validation(monkeypatch, model, extra):
+    sent: dict = {}
+
+    def fake_post(self, url, *args, **kwargs):
+        import json as _json
+
+        sent["body"] = _json.loads(kwargs.get("data") or _json.dumps(kwargs["json"]))
+        raise RuntimeError("stop before network")
+
+    monkeypatch.setattr(
+        "litellm.llms.custom_httpx.http_handler.HTTPHandler.post", fake_post
+    )
+    lm = build_lm(model, api_key="sk-test", cache=False, **extra)
+    with pytest.raises(Exception):
+        litellm.completion(
+            model=lm.model,
+            messages=[{"role": "user", "content": "batch"}],
+            num_retries=0,
+            **{k: v for k, v in lm.kwargs.items() if k != "cache"},
+        )
+    body = sent["body"]
+    assert "temperature" not in body
+    assert "budget_tokens" not in json.dumps(body)
+
+
+@pytest.mark.parametrize(
+    ("model", "extra"),
+    [
+        ("anthropic/claude-haiku-5-5", {}),
+        ("openrouter/anthropic/claude-sonnet-5.5", {}),
+        ("anthropic/claude-sonnet-4-6", {"reasoning_effort": "high"}),
+    ],
+)
+def test_thinking_claude_gets_room_for_thinking_tokens(model: str, extra: dict):
+    """Thinking tokens count against max_tokens; 8192 truncates a batch."""
+    lm = build_lm(model, cache=False, **extra)
+    assert lm.kwargs["max_tokens"] == 16000
+
+
+def test_explicit_max_tokens_and_non_thinking_claude_untouched():
+    assert build_lm("anthropic/claude-haiku-5-5", max_tokens=1, cache=False).kwargs[
+        "max_tokens"
+    ] == 1
+    assert build_lm("anthropic/claude-sonnet-4-6", cache=False).kwargs["max_tokens"] == 8192

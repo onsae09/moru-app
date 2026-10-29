@@ -268,25 +268,16 @@ def _raise_for_status(resp: httpx.Response) -> None:
     raise RuntimeError(f"Claude Code request failed ({resp.status_code}): {body}")
 
 
+#: The provider is switched off (catalog ``disabled``); every call refuses
+#: before reading a credential or touching the network.
+DISABLED_MESSAGE = "Claude Code 연결은 현재 사용할 수 없습니다. 다른 공급자를 선택해 주세요."
+
+
 class ClaudeCodeLLM(CustomLLM):
     """LiteLLM provider for ``claude-code/<model>``."""
 
     def completion(self, *args: Any, **kwargs: Any) -> ModelResponse:
-        model = kwargs["model"]
-        payload = build_payload(model, kwargs["messages"], kwargs.get("optional_params") or {})
-        content = serialize(payload)
-        headers = build_headers(CLAUDE_CODE_STORE.token())
-        with httpx.Client(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            resp = client.post(API_URL, headers=headers, content=content)
-        _raise_for_status(resp)
-        return _fill_response(kwargs["model_response"], model, resp.json())
+        raise CliAuthError(DISABLED_MESSAGE)
 
     async def acompletion(self, *args: Any, **kwargs: Any) -> ModelResponse:
-        model = kwargs["model"]
-        payload = build_payload(model, kwargs["messages"], kwargs.get("optional_params") or {})
-        content = serialize(payload)
-        headers = build_headers(CLAUDE_CODE_STORE.token())
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            resp = await client.post(API_URL, headers=headers, content=content)
-        _raise_for_status(resp)
-        return _fill_response(kwargs["model_response"], model, resp.json())
+        raise CliAuthError(DISABLED_MESSAGE)

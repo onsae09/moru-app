@@ -1926,7 +1926,6 @@ def test_providers_include_openrouter(client: TestClient) -> None:
 @pytest.mark.parametrize(
     ("provider_id", "prefix"),
     [
-        ("claude-code", "claude-code/"),
         ("codex", "codex/"),
         ("gemini-cli", "gemini-cli/"),
     ],
@@ -1945,6 +1944,32 @@ def test_providers_expose_cli_subscriptions(
     assert all(m.startswith(prefix) for m in entry["models"])
     # has_key tracks the CLI login, not an env var, and the two agree.
     assert entry["has_key"] == entry["connected"]
+
+
+def test_claude_code_is_listed_disabled_and_never_probed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import moru_engine.server.app as app_module
+
+    def boom(provider: str) -> dict:
+        raise AssertionError(f"probed {provider}")
+
+    monkeypatch.setattr(app_module, "provider_status", lambda p: (
+        boom(p) if p == "claude-code" else {"connected": False}
+    ))
+    body = client.get("/providers", headers=AUTH).json()
+    entry = next(p for p in body if p["id"] == "claude-code")
+    assert entry["auth"] == "cli"
+    assert entry["disabled"] is True
+    assert entry["connected"] is False
+
+
+def test_claude_code_test_probe_refuses_without_a_request(client: TestClient) -> None:
+    body = client.post(
+        "/providers/test", headers=AUTH, json={"provider": "claude-code"}
+    ).json()
+    assert body["ok"] is False
+    assert "사용할 수 없습니다" in body["error"]
 
 
 @pytest.mark.parametrize("provider_id", ["claude-code", "gemini-cli"])

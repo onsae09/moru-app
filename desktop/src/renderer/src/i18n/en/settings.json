@@ -56,6 +56,8 @@
     "cliBlockedUnknown": "Signed in, but this subscription cannot serve a request yet. The CLI did not say why — run it in a terminal to see what it reports.",
     "cliTransport": "Connection path: {{transport}}",
     "cliRecheck": "Re-check",
+    "cliDisabled": "Disabled",
+    "cliDisabledHint": "The Claude Code connection is currently unavailable. Please choose another provider.",
     "cliTestFailUnknown": "the CLI gave no readable reason — run it in a terminal to see what it reports."
   },
   "general": {

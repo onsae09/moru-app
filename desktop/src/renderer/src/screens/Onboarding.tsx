@@ -223,12 +223,18 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
               const connected =
                 tileCli !== null ? tileCli.kind === "ready" : savedIds.has(p.id) || p.has_key;
               const label = providerLabel(p, t);
+              const off = p.disabled === true;
               return (
                 <button
                   key={p.id}
+                  disabled={off}
                   onClick={() => select(p.id)}
                   className={`flex items-center gap-3 border bg-raised px-4 py-3 text-left ${
-                    active ? "border-accent" : "border-line2 hover:border-edge2"
+                    off
+                      ? "cursor-not-allowed border-line2 opacity-40"
+                      : active
+                        ? "border-accent"
+                        : "border-line2 hover:border-edge2"
                   }`}
                 >
                   <div
@@ -240,8 +246,10 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[12px] font-bold text-text">{label}</div>
                     <div className="mt-[2px] font-mono text-[10px] text-text3">
-                      {tileCli !== null
-                        ? cliStatusChip(tileCli, t).label
+                      {off
+                        ? t("settings.models.cliDisabled")
+                        : tileCli !== null
+                          ? cliStatusChip(tileCli, t).label
                         : savedIds.has(p.id)
                           ? t("onboarding.key.saved")
                           : LOCAL_PROVIDERS.has(p.id)

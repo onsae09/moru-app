@@ -115,7 +115,7 @@ export const useSettings = create<SettingsStore>()(
       outputDir: null,
       preset: "balanced",
       provider: "anthropic",
-      model: "anthropic/claude-haiku-4-5",
+      model: "anthropic/claude-haiku-5-5",
       temperature: 0.3,
       batchSize: 30,
       maxConcurrent: 15,

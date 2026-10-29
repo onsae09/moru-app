@@ -4,7 +4,8 @@
  * ticker, counters, per-file progress, and the collapsible live log.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useTranslation } from "react-i18next";
 
 import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
@@ -108,7 +109,28 @@ function StatCard({
   );
 }
 
-function FileRow({
+/** Log body (capped at 500 lines by the store); memoized so the 1s tick does
+    not re-render every line. */
+const LogLines = memo(function LogLines({ log }: { log: LogLine[] }) {
+  return (
+    <>
+      {log.map((line, idx) => (
+        <div
+          key={`${line.ts}-${idx}`}
+          className={line.level === "error" ? "-mx-[14px] bg-red/6 px-[14px]" : ""}
+        >
+          <span className="text-text3">{timeOf(line.ts)}</span>{" "}
+          <span className={LOG_LEVEL[line.level].className}>{LOG_LEVEL[line.level].label}</span>{" "}
+          {line.text}
+        </div>
+      ))}
+    </>
+  );
+});
+
+/* Memoized: finished rows keep identical props, so only active rows
+   re-render on each tick. */
+const FileRow = memo(function FileRow({
   progress,
   seconds,
   lang,
@@ -167,7 +189,7 @@ function FileRow({
       </div>
     </div>
   );
-}
+});
 
 /** Glossary extraction stage row: chunk progress + schema-error retry state. */
 function GlossaryRow({ progress }: { progress: GlossaryProgress }) {
@@ -267,7 +289,8 @@ export function W4Progress() {
   const extractGlossary = useSettings((s) => s.extractGlossary);
   const glossaryMaxTerms = useSettings((s) => s.glossaryMaxTerms);
   const pricingTable = usePricingTable();
-  const wizard = useWizard();
+  // Field selection (shallow-compared) instead of the whole store: W4 used to
+  // re-render on every unrelated wizard update (scan/export progress, etc.).
   const {
     runState,
     runError,
@@ -299,7 +322,40 @@ export function W4Progress() {
     cancelTranslate,
     pauseTranslate,
     resumeTranslate,
-  } = wizard;
+  } = useWizard(
+    useShallow((s) => ({
+      runState: s.runState,
+      runError: s.runError,
+      resumable: s.resumable,
+      interruptReason: s.interruptReason,
+      sessionId: s.sessionId,
+      translateJobId: s.translateJobId,
+      startedAt: s.startedAt,
+      translationStartedAt: s.translationStartedAt,
+      finishedAt: s.finishedAt,
+      doneEntries: s.doneEntries,
+      fileProgress: s.fileProgress,
+      glossaryProgress: s.glossaryProgress,
+      activeBatches: s.activeBatches,
+      failedKeys: s.failedKeys,
+      failedEntryCount: s.failedEntryCount,
+      promptTokens: s.promptTokens,
+      completionTokens: s.completionTokens,
+      cachedTokens: s.cachedTokens,
+      ticker: s.ticker,
+      log: s.log,
+      stats: s.stats,
+      scanResult: s.scanResult,
+      scanTotals: s.scanTotals,
+      excludedCategories: s.excludedCategories,
+      sourceLocale: s.sourceLocale,
+      targetLocale: s.targetLocale,
+      startTranslate: s.startTranslate,
+      cancelTranslate: s.cancelTranslate,
+      pauseTranslate: s.pauseTranslate,
+      resumeTranslate: s.resumeTranslate,
+    })),
+  );
 
   const running = runState === "running";
 
@@ -997,20 +1053,7 @@ export function W4Progress() {
               className="max-h-[320px] overflow-y-auto border-t border-line2 px-[14px] py-3 font-mono text-[11px] leading-[1.65] text-text2"
             >
               {log.length === 0 && <div className="text-text3">{t("w4.log.empty")}</div>}
-              {log.map((line, idx) => (
-                <div
-                  key={`${line.ts}-${idx}`}
-                  className={
-                    line.level === "error" ? "-mx-[14px] bg-red/6 px-[14px]" : ""
-                  }
-                >
-                  <span className="text-text3">{timeOf(line.ts)}</span>{" "}
-                  <span className={LOG_LEVEL[line.level].className}>
-                    {LOG_LEVEL[line.level].label}
-                  </span>{" "}
-                  {line.text}
-                </div>
-              ))}
+              <LogLines log={log} />
               {running && (
                 <div className="mt-1.5 flex items-center gap-1.5 text-text3">
                   <div className="h-3 w-1.5 animate-pxblink bg-accent [animation-timing-function:steps(2)]" />
@@ -1023,9 +1066,9 @@ export function W4Progress() {
       </div>
 
       {/* Translation graph (collapsible, live-polling while running) */}
-      {wizard.translateJobId !== null && (
+      {translateJobId !== null && (
         <div className="mt-5">
-          <TranslationGraphView jobId={wizard.translateJobId} live={running} />
+          <TranslationGraphView jobId={translateJobId} live={running} />
         </div>
       )}
 

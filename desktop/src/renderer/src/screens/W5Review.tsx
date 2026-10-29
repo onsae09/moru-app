@@ -7,7 +7,6 @@
 import {
   keepPreviousData,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -149,21 +148,18 @@ export function W5Review() {
     placeholderData: keepPreviousData,
   });
 
-  const countQueries = useQueries({
-    queries: FILTERS.map((f) => ({
-      queryKey: ["w5", translateJobId, "count", f, query],
-      queryFn: () => api.entries(translateJobId as string, f, 1, 1, query),
-      enabled: translateJobId !== null,
-      placeholderData: keepPreviousData,
-    })),
+  // One counts request for every filter chip (was one entries request per filter).
+  const countsQuery = useQuery({
+    queryKey: ["w5", translateJobId, "counts", query],
+    queryFn: () => api.entryCounts(translateJobId as string, query),
+    enabled: translateJobId !== null,
+    placeholderData: keepPreviousData,
   });
   const counts = useMemo(() => {
     const map = {} as Record<ReviewFilter, number | null>;
-    FILTERS.forEach((f, i) => {
-      map[f] = countQueries[i].data?.total ?? null;
-    });
+    for (const f of FILTERS) map[f] = countsQuery.data?.[f] ?? null;
     return map;
-  }, [countQueries]);
+  }, [countsQuery.data]);
 
   const entries = pageQuery.data?.entries ?? [];
   const total = pageQuery.data?.total ?? 0;

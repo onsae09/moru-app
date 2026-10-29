@@ -287,3 +287,19 @@ test("a restored queue never auto-resumes and re-snapshots current settings", as
   expect(state.settingsSnapshot).toBe(null);
   expect(state.items.map((entry) => entry.status)).toEqual(["pending", "pending"]);
 });
+
+test("one pack may wait once per target language", () => {
+  let id = 0;
+  const result = appendUniqueQueueItems(
+    [],
+    [
+      { path: "/packs/alpha", name: "Alpha", targetLocale: "ko_kr" },
+      { path: "/packs/alpha", name: "Alpha", targetLocale: "ja_jp" },
+      { path: "/packs/alpha", name: "Alpha", targetLocale: "ja_jp" },
+    ],
+    "linux",
+    () => `id-${++id}`,
+    () => 100,
+  );
+  expect(result.map((entry) => entry.targetLocale)).toEqual(["ko_kr", "ja_jp"]);
+});

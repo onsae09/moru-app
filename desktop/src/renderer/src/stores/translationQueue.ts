@@ -46,11 +46,17 @@ export interface TranslationQueueItem {
   addedAt: number;
   startedAt: number | null;
   finishedAt: number | null;
+  /**
+   * Target language of this row; null/absent = the run settings'. Lets one
+   * pack be queued once per language (ko_kr, ja_jp, zh_cn ...).
+   */
+  targetLocale?: string | null;
 }
 
 export interface TranslationQueueInput {
   path: string;
   name: string;
+  targetLocale?: string | null;
 }
 
 interface TranslationQueueStore {
@@ -94,20 +100,26 @@ export function appendUniqueQueueItems(
 ): TranslationQueueItem[] {
   // Only active rows reserve their path; terminal rows stay as history
   // instead of permanently blocking a re-add of the same folder.
+  // The same pack may wait once per target language.
+  const rowKey = (path: string, locale: string | null | undefined): string => {
+    const pathKey = queuePathKey(path, platform);
+    return pathKey.length === 0 ? "" : `${pathKey}\u0000${locale ?? ""}`;
+  };
   const keys = new Set(
     existing
       .filter((item) => item.status === "pending" || ownsWizard(item.status))
-      .map((item) => queuePathKey(item.path, platform)),
+      .map((item) => rowKey(item.path, item.targetLocale)),
   );
   const added: TranslationQueueItem[] = [];
   for (const input of inputs) {
-    const key = queuePathKey(input.path, platform);
+    const key = rowKey(input.path, input.targetLocale);
     if (key.length === 0 || keys.has(key)) continue;
     keys.add(key);
     added.push({
       id: makeId(),
       path: input.path,
       name: input.name,
+      targetLocale: input.targetLocale ?? null,
       status: "pending",
       sessionId: null,
       error: null,
@@ -420,8 +432,12 @@ function ensureFailedSession(
 
 async function runQueueItem(
   item: TranslationQueueItem,
-  settings: TranslationRunSettings,
+  runSettings: TranslationRunSettings,
 ): Promise<QueueItemOutcome> {
+  const settings =
+    item.targetLocale !== undefined && item.targetLocale !== null
+      ? { ...runSettings, targetLocale: item.targetLocale }
+      : runSettings;
   const queue = useTranslationQueue.getState();
   queue.patchItem(item.id, {
     status: "scanning",

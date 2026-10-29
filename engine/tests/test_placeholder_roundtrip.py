@@ -278,3 +278,52 @@ def test_percent_before_prose_is_not_a_specifier() -> None:
     # The space flag is excluded so "50% done" stays prose.
     protected = PlaceholderProtector().protect("50% done")
     assert protected.placeholders == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "R&D Department",
+        "Q&A",
+        "Rock&roll forever",
+        "Tom &amp; Jerry",
+        "a &lt; b &gt; c",
+        "Fish&Chips &quot;deluxe&quot;",
+    ],
+)
+def test_prose_ampersands_are_not_color_codes(text: str) -> None:
+    """Freezing "&D" or "&a" of "&amp;" as {{COLOR}} hands the model a
+    broken word and makes the validator demand the fragment back."""
+    protected = PlaceholderProtector().protect(text)
+    assert protected.placeholders == []
+    assert PlaceholderProtector.count_placeholders(text) == {}
+
+
+@pytest.mark.parametrize(
+    ("text", "codes"),
+    [
+        ("&6gold&r", ["&6", "&r"]),
+        ("&lBold&r and &aGreen", ["&l", "&r", "&a"]),
+        ("Press &eJump&r to R&D", ["&e", "&r", "&D"]),
+        ("(&cWarning&r)", ["&c", "&r"]),
+        ("%s&r", ["&r"]),
+        ("Durability&7: %d", ["&7"]),
+    ],
+)
+def test_real_ampersand_codes_are_still_protected(text: str, codes: list[str]) -> None:
+    protected = PlaceholderProtector().protect(text)
+    ampersands = [p.original for p in protected.placeholders if p.original[0] == "&"]
+    assert sorted(ampersands) == sorted(codes)
+    assert protected.restore(protected.protected) == text
+
+
+def test_validator_counts_codes_glued_to_hangul() -> None:
+    """A Korean output places codes against Hangul; those are not prose."""
+    from moru_engine.validator import TranslationValidator
+
+    report = TranslationValidator().validate(
+        {"k": "&6Gold&r Sword"}, {"k": "황금&6검&r"}
+    )
+    assert not [i for i in report.get_errors() if "Ampersand" in i.message]
+    report = TranslationValidator().validate({"k": "&6Gold&r Sword"}, {"k": "황금 검"})
+    assert [i for i in report.get_errors() if "Ampersand" in i.message]

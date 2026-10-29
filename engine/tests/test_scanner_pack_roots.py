@@ -128,3 +128,41 @@ async def test_pack_root_content_routes_into_the_resource_pack(
     assert result.translation_files
     for file in result.translation_files:
         assert route_for(file.input_path) is Route.RESOURCE_PACK
+
+
+@pytest.mark.asyncio
+async def test_updated_zip_is_re_extracted_and_a_removed_one_dropped(
+    tmp_path: Path,
+) -> None:
+    """The extraction used to be reused for as long as its folder existed,
+    so an updated pack kept being scanned from its first version."""
+    import os
+
+    modpack = tmp_path / "modpack"
+    zip_path = modpack / "resourcepacks" / "Pack.zip"
+    _pack_zip(zip_path, "oldns", tmp_path / "v1")
+    assert "oldns" in _namespaces(await scan_modpack(modpack), modpack)
+
+    zip_path.unlink()
+    _pack_zip(zip_path, "newns", tmp_path / "v2")
+    os.utime(zip_path, ns=(1, 1))  # a different stamp even within one tick
+    found = _namespaces(await scan_modpack(modpack), modpack)
+    assert "newns" in found
+    assert "oldns" not in found
+
+    zip_path.unlink()
+    assert _namespaces(await scan_modpack(modpack), modpack) == set()
+
+
+@pytest.mark.asyncio
+async def test_zip_bomb_resource_pack_is_refused(tmp_path: Path, monkeypatch) -> None:
+    from moru_engine.scanner import modpack_scanner
+
+    modpack = tmp_path / "modpack"
+    _pack_zip(modpack / "resourcepacks" / "Bomb.zip", "bomb", tmp_path / "s")
+    monkeypatch.setattr(modpack_scanner, "MAX_RESOURCE_PACK_UNPACKED_BYTES", 4)
+
+    result = await scan_modpack(modpack)
+
+    assert "bomb" not in _namespaces(result, modpack)
+    assert not (modpack / ".mct_cache" / "resourcepacks" / "resourcepacks" / "Bomb.zip").exists()

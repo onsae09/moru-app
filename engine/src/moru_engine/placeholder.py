@@ -43,8 +43,13 @@ PATTERNS = {
     "java_format": re.compile(rf"%%|%(?:\d+\$)?{JAVA_FORMAT_BODY}"),
     # Minecraft color codes: §a, §0-§f, §k-§o, §r
     "mc_color_section": re.compile(r"§[0-9a-fk-or]", re.IGNORECASE),
-    # Alternative color codes: &a, &0-&f, etc.
-    "mc_color_ampersand": re.compile(r"&[0-9a-fk-or]", re.IGNORECASE),
+    # Alternative color codes: &a, &0-&f, etc. Never the start of an HTML
+    # entity ("&amp;", "&lt;"). Prose like "R&D" or "Rock&roll" is told
+    # apart in context by ampersand_color_codes(), which every engine
+    # caller goes through; a regex alone cannot (see there).
+    "mc_color_ampersand": re.compile(
+        r"&(?![a-z][a-z0-9]{1,31};)[0-9a-fk-or]", re.IGNORECASE
+    ),
     # Named placeholders: {player}, {item}, etc.
     "named_placeholder": re.compile(r"\{[^}]+\}"),
     # XML-like tags: <b>, </b>, <color=red>, <font color="red">, <br />.
@@ -66,6 +71,42 @@ PATTERNS = {
     # Newlines and special characters
     "special_chars": re.compile(r"\\[nrt]"),
 }
+
+def ampersand_color_codes(text: str) -> list[re.Match[str]]:
+    """The "&x" color codes of a text, without prose ampersands.
+
+    "R&D", "Q&A" and "Rock&roll" all contain a valid code letter, and a
+    code glued to the end of a word is real too ("&6gold&r"), so no
+    per-match rule separates them. The text decides: a glued "&x" counts
+    only when the same text has an unmistakable code. A code is unmistakable
+    unless it follows an ASCII letter or digit — so at line start, after a
+    space, punctuation, a format specifier ("%s&r") or a Hangul/CJK word
+    (target-language prose never spells "R&D" glued to Hangul) — and a
+    digit code ("Durability&7:") always is. A string that uses & codes at
+    all practically always has one.
+    """
+    found = list(PATTERNS["mc_color_ampersand"].finditer(text))
+    if not found:
+        return []
+    format_ends = {m.end() for m in JAVA_FORMAT_RE.finditer(text)}
+
+    def unmistakable(match: re.Match[str]) -> bool:
+        start = match.start()
+        if start == 0 or start in format_ends or match.group(0)[1].isdigit():
+            return True
+        before = text[start - 1]
+        return not (before.isascii() and before.isalnum())
+
+    if any(unmistakable(m) for m in found):
+        return found
+    return []
+
+
+def _pattern_matches(name: str, pattern: re.Pattern[str], text: str) -> list[re.Match[str]]:
+    if name == "mc_color_ampersand":
+        return ampersand_color_codes(text)
+    return list(pattern.finditer(text))
+
 
 # Semantic token kinds: the LLM sees WHAT each token is so it can place it
 # naturally in the target language (a color span must keep wrapping the
@@ -354,7 +395,7 @@ class PlaceholderProtector:
         matches: list[tuple[int, str, str]] = []  # (position, literal, kind)
         claimed: list[tuple[int, int]] = []  # spans owned by earlier patterns
         for pattern_name, pattern in PATTERNS.items():
-            for match in pattern.finditer(text):
+            for match in _pattern_matches(pattern_name, pattern, text):
                 start, end = match.span()
                 # A match overlapping an earlier pattern's span is dropped
                 # (PATTERNS order is the priority). Keeping both corrupts
@@ -440,7 +481,7 @@ class PlaceholderProtector:
         counts: dict[str, int] = {}
 
         for name, pattern in PATTERNS.items():
-            matches = pattern.findall(text)
+            matches = _pattern_matches(name, pattern, text)
             if matches:
                 counts[name] = len(matches)
 

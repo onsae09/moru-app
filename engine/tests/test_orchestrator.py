@@ -782,7 +782,7 @@ def test_build_lm_forwards_explicit_reasoning_effort(
         seen["kwargs"] = kwargs
         return built_lm
 
-    monkeypatch.setattr(lm_module.dspy, "LM", fake_lm)
+    monkeypatch.setattr(lm_module, "UsageTrackingLM", fake_lm)
     result = lm_module.build_lm(
         "ollama_chat/qwen3:8b",
         reasoning_effort="high",
@@ -1300,6 +1300,51 @@ async def test_retry_failed_gets_sibling_context(tmp_path: Path) -> None:
     statuses = {e.key: e.status for e in result.entries}
     assert statuses["quests[0].description[0]"] is EntryStatus.MODIFIED
     assert statuses["quests[0].description[1]"] is EntryStatus.MODIFIED
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_dispatches_files_concurrently(tmp_path: Path) -> None:
+    """Retrying used to send one file's chunks after another's, one call
+    in flight at a time, however much admission the limiter had."""
+    config = PipelineConfig(
+        modpack_path=tmp_path,
+        use_tm=False,
+        use_user_glossary=False,
+        use_vanilla_glossary=False,
+    )
+    entries = [
+        EntryResult(
+            key=f"k{i}",
+            file=f"kubejs/assets/m{i}/lang/en_us.json",
+            source_text=f"Text {i}",
+            status=EntryStatus.FAILED,
+            errors=["boom"],
+        )
+        for i in range(4)
+    ]
+    result = PipelineResult(config=config, glossary=Glossary(), entries=entries)
+    in_flight = 0
+    peak = 0
+
+    class SlowTranslator(FullRecordingTranslator):
+        async def acall(self, **kwargs: Any) -> dspy.Prediction:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return await super().acall(**kwargs)
+
+    pipeline = TranslationPipeline(config, lm=dspy.utils.DummyLM([]))
+    pipeline.translator = SlowTranslator()
+    try:
+        await pipeline.retry_failed(result)
+    finally:
+        pipeline.close()
+
+    assert peak > 1
+    assert all(e.status is EntryStatus.MODIFIED for e in result.entries)
+    assert [e.translated_text for e in result.entries] == [f"KO Text {i}" for i in range(4)]
 
 
 def _single_file_scan(tmp_path: Path, entries: dict[str, str]) -> tuple[Path, ScanResult]:

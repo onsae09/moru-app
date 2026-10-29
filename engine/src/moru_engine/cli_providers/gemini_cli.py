@@ -29,6 +29,7 @@ from .credentials import (
     CliAuthError,
     gemini_cli_headers,
 )
+from .http import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,20 @@ def _agy_response(
     """Fill a LiteLLM response from an `agy` headless run."""
     slug = antigravity.resolve_model_for_agy(model)
     text, usage = antigravity.complete(slug, messages)
+    return _fill_agy_response(model_response, slug, text, usage)
+
+
+async def _agy_aresponse(
+    model_response: ModelResponse, model: str, messages: list[dict[str, Any]]
+) -> ModelResponse:
+    slug = antigravity.resolve_model_for_agy(model)
+    text, usage = await antigravity.acomplete(slug, messages)
+    return _fill_agy_response(model_response, slug, text, usage)
+
+
+def _fill_agy_response(
+    model_response: ModelResponse, slug: str, text: str, usage: dict[str, int]
+) -> ModelResponse:
     model_response.choices = [
         Choices(
             finish_reason="stop",
@@ -267,13 +282,15 @@ class GeminiCliLLM(CustomLLM):
     async def acompletion(self, *args: Any, **kwargs: Any) -> ModelResponse:
         model = kwargs["model"]
         if GEMINI_CLI_STORE.transport == TRANSPORT_AGY_CLI:
-            # Blocking subprocess: off the event loop, or one translation
-            # stalls every other concurrent request in the pack.
-            return await asyncio.to_thread(
-                _agy_response, kwargs["model_response"], model, kwargs["messages"]
+            # An asyncio subprocess: never blocks the loop, holds no
+            # executor thread while waiting, and dies when cancelled.
+            return await _agy_aresponse(
+                kwargs["model_response"], model, kwargs["messages"]
             )
-        token = GEMINI_CLI_STORE.token()
-        project = GEMINI_CLI_STORE.project()
+        # Token refresh and the first-run project lookup are blocking HTTP
+        # calls (up to 30s each): off the event loop like the agy path.
+        token = await asyncio.to_thread(GEMINI_CLI_STORE.token)
+        project = await asyncio.to_thread(GEMINI_CLI_STORE.project)
         payload = build_payload(
             model, kwargs["messages"], kwargs.get("optional_params") or {}, project
         )
@@ -284,11 +301,10 @@ class GeminiCliLLM(CustomLLM):
         }
         state = _StreamState()
         url = f"{CODE_ASSIST_ENDPOINT}{API_PATH}"
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = (await resp.aread()).decode(errors="replace")
-                    _check_status(resp.status_code, body)
-                async for line in resp.aiter_lines():
-                    parse_sse([line], state)
+        async with async_client().stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode(errors="replace")
+                _check_status(resp.status_code, body)
+            async for line in resp.aiter_lines():
+                parse_sse([line], state)
         return _fill_response(kwargs["model_response"], model, state)

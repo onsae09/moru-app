@@ -1457,6 +1457,119 @@ def test_agy_auth_failure_short_circuits_the_next_call(monkeypatch) -> None:
     antigravity._clear_auth_failure()
 
 
+_FAKE_AGY = '''#!{python}
+import json, os, subprocess, sys, time
+
+args = sys.argv[1:]
+if os.environ.get("FAKE_AGY_HANG"):
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    with open(os.environ["FAKE_AGY_HANG"], "w") as fh:
+        fh.write(f"{{os.getpid()}} {{child.pid}}")
+    time.sleep(60)
+if "--input-format" in args:
+    prompt = json.loads(sys.stdin.readline())["message"]["content"]
+    via = "stdin"
+else:
+    prompt = args[args.index("-p") + 1]
+    via = "argv"
+envelope = {{"status": "SUCCESS", "structured_output": {{"text": f"{{via}}:{{len(prompt)}}"}},
+            "usage": {{"input_tokens": 3, "output_tokens": 1, "total_tokens": 4}}}}
+if "--output-format" in args and args[args.index("--output-format") + 1] == "stream-json":
+    print(json.dumps({{"event": "init", "init": {{}}}}))
+    print(json.dumps({{"event": "result", "result": envelope}}))
+else:
+    print(json.dumps(envelope))
+'''
+
+
+@pytest.fixture
+def fake_agy(tmp_path, monkeypatch):
+    import sys
+
+    script = tmp_path / "agy"
+    script.write_text(_FAKE_AGY.format(python=sys.executable))
+    script.chmod(0o755)
+    monkeypatch.setattr(antigravity, "agy_path", lambda: script)
+    antigravity._clear_auth_failure()
+    return script
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX shebang script")
+async def test_agy_async_long_prompt_goes_over_stdin(fake_agy, monkeypatch) -> None:
+    """A ~40k-character batch prompt as `-p` exceeds Windows' 32,767-char
+    command line (WinError 206); past the limit it rides stdin instead."""
+    messages = [{"role": "user", "content": "x" * 500}]
+    text, usage = await antigravity.acomplete("gemini-3.7-flash-medium", messages)
+    assert text == "argv:500"
+    assert usage["total_tokens"] == 4
+    monkeypatch.setattr(antigravity, "_ARGV_PROMPT_LIMIT", 100)
+    text, _ = await antigravity.acomplete("gemini-3.7-flash-medium", messages)
+    assert text == "stdin:500"
+    # The sync path takes the same route.
+    text, _ = antigravity.complete("gemini-3.7-flash-medium", messages)
+    assert text == "stdin:500"
+
+
+def test_agy_windows_limit_counts_the_quoted_command_line(monkeypatch) -> None:
+    """CreateProcess counts the quoted line, where each '"' of a JSON-shaped
+    prompt gains a backslash: 20k bytes of quotes is 40k on the wire."""
+    monkeypatch.setattr(antigravity, "agy_path", lambda: Path("agy.exe"))
+    monkeypatch.setattr(antigravity.os, "name", "nt")
+    argv, stdin = antigravity._invocation('"' * 20_000, "m")
+    assert "-p" not in argv and stdin is not None
+    argv, stdin = antigravity._invocation("x" * 20_000, "m")
+    assert "-p" in argv and stdin is None
+
+
+def _alive(pid: int) -> bool:
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX process groups")
+async def test_agy_cancel_kills_the_process_and_its_children(
+    fake_agy, tmp_path, monkeypatch
+) -> None:
+    """Under to_thread a cancelled run kept agy (and what it spawned) going."""
+    import asyncio
+
+    marker = tmp_path / "pids"
+    monkeypatch.setenv("FAKE_AGY_HANG", str(marker))
+    task = asyncio.create_task(
+        antigravity.acomplete("gemini-3.7-flash-medium", [{"role": "user", "content": "x"}])
+    )
+    for _ in range(200):
+        if marker.exists() and marker.read_text().strip():
+            break
+        await asyncio.sleep(0.05)
+    agy_pid, child_pid = map(int, marker.read_text().split())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    for _ in range(100):
+        if not _alive(agy_pid) and not _alive(child_pid):
+            break
+        await asyncio.sleep(0.05)
+    assert not _alive(agy_pid)
+    assert not _alive(child_pid)
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX shebang script")
+async def test_agy_async_timeout_is_a_clear_error(fake_agy, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("FAKE_AGY_HANG", str(tmp_path / "pids"))
+    monkeypatch.setattr(antigravity, "_PRINT_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(antigravity, "_KILL_GRACE_S", 0.0)
+    with pytest.raises(antigravity.AgyError, match="초 안에"):
+        await antigravity.acomplete("gemini-3.7-flash-medium", [{"role": "user", "content": "x"}])
+    agy_pid, _ = map(int, (tmp_path / "pids").read_text().split())
+    assert not _alive(agy_pid)
+
+
 def test_gemini_handler_routes_to_agy_when_that_is_the_transport(
     gemini_home, monkeypatch
 ) -> None:
@@ -1615,3 +1728,115 @@ def test_reason_codes_stay_a_small_closed_set() -> None:
     }
     # Stable wire strings: renderers key their copy off these.
     assert all(value == value.lower() and " " not in value for value in codes.values())
+
+
+# --------------------------------------------------------------------------
+# Event loop hygiene
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "fchmod"), reason="POSIX modes")
+def test_private_credentials_are_never_world_readable(tmp_path, monkeypatch) -> None:
+    """Written under the default umask and chmodded after, fresh tokens sat
+    world-readable in between. The mode must be right from creation."""
+    import os
+    import stat
+
+    target = tmp_path / "auth.json"
+    stale_tmp = tmp_path / "auth.json.moru-tmp"
+    stale_tmp.write_text("{}")
+    stale_tmp.chmod(0o644)
+    # A chmod-after-write never runs here, as if the process died between
+    # the two steps: whatever mode the file was created with is what stays.
+    monkeypatch.setattr(Path, "chmod", lambda self, mode: None)
+    old = os.umask(0o022)
+    try:
+        credentials._atomic_write_json(target, {"token": "t"}, private=True)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert json.loads(target.read_text()) == {"token": "t"}
+    assert not stale_tmp.exists()
+
+
+def _off_loop_probe(seen: list[bool]):
+    import threading
+
+    def probe(*_args: object) -> str:
+        seen.append(threading.current_thread() is not threading.main_thread())
+        raise credentials.CliAuthError("stop here")
+
+    return probe
+
+
+async def test_codex_refreshes_credentials_off_the_event_loop(monkeypatch) -> None:
+    """A stale grant refreshes over sync httpx (30s timeout): on the loop it
+    froze every concurrent batch and the job WebSocket."""
+    seen: list[bool] = []
+    monkeypatch.setattr(credentials.CODEX_STORE, "credentials", _off_loop_probe(seen))
+    with pytest.raises(credentials.CliAuthError):
+        await codex.CodexLLM().acompletion(
+            model="gpt-5.5", messages=[], model_response=ModelResponse()
+        )
+    with pytest.raises(credentials.CliAuthError):
+        await codex.fetch_models()
+    assert seen == [True, True]
+
+
+async def test_gemini_refreshes_credentials_off_the_event_loop(monkeypatch) -> None:
+    seen: list[bool] = []
+    monkeypatch.setattr(
+        type(credentials.GEMINI_CLI_STORE), "transport", property(lambda self: "http")
+    )
+    monkeypatch.setattr(credentials.GEMINI_CLI_STORE, "token", _off_loop_probe(seen))
+    with pytest.raises(credentials.CliAuthError):
+        await gemini_cli.GeminiCliLLM().acompletion(
+            model="gemini-3.5-flash", messages=[], model_response=ModelResponse()
+        )
+    assert seen == [True]
+
+
+async def test_codex_batches_share_one_pooled_client(monkeypatch) -> None:
+    """A client per request paid a fresh TCP+TLS handshake on every batch."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from moru_engine.cli_providers import http
+
+    sse = (
+        'data: {"type":"response.output_text.delta","delta":"ok"}\n\n'
+        'data: {"type":"response.completed","response":{"usage":'
+        '{"input_tokens":1,"output_tokens":1}}}\n\n'
+    )
+    clients: list[int] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=sse)
+
+    pooled = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    http._clients[asyncio.get_running_loop()] = pooled
+    original = http.async_client
+
+    def tracking() -> httpx.AsyncClient:
+        client = original()
+        clients.append(id(client))
+        return client
+
+    monkeypatch.setattr(codex, "async_client", tracking)
+    monkeypatch.setattr(
+        credentials.CODEX_STORE,
+        "credentials",
+        lambda: SimpleNamespace(access="t", account_id="a"),
+    )
+    for _ in range(2):
+        response = await codex.CodexLLM().acompletion(
+            model="gpt-5.5", messages=[{"role": "user", "content": "hi"}],
+            model_response=ModelResponse(),
+        )
+        assert response.choices[0].message.content == "ok"
+    assert clients == [id(pooled), id(pooled)]
+    assert not pooled.is_closed
+    await http.aclose_async_client()
+    assert pooled.is_closed
+    assert http.async_client() is not pooled
+    await http.aclose_async_client()

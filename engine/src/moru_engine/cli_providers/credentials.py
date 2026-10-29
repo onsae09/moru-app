@@ -112,15 +112,21 @@ def _decode_jwt(token: str) -> dict[str, Any]:
 
 
 def _atomic_write_json(path: Path, data: object, *, private: bool) -> None:
-    """Write JSON via temp file + os.replace, optionally chmod 600."""
+    """Write JSON via temp file + os.replace, optionally mode 600.
+
+    A private file is CREATED 600: writing under the default umask and
+    chmodding afterwards left the fresh tokens world-readable in between.
+    A leftover temp file is removed first, since O_CREAT keeps the mode of
+    a file that already exists.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".moru-tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    if private:
-        try:
-            tmp.chmod(0o600)
-        except OSError:  # pragma: no cover - Windows/ACL filesystems
-            pass
+    body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    tmp.unlink(missing_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, 0o600 if private else 0o666)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(body)
     os.replace(tmp, path)
 
 

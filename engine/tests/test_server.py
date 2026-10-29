@@ -2593,3 +2593,20 @@ def test_pausing_a_scan_is_refused(client: TestClient, done_translate_job: JobRe
     done_translate_job.type = JobType.SCAN
     res = client.post(f"/jobs/{done_translate_job.id}/pause", headers=AUTH)
     assert res.status_code == 409
+
+
+def test_scan_cache_signature_ignores_runtime_and_output_trees(tmp_path: Path) -> None:
+    """Playing the pack (saves, logs, screenshots) or our own output must not
+    throw away a cached scan; a changed mod still must."""
+    from moru_engine.server.jobs import JobManager
+
+    (tmp_path / "mods").mkdir()
+    (tmp_path / "mods" / "a.jar").write_bytes(b"jar")
+    signature = JobManager._scan_tree_signature(tmp_path)
+    for directory in ("saves/world", "logs", "crash-reports", "screenshots",
+                      "moru_output/pack", "resourcepacks/x.zip_extracted"):
+        (tmp_path / directory).mkdir(parents=True)
+        (tmp_path / directory / "f.txt").write_text("runtime")
+    assert JobManager._scan_tree_signature(tmp_path) == signature
+    (tmp_path / "mods" / "b.jar").write_bytes(b"jar2")
+    assert JobManager._scan_tree_signature(tmp_path) != signature

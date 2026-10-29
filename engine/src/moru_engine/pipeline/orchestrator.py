@@ -68,6 +68,8 @@ from ..scanner.pack_identity import detect_pack_identity
 from ..tm import LocalTM
 from ..validator import TranslationValidator
 from .checkpoint import source_digest
+from .limiter import TRANSPORT_BACKOFF_BASE, TRANSPORT_BACKOFF_MAX
+from .limiter import AdaptiveLimiter as _AdaptiveLimiter
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -93,9 +95,6 @@ OLLAMA_START_CONCURRENT = 2
 #: are failed. Deliberately small: a saturated server needs less load, and
 #: a user-initiated "retry failed" is the right place for another attempt.
 MAX_TRANSPORT_RETRIES = 2
-#: First backoff after a transport failure; doubles per consecutive one.
-TRANSPORT_BACKOFF_BASE = 2.0
-TRANSPORT_BACKOFF_MAX = 60.0
 #: How long a provider may refuse for capacity (429 / RESOURCE_EXHAUSTED)
 #: with not one call succeeding before the run stops resumably. Longer than
 #: a per-minute window, which reopens by itself; a spent daily quota never
@@ -534,86 +533,6 @@ class _PreparedFile:
     was_cancelled: bool = False
 
 
-class _AdaptiveLimiter:
-    """Provider-request admission that sheds concurrency under overload.
-
-    A plain semaphore cannot shrink, and a fixed limit is precisely what
-    turns one slow provider into a congestion collapse: every request that
-    times out becomes more concurrent load, which makes the next timeout
-    more likely. This starts at ``start`` permits, halves toward ``floor``
-    whenever the caller reports a transport failure, and earns one permit
-    back per ``_GROW_AFTER`` consecutive successes until ``maximum``.
-
-    Growth matters as much as shrinking: it means a conservative start for
-    a local runtime costs nothing on a server that can actually keep up.
-    """
-
-    #: Consecutive successes that earn one permit back.
-    _GROW_AFTER = 8
-
-    def __init__(self, start: int, maximum: int, *, floor: int = 1) -> None:
-        self._maximum = max(1, maximum)
-        self._floor = max(1, min(floor, self._maximum))
-        self._limit = max(self._floor, min(start, self._maximum))
-        self._active = 0
-        self._successes = 0
-        self._failures = 0
-        #: Monotonic time of the first transport failure since the last
-        #: success; None while calls are getting through.
-        self._failing_since: float | None = None
-        self._cond = asyncio.Condition()
-
-    @property
-    def limit(self) -> int:
-        """Permits currently admitted concurrently."""
-        return self._limit
-
-    @property
-    def failing_for(self) -> float:
-        """Seconds every call has failed in transport, 0 after a success."""
-        if self._failing_since is None:
-            return 0.0
-        return time.monotonic() - self._failing_since
-
-    async def __aenter__(self) -> None:
-        async with self._cond:
-            while self._active >= self._limit:
-                await self._cond.wait()
-            self._active += 1
-
-    async def __aexit__(self, *_exc: object) -> None:
-        async with self._cond:
-            self._active -= 1
-            self._cond.notify()
-
-    async def record_success(self) -> None:
-        async with self._cond:
-            self._failures = 0
-            self._failing_since = None
-            if self._limit >= self._maximum:
-                return
-            self._successes += 1
-            if self._successes >= self._GROW_AFTER:
-                self._successes = 0
-                self._limit += 1
-                # A raised ceiling has to wake a waiter itself: __aexit__
-                # only ever notifies for a permit it released.
-                self._cond.notify()
-
-    async def record_transport_failure(self) -> float:
-        """Halve admission; return the seconds the caller must back off."""
-        async with self._cond:
-            self._successes = 0
-            self._failures += 1
-            if self._failing_since is None:
-                self._failing_since = time.monotonic()
-            self._limit = max(self._floor, self._limit // 2)
-            return min(
-                TRANSPORT_BACKOFF_BASE * 2 ** (self._failures - 1),
-                TRANSPORT_BACKOFF_MAX,
-            )
-
-
 class TranslationPipeline:
     """Orchestrates one translation session over a scanned modpack."""
 
@@ -694,6 +613,10 @@ class TranslationPipeline:
             if config.model.startswith("ollama")
             else config.max_concurrent,
             config.max_concurrent,
+            # Read here, not in the limiter, so the module-level knobs stay
+            # the single place the backoff is tuned.
+            backoff_base=TRANSPORT_BACKOFF_BASE,
+            backoff_max=TRANSPORT_BACKOFF_MAX,
         )
         self._file_semaphore = asyncio.Semaphore(
             config.file_workers
@@ -1778,8 +1701,8 @@ class TranslationPipeline:
                             "total": prepared.work_total,
                         },
                     )
-                # lm.history aggregation is O(calls); once per completed
-                # batch keeps live token/cost counters current.
+                # Once per completed batch keeps live token/cost counters
+                # current; build_lm's LM totals usage as calls land.
                 self._emit("tokens", token_usage(self.lm))
         except asyncio.CancelledError:
             prepared.was_cancelled = True
@@ -2422,7 +2345,10 @@ class TranslationPipeline:
             by_file.setdefault(entry.file, []).append(entry)
 
         graph = self._ensure_graph(result)
-        for rel, entries in by_file.items():
+
+        async def retry_file(
+            rel: str, entries: list[EntryResult]
+        ) -> tuple[dict[str, ProtectedText], dict[str, str], dict[str, list[str]]]:
             protector = PlaceholderProtector()
             protected = {e.key: protector.protect(e.source_text) for e in entries}
             pending = {e.key: protected[e.key].protected for e in entries}
@@ -2434,22 +2360,37 @@ class TranslationPipeline:
             # amplification loop, on a path that exists because these
             # entries already failed once.
             unique, aliases = batching.dedup_entries(pending)
-            translations: dict[str, str] = {}
-            failures: dict[str, list[str]] = {}
-            for chunk in self._make_batches(unique):
+
+            async def retry_chunk(
+                chunk: dict[str, str],
+            ) -> tuple[dict[str, str], dict[str, list[str]]]:
                 chunk_glossary = GlossaryFilter.filter_for_texts(
                     glossary, {key: source_by_key[key] for key in chunk}
                 ).to_context_string()
                 context = self._with_sibling_context(
                     f"retry; file: {rel}", graph, rel, chunk
                 )
-                chunk_translations, chunk_failures = await self._translate_batch(
-                    chunk, chunk_glossary, context
-                )
+                return await self._translate_batch(chunk, chunk_glossary, context)
+
+            translations: dict[str, str] = {}
+            failures: dict[str, list[str]] = {}
+            # Concurrent like a normal run: _translate_batch admits each
+            # chunk through the shared limiter, which bounds the load.
+            for chunk_translations, chunk_failures in await asyncio.gather(
+                *(retry_chunk(chunk) for chunk in self._make_batches(unique))
+            ):
                 translations.update(
                     batching.expand_aliases(chunk_translations, aliases)
                 )
                 failures.update(batching.expand_aliases(chunk_failures, aliases))
+            return protected, translations, failures
+
+        outcomes = await asyncio.gather(
+            *(retry_file(rel, entries) for rel, entries in by_file.items())
+        )
+        for (rel, entries), (protected, translations, failures) in zip(
+            by_file.items(), outcomes, strict=True
+        ):
             for entry in entries:
                 out = translations.get(entry.key)
                 if out is None:

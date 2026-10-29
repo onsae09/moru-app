@@ -14,14 +14,18 @@ https://antigravity.google/docs/cli/headless
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import threading
 import time
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -175,11 +179,19 @@ def _reports_error(text: str) -> str | None:
     return None
 
 
+def _missing_binary() -> AgyError:
+    return AgyError(
+        "Antigravity CLI(agy)를 찾을 수 없습니다. "
+        "https://antigravity.google/docs/cli/install 를 참고해 설치해 주세요."
+    )
+
+
 def run_agy(
     args: list[str],
     *,
     timeout: float,
     cwd: Path | None = None,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `agy` non-interactively, never letting it block on a prompt.
 
@@ -191,19 +203,23 @@ def run_agy(
     prompt open is the worst failure mode available, so the prompt is
     denied any input and the wait is bounded twice — by `--print-timeout`
     where the caller sets it, and by this hard kill.
+
+    ``stdin_text`` (the stream-json prompt line, see `_invocation`) is
+    written and the pipe closed at once, so a prompt for a code still
+    reads EOF.
     """
     binary = agy_path()
     if binary is None:
-        raise AgyError(
-            "Antigravity CLI(agy)를 찾을 수 없습니다. "
-            "https://antigravity.google/docs/cli/install 를 참고해 설치해 주세요."
-        )
+        raise _missing_binary()
     try:
         return subprocess.run(  # noqa: S603 - fixed binary, no shell
             [str(binary), *args],
             capture_output=True,
             text=True,
-            stdin=subprocess.DEVNULL,
+            encoding="utf-8",
+            errors="replace",
+            input=stdin_text,
+            stdin=subprocess.DEVNULL if stdin_text is None else None,
             timeout=timeout,
             cwd=str(cwd) if cwd else None,
             check=False,
@@ -297,6 +313,17 @@ _INPUT_DELIM = "### INPUT ###"
 
 _gate: threading.BoundedSemaphore | None = None
 _gate_lock = threading.Lock()
+#: The async path's gate, one per event loop (see `_async_slot`).
+_async_gates: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+#: Longest prompt (UTF-8 bytes) passed as a `-p` argument; Linux caps one
+#: argument at 128 KiB. Windows is checked on the real quoted command line
+#: against its 32,767-character cap, with margin. Past either, the prompt
+#: goes over stdin instead (`_invocation`).
+_ARGV_PROMPT_LIMIT = 100_000
+_WINDOWS_COMMAND_LINE_LIMIT = 32_000
 
 #: How long one auth refusal suppresses further attempts. Long enough to
 #: spare a batch minutes of certain-to-fail waiting, short enough that
@@ -412,21 +439,7 @@ def complete(model: str, messages: list[dict[str, Any]]) -> tuple[str, dict[str,
     """
     _raise_if_recently_unauthenticated()
     prompt = build_prompt(messages)
-    args = [
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--json-schema",
-        json.dumps(_TEXT_SCHEMA),
-        # A translated string can legitimately begin with "/" and must not
-        # be expanded as a slash command or skill.
-        "--disable-slash-commands",
-        "--print-timeout",
-        f"{int(_PRINT_TIMEOUT_S)}s",
-    ]
-    if model:
-        args += ["--model", model]
+    args, stdin_text = _invocation(prompt, model)
 
     gate = _acquire_slot()
     with gate:
@@ -438,8 +451,37 @@ def complete(model: str, messages: list[dict[str, Any]]) -> tuple[str, dict[str,
                 args,
                 timeout=_PRINT_TIMEOUT_S + _KILL_GRACE_S,
                 cwd=Path(workspace),
+                **({} if stdin_text is None else {"stdin_text": stdin_text}),
             )
+    return _finish(proc, prompt)
 
+
+async def acomplete(
+    model: str, messages: list[dict[str, Any]]
+) -> tuple[str, dict[str, int]]:
+    """`complete` for the event loop: an asyncio subprocess, not a thread.
+
+    Through `to_thread` every waiting batch held a default-executor worker
+    for up to five minutes (starving every other `to_thread` caller), and a
+    cancelled run kept its `agy` process going to completion.
+    """
+    _raise_if_recently_unauthenticated()
+    prompt = build_prompt(messages)
+    args, stdin_text = _invocation(prompt, model)
+    async with _async_slot():
+        with tempfile.TemporaryDirectory(prefix="moru-agy-") as workspace:
+            proc = await arun_agy(
+                args,
+                timeout=_PRINT_TIMEOUT_S + _KILL_GRACE_S,
+                cwd=Path(workspace),
+                stdin_text=stdin_text,
+            )
+    return _finish(proc, prompt)
+
+
+def _finish(
+    proc: subprocess.CompletedProcess[str], prompt: str
+) -> tuple[str, dict[str, int]]:
     try:
         result = _read_envelope(proc, prompt)
     except AgyError as exc:
@@ -447,6 +489,126 @@ def complete(model: str, messages: list[dict[str, Any]]) -> tuple[str, dict[str,
         raise
     _clear_auth_failure()
     return result
+
+
+def _invocation(prompt: str, model: str) -> tuple[list[str], str | None]:
+    """argv for one turn, plus the stdin line when the prompt goes there.
+
+    A prompt within `_ARGV_PROMPT_LIMIT` rides `-p`, the verified path.
+    A longer one cannot: CreateProcess refuses the whole command line
+    (WinError 206) past 32,767 characters, and a pack batch runs ~40k. It
+    is sent instead as one documented stream-json `user` event on stdin,
+    still one fresh process per batch, so no conversation is shared.
+    """
+    common = [
+        "--json-schema",
+        json.dumps(_TEXT_SCHEMA),
+        # A translated string can legitimately begin with "/" and must not
+        # be expanded as a slash command or skill.
+        "--disable-slash-commands",
+        "--print-timeout",
+        f"{int(_PRINT_TIMEOUT_S)}s",
+    ]
+    if model:
+        common += ["--model", model]
+    argv = ["-p", prompt, "--output-format", "json", *common]
+    if _fits_command_line(prompt, argv):
+        return argv, None
+    line = json.dumps(
+        {"event": "user", "message": {"content": prompt}}, ensure_ascii=False
+    )
+    return [
+        "--input-format", "stream-json", "--output-format", "stream-json", *common
+    ], line + "\n"
+
+
+def _fits_command_line(prompt: str, argv: list[str]) -> bool:
+    if len(prompt.encode("utf-8")) > _ARGV_PROMPT_LIMIT:
+        return False
+    if os.name != "nt":
+        return True
+    # What CreateProcess actually counts: the quoted command line, where
+    # every '"' of a JSON-shaped prompt gains an escaping backslash.
+    binary = str(agy_path() or "agy")
+    return len(subprocess.list2cmdline([binary, *argv])) <= _WINDOWS_COMMAND_LINE_LIMIT
+
+
+def _async_slot() -> asyncio.Semaphore:
+    """The running loop's process gate (asyncio primitives are loop-bound)."""
+    loop = asyncio.get_running_loop()
+    gate = _async_gates.get(loop)
+    if gate is None:
+        cap = process_cap()
+        logger.info("Antigravity transport capped at %d concurrent processes", cap)
+        gate = _async_gates[loop] = asyncio.Semaphore(cap)
+    return gate
+
+
+async def arun_agy(
+    args: list[str],
+    *,
+    timeout: float,
+    cwd: Path | None = None,
+    stdin_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """`run_agy` on the event loop; the process dies with its caller.
+
+    agy runs in its own process group (session) so a timeout or a
+    cancelled translation kills it and anything it spawned, instead of
+    leaving a ~145MB agent finishing a turn nobody will read.
+    """
+    binary = agy_path()
+    if binary is None:
+        raise _missing_binary()
+    if os.name == "nt":
+        group: dict[str, Any] = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        group = {"start_new_session": True}
+    try:
+        proc = await asyncio.create_subprocess_exec(  # noqa: S603 - fixed binary
+            str(binary),
+            *args,
+            stdin=subprocess.DEVNULL if stdin_text is None else subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(cwd) if cwd else None,
+            **group,
+        )
+    except OSError as exc:
+        raise AgyError(f"Antigravity CLI(agy) 실행에 실패했습니다: {exc}") from exc
+    payload = None if stdin_text is None else stdin_text.encode("utf-8")
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(payload), timeout)
+    except TimeoutError as exc:
+        await _kill_group(proc)
+        raise AgyError(
+            f"Antigravity CLI(agy) 응답이 {timeout:.0f}초 안에 오지 않았습니다."
+        ) from exc
+    except BaseException:
+        await _kill_group(proc)
+        raise
+    return subprocess.CompletedProcess(
+        args=[str(binary), *args],
+        returncode=proc.returncode if proc.returncode is not None else -1,
+        stdout=stdout.decode("utf-8", errors="replace"),
+        stderr=stderr.decode("utf-8", errors="replace"),
+    )
+
+
+async def _kill_group(proc: asyncio.subprocess.Process) -> None:
+    if proc.returncode is not None:
+        return
+    try:
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+    # Reap it; SIGKILL cannot be ignored, so this does not hang.
+    with contextlib.suppress(Exception):
+        await proc.wait()
 
 
 def _raise_if_recently_unauthenticated() -> None:
@@ -505,6 +667,12 @@ def _read_envelope(
         raise AgyError(
             f"Antigravity CLI(agy) 응답을 해석할 수 없습니다: {raw[:300]}"
         ) from exc
+    # stream-json output (the stdin path): the terminal `result` event
+    # carries the same envelope as `--output-format json`.
+    if isinstance(envelope, dict) and envelope.get("event") == "result":
+        envelope = envelope.get("result")
+    if not isinstance(envelope, dict):
+        raise AgyError(f"Antigravity CLI(agy) 응답을 해석할 수 없습니다: {raw[:300]}")
 
     status = envelope.get("status")
     if status != "SUCCESS":

@@ -56,6 +56,19 @@ DEFAULT_OLLAMA_TIMEOUT = 600.0
 #: (see the pipeline's transport-failure path); leave one cheap retry here
 #: for a genuinely dropped connection.
 DEFAULT_OLLAMA_NUM_RETRIES = 1
+#: Every other provider: dspy defaults to num_retries=3 inside litellm,
+#: which nests under the pipeline's own MAX_TRANSPORT_RETRIES and its
+#: admission limiter — up to 12 attempts of one batch, each invisible to
+#: the limiter's backoff. One cheap retry for a dropped connection; the
+#: pipeline owns the real budget.
+DEFAULT_NUM_RETRIES = 1
+#: The CLI providers are not HTTP clients to litellm: whatever they raise
+#: (a missing login included) comes back wrapped as APIConnectionError, so
+#: a litellm retry only repeats a subprocess or OAuth call already failed.
+DEFAULT_CLI_NUM_RETRIES = 0
+#: litellm's default request_timeout is 6000s for hosted providers too: a
+#: wedged connection would hold an admission slot for 100 minutes.
+DEFAULT_TIMEOUT = 600.0
 #: Fraction of the configured context window at which an observed
 #: prompt_tokens count means the window is full and ollama truncated.
 _CONTEXT_FULL_RATIO = 0.98
@@ -79,6 +92,52 @@ def _claude_version(model: str) -> tuple[int, int] | None:
 def _claude_rejects_temperature(model: str) -> bool:
     version = _claude_version(model)
     return version is not None and version >= (4, 7)
+
+
+#: lm.history entries kept per LM. Each one holds the full prompt (~40k
+#: characters) and response; dspy keeps 10,000 of them per LM, again per
+#: calling module, and again in its process-wide GLOBAL_HISTORY, which over
+#: a pack run is hundreds of megabytes nobody reads. Usage is accumulated
+#: as calls land instead, so trimming the history loses no token count.
+KEPT_HISTORY = 32
+
+
+class UsageTrackingLM(dspy.LM):
+    """dspy.LM that totals token usage per call and keeps a short history.
+
+    token_usage() used to re-sum the whole lm.history after every batch,
+    O(calls) each time and wrong once dspy's 10,000-entry cap started
+    dropping the oldest entries.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._reset_usage()
+
+    def _reset_usage(self) -> None:
+        self.usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
+        self.peak_prompt_tokens = 0
+
+    def update_history(self, entry: dict[str, object]) -> None:
+        # Deliberately not super(): that appends to GLOBAL_HISTORY and every
+        # caller module's history, each capped only at 10,000.
+        if dspy.settings.disable_history:
+            return
+        usage = entry.get("usage") or {}
+        prompt = int(_usage_value(usage, "prompt_tokens") or 0)
+        totals = self.usage_totals
+        totals["prompt_tokens"] += prompt
+        totals["completion_tokens"] += int(_usage_value(usage, "completion_tokens") or 0)
+        totals["cached_tokens"] += min(_cached_tokens(usage), prompt)
+        self.peak_prompt_tokens = max(self.peak_prompt_tokens, prompt)
+        self.history.append(entry)
+        if len(self.history) > KEPT_HISTORY:
+            del self.history[: len(self.history) - KEPT_HISTORY]
+
+    def copy(self, **kwargs: object) -> UsageTrackingLM:
+        new = super().copy(**kwargs)
+        new._reset_usage()
+        return new
 
 
 def build_lm(
@@ -185,6 +244,12 @@ def build_lm(
         if "reasoning_effort" not in allowed:
             allowed.append("reasoning_effort")
         extra["allowed_openai_params"] = allowed
+    # Ollama set its own above; setdefault keeps those and any caller value.
+    extra.setdefault(
+        "num_retries",
+        DEFAULT_CLI_NUM_RETRIES if provider in CLI_PROVIDER_IDS else DEFAULT_NUM_RETRIES,
+    )
+    extra.setdefault("timeout", DEFAULT_TIMEOUT)
     kwargs.update(extra)
     if api_key:
         kwargs["api_key"] = api_key
@@ -193,7 +258,7 @@ def build_lm(
     logger.info("Building LM: %s", model)
     # CLI providers only: keeps LiteLLM from hijacking a model whose bare
     # name collides with its built-in OpenAI table. No-op for everything else.
-    return dspy.LM(to_wire_model(model), **kwargs)
+    return UsageTrackingLM(to_wire_model(model), **kwargs)
 
 
 def configure_engine(lm: dspy.LM, *, json_adapter: bool = True) -> None:
@@ -382,6 +447,17 @@ def token_usage(lm: dspy.LM) -> dict[str, int]:
     provider prompt cache, clamped per call so it can never exceed
     prompt_tokens.
     """
+    totals = getattr(lm, "usage_totals", None)
+    if isinstance(totals, dict):
+        prompt = totals["prompt_tokens"]
+        completion = totals["completion_tokens"]
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "cached_tokens": totals["cached_tokens"],
+        }
+    # Any other LM (tests' DummyLM): sum whatever history it kept.
     prompt = 0
     completion = 0
     cached = 0
@@ -413,6 +489,9 @@ def context_window_filled(lm: dspy.LM) -> int:
     if not isinstance(window, int) or window <= 0:
         return 0
     threshold = window * _CONTEXT_FULL_RATIO
+    peak = getattr(lm, "peak_prompt_tokens", None)
+    if isinstance(peak, int):
+        return peak if peak >= threshold else 0
     worst = 0
     for entry in getattr(lm, "history", None) or []:
         prompt = int(_usage_value(entry.get("usage") or {}, "prompt_tokens") or 0)

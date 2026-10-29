@@ -43,6 +43,7 @@ from ..cli_providers import (
     provider_models,
     provider_status,
 )
+from ..cli_providers.http import aclose_async_client
 from ..community import download_translation, find_translation, sync_community
 from ..dspy_modules import build_lm
 from ..graph import TranslationGraph
@@ -408,6 +409,7 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await manager.aclose()
+        await aclose_async_client()
         tm = tm_holder.pop("tm", None)
         if tm is not None:
             tm.close()

@@ -14,7 +14,7 @@ from ..models import (
 )
 from ..placeholder import JAVA_FORMAT_RE as _JAVA_FORMAT_RE
 from ..placeholder import NUMBERED_FORMAT_RE as _NUMBERED_FORMAT_RE
-from ..placeholder import PlaceholderProtector
+from ..placeholder import PlaceholderProtector, ampersand_color_codes
 
 from ..models.glossary import ProperNounRule, TermRule
 
@@ -31,7 +31,6 @@ MIN_LENGTH_RATIO = 0.2
 
 _UNRESTORED_TOKEN_RE = re.compile(r"\{\{[A-Z]+\d*\}\}")
 _SECTION_COLOR_RE = re.compile(r"§[0-9a-fk-or]", re.IGNORECASE)
-_AMPERSAND_COLOR_RE = re.compile(r"&[0-9a-fk-or]", re.IGNORECASE)
 
 
 class TranslationValidator:
@@ -343,8 +342,8 @@ class TranslationValidator:
                 )
             )
 
-        source_ampersands = _AMPERSAND_COLOR_RE.findall(source)
-        translated_ampersands = _AMPERSAND_COLOR_RE.findall(translated)
+        source_ampersands = ampersand_color_codes(source)
+        translated_ampersands = ampersand_color_codes(translated)
 
         if len(source_ampersands) != len(translated_ampersands):
             issues.append(

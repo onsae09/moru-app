@@ -1,9 +1,11 @@
 """Async job manager backing the sidecar's /jobs API.
 
 The desktop GUI starts long-running work (scan / translate / export)
-through ``POST /jobs`` and follows it over a WebSocket. Every job keeps a
-full event history, so a subscriber that connects after events already
-fired first replays the past, then streams live frames.
+through ``POST /jobs`` and follows it over a WebSocket. Every job keeps an
+event history, so a subscriber that connects after events already fired
+first replays the past, then streams live frames. A very long history is
+folded down to its snapshot except for a verbatim recent tail (see
+``_compact_history``).
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ from ..scanner.pack_identity import PackIdentity, detect_pack_identity
 from . import upload
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine, Mapping
+    from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping
     from ..graph import TranslationGraph
     from ..models import LanguageFilePair
     from ..pipeline import TranslationPipeline
@@ -79,6 +81,19 @@ SAMPLE_TEXT_LIMIT = 160
 #: progress, token usage and active requests are already compacted to latest.
 SNAPSHOT_RECENT_ENTRIES = 24
 SNAPSHOT_RECENT_FAILURES = 50
+#: A run's event history is folded down to its snapshot once it grows past
+#: this many frames, keeping the newest HISTORY_KEEP_RECENT verbatim. A pack
+#: run emits tens of thousands of batch/entry frames that nothing reads in
+#: full: the desktop restores from the snapshot and replays only after its
+#: cursor, which always lands inside the verbatim tail.
+HISTORY_COMPACT_AT = 20_000
+HISTORY_KEEP_RECENT = 5_000
+#: Frames a live subscriber may have queued unread before its stream is
+#: ended (it resyncs from the snapshot) rather than buffered without bound.
+SUBSCRIBER_QUEUE_LIMIT = 10_000
+#: Finished, saved translate runs kept in memory; older ones are reloaded
+#: from their session files on demand.
+MAX_RESIDENT_FINISHED_RUNS = 8
 #: Runtime-owned trees do not affect translation discovery and can change while
 #: the game is open. Excluding them keeps the migration freshness check useful
 #: without hiding changes to mods, configs, resource packs, or overrides.
@@ -341,6 +356,11 @@ class JobRecord:
     #: fetch a compact snapshot at N and then subscribe after=N without a gap.
     event_seq: int = 0
     history: list[dict[str, Any]] = field(default_factory=list)
+    #: What compaction folded out of ``history`` (see _compact_history) and
+    #: the snapshot still has to report: failures no longer kept as frames,
+    #: and when the first batch started.
+    compacted_failures: int = 0
+    compacted_started_at: int | None = None
     subscribers: set[asyncio.Queue[dict[str, Any] | None]] = field(
         default_factory=set
     )
@@ -647,6 +667,90 @@ def _migration_assets_dir(params: Mapping[str, Any]) -> Path:
     return root / f".migration_assets-{digest}"
 
 
+def _reduce_history(
+    history: Iterable[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int | None, list[dict[str, Any]]]:
+    """(frames, failed_count, translation_started_at, other) of a history.
+
+    ``frames`` is what a snapshot shows: latest progress per file/stage,
+    unfinished batches, cumulative token usage, recent ticker/error samples
+    and the terminal frame, in seq order. ``other`` holds frames of types
+    the reduction does not know, which the snapshot leaves out.
+    """
+    progress: dict[tuple[str, str], dict[str, Any]] = {}
+    tokens: dict[str, Any] | None = None
+    glossary_progress: dict[str, Any] | None = None
+    glossary_extracted: dict[str, Any] | None = None
+    active_batches: dict[int, dict[str, Any]] = {}
+    translation_started_at: int | None = None
+    recent_entries: list[dict[str, Any]] = []
+    recent_failures: list[dict[str, Any]] = []
+    other: list[dict[str, Any]] = []
+    failed_count = 0
+    terminal: dict[str, Any] | None = None
+
+    for frame in history:
+        event_type = frame.get("type")
+        if event_type == "progress":
+            key = (str(frame.get("stage", "")), str(frame.get("file", "")))
+            progress[key] = frame
+        elif event_type == "tokens":
+            tokens = frame
+        elif event_type == "glossary_progress":
+            glossary_progress = frame
+        elif event_type == "glossary_extracted":
+            glossary_extracted = frame
+        elif event_type == "batch_started":
+            if translation_started_at is None:
+                translation_started_at = int(frame.get("emitted_at", 0)) or None
+            active_batches[int(frame["request_id"])] = frame
+        elif event_type == "batch_finished":
+            active_batches.pop(int(frame["request_id"]), None)
+        elif event_type == "entry_done":
+            recent_entries.append(frame)
+            recent_entries = recent_entries[-SNAPSHOT_RECENT_ENTRIES:]
+        elif event_type == "entry_failed":
+            failed_count += 1
+            recent_failures.append(frame)
+            recent_failures = recent_failures[-SNAPSHOT_RECENT_FAILURES:]
+        elif event_type in TERMINAL_EVENT_TYPES:
+            terminal = frame
+        else:
+            other.append(frame)
+
+    frames = [
+        *progress.values(),
+        *active_batches.values(),
+        *recent_entries,
+        *recent_failures,
+    ]
+    for optional in (tokens, glossary_progress, glossary_extracted, terminal):
+        if optional is not None:
+            frames.append(optional)
+    frames.sort(key=lambda frame: int(frame.get("seq", 0)))
+    return frames, failed_count, translation_started_at, other
+
+
+def _compact_history(record: JobRecord) -> None:
+    """Fold all but the newest frames into their snapshot reduction.
+
+    The snapshot of the compacted history equals the snapshot of the full
+    one: what the reduction drops is either superseded (older progress,
+    finished batches) or counted on the record (failures, start time).
+    Replay after any cursor inside the verbatim tail stays gap-free.
+    """
+    old = record.history[:-HISTORY_KEEP_RECENT]
+    recent = record.history[-HISTORY_KEEP_RECENT:]
+    frames, failed, started, other = _reduce_history(old)
+    kept_failures = sum(1 for frame in frames if frame.get("type") == "entry_failed")
+    record.compacted_failures += failed - kept_failures
+    if record.compacted_started_at is None:
+        record.compacted_started_at = started
+    # Frame types the reduction does not know are rare; keep them as-is.
+    merged = sorted([*frames, *other], key=lambda frame: int(frame.get("seq", 0)))
+    record.history = [*merged, *recent]
+
+
 class JobManager:
     """Creates, runs, cancels, and streams jobs on the server event loop."""
 
@@ -657,6 +761,9 @@ class JobManager:
         checkpoint_store: CheckpointStore | None = None,
     ) -> None:
         self._jobs: dict[str, JobRecord] = {}
+        #: Finished translate runs whose session file was saved, oldest
+        #: first: the candidates _evict_finished may drop from memory.
+        self._persisted_order: list[str] = []
         #: Enriched scan results keyed by pack path, locales, and a cheap
         #: tree signature, so an edited pack rescans instead of replaying
         #: stale counts into the cost estimate.
@@ -715,6 +822,11 @@ class JobManager:
         restored = self._session_store.load_job_session(job_id)
         if restored is not None:
             self._jobs[job_id] = restored
+            if restored.type is JobType.TRANSLATE:
+                # Browsing the history reloads runs one by one; they are as
+                # evictable as the runs that finished here.
+                self._persisted_order.append(job_id)
+                self._evict_finished(keep=job_id)
             return restored
         raise UnknownJobError(f"unknown job: {job_id}")
 
@@ -1143,7 +1255,11 @@ class JobManager:
 
         Dot-directories are skipped: the scanner unpacks archives into the
         pack's own ``.mct_cache``, and counting that would change the
-        signature on every scan and defeat the cache entirely.
+        signature on every scan and defeat the cache entirely. So are the
+        runtime and output trees the migration fingerprint ignores
+        (``_FINGERPRINT_IGNORED_DIRS``): a world save, a log line or our
+        own ``moru_output`` changes nothing a scan finds, yet each used to
+        throw the cached scan away.
         """
         count = 0
         newest = 0
@@ -1159,6 +1275,12 @@ class JobManager:
                     continue
                 try:
                     if entry.is_dir(follow_symlinks=False):
+                        folded = entry.name.casefold()
+                        if (
+                            folded in _FINGERPRINT_IGNORED_DIRS
+                            or folded.endswith(".zip_extracted")
+                        ):
+                            continue
                         stack.append(Path(entry.path))
                         continue
                     stat = entry.stat(follow_symlinks=False)
@@ -1377,59 +1499,14 @@ class JobManager:
         usage, recent ticker/error samples and the terminal frame.
         """
         record = self.get(job_id)
-        progress: dict[tuple[str, str], dict[str, Any]] = {}
-        tokens: dict[str, Any] | None = None
-        glossary_progress: dict[str, Any] | None = None
-        glossary_extracted: dict[str, Any] | None = None
-        active_batches: dict[int, dict[str, Any]] = {}
-        translation_started_at: int | None = None
-        recent_entries: list[dict[str, Any]] = []
-        recent_failures: list[dict[str, Any]] = []
-        failed_count = 0
-        terminal: dict[str, Any] | None = None
-
-        for frame in record.history:
-            event_type = frame.get("type")
-            if event_type == "progress":
-                key = (str(frame.get("stage", "")), str(frame.get("file", "")))
-                progress[key] = frame
-            elif event_type == "tokens":
-                tokens = frame
-            elif event_type == "glossary_progress":
-                glossary_progress = frame
-            elif event_type == "glossary_extracted":
-                glossary_extracted = frame
-            elif event_type == "batch_started":
-                if translation_started_at is None:
-                    translation_started_at = int(frame.get("emitted_at", 0)) or None
-                active_batches[int(frame["request_id"])] = frame
-            elif event_type == "batch_finished":
-                active_batches.pop(int(frame["request_id"]), None)
-            elif event_type == "entry_done":
-                recent_entries.append(frame)
-                recent_entries = recent_entries[-SNAPSHOT_RECENT_ENTRIES:]
-            elif event_type == "entry_failed":
-                failed_count += 1
-                recent_failures.append(frame)
-                recent_failures = recent_failures[-SNAPSHOT_RECENT_FAILURES:]
-            elif event_type in TERMINAL_EVENT_TYPES:
-                terminal = frame
-
-        frames = [
-            *progress.values(),
-            *active_batches.values(),
-            *recent_entries,
-            *recent_failures,
-        ]
-        for optional in (tokens, glossary_progress, glossary_extracted, terminal):
-            if optional is not None:
-                frames.append(optional)
-        frames.sort(key=lambda frame: int(frame.get("seq", 0)))
+        frames, failed_count, translation_started_at, _ = _reduce_history(record.history)
+        if record.compacted_started_at is not None:
+            translation_started_at = record.compacted_started_at
         return {
             "job": record.to_public(),
             "cursor": record.event_seq,
             "events": frames,
-            "failed_count": failed_count,
+            "failed_count": failed_count + record.compacted_failures,
             "translation_started_at": translation_started_at,
         }
 
@@ -1486,8 +1563,54 @@ class JobManager:
             "emitted_at": int(time.time() * 1000),
         }
         record.history.append(frame)
-        for queue in record.subscribers:
+        if len(record.history) > HISTORY_COMPACT_AT:
+            _compact_history(record)
+        for queue in list(record.subscribers):
+            if queue.qsize() >= SUBSCRIBER_QUEUE_LIMIT:
+                # A subscriber this far behind is not reading. Dropping
+                # frames would silently skew its counts, so end its stream
+                # instead: the desktop resyncs from the snapshot on close.
+                record.subscribers.discard(queue)
+                queue.put_nowait(None)
+                continue
             queue.put_nowait(frame)
+
+    def _evict_finished(self, keep: str | None = None) -> None:
+        """Drop the oldest finished, persisted translate runs from memory.
+
+        Each holds its full PipelineResult and event history, and nothing
+        evicted them, so a long-lived engine grew with every run. They are
+        not lost: ``get()`` reloads one from its session file on demand.
+        """
+        resident = [
+            job_id
+            for job_id in self._persisted_order
+            if (record := self._jobs.get(job_id)) is not None
+        ]
+        self._persisted_order = resident
+        excess = len(resident) - MAX_RESIDENT_FINISHED_RUNS
+        for job_id in list(resident):
+            if excess <= 0:
+                break
+            record = self._jobs[job_id]
+            busy = (
+                # Only a completed run: an interrupted or cancelled one may
+                # be resumed, and a resume reads its predecessor from here.
+                job_id == keep
+                or record.status is not JobStatus.DONE
+                or not record.finished
+                or record.subscribers
+                or (record.task is not None and not record.task.done())
+                or (
+                    record.mod_sources_task is not None
+                    and not record.mod_sources_task.done()
+                )
+            )
+            if busy:
+                continue
+            self._jobs.pop(job_id, None)
+            self._persisted_order.remove(job_id)
+            excess -= 1
 
     # -- execution ---------------------------------------------------------------
 
@@ -1571,8 +1694,13 @@ class JobManager:
                     logger.exception(
                         "Failed to remove the checkpoint of job %s", record.id
                     )
+            if saved:
+                if record.id in self._persisted_order:
+                    self._persisted_order.remove(record.id)
+                self._persisted_order.append(record.id)
         for queue in record.subscribers:
             queue.put_nowait(None)  # stream-end sentinel for live listeners
+        self._evict_finished()
 
     @staticmethod
     def _resumable_stop(record: JobRecord) -> tuple[str, str] | None:

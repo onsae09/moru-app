@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import secrets
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -1087,6 +1088,7 @@ class TranslationPipeline:
         context: str,
         *,
         file: str | None = None,
+        rollout_id: int | None = None,
     ) -> tuple[dict[str, str], dict[str, list[str]]]:
         """One guarded module call, with the two failure families separated.
 
@@ -1126,6 +1128,7 @@ class TranslationPipeline:
                             glossary=glossary_text,
                             style_directives=self._style_directives,
                             entries=batch,
+                            **({} if rollout_id is None else {"rollout_id": rollout_id}),
                         )
                 except Exception as exc:  # noqa: BLE001 — LLM/adapter errors
                     if self._interruptible and provider_limit(exc) == "quota":
@@ -2453,6 +2456,9 @@ class TranslationPipeline:
             {entry.key: protected.protected},
             batch_glossary,
             context,
+            # The user asked for ANOTHER translation: a cached replay of the
+            # one they are looking at would be no answer at all.
+            rollout_id=secrets.randbits(31),
         )
 
         errors: list[str]

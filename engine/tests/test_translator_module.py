@@ -287,3 +287,37 @@ def test_omitted_style_directives_default_to_empty() -> None:
         if message["role"] == "user"
     )
     assert "[[ ## style_directives ## ]]\n\n" in sent
+
+
+async def test_a_failing_refine_keeps_the_rest_of_the_batch() -> None:
+    translator = BatchTranslator(max_refine=1)
+
+    async def broken_refine(**_: object) -> dspy.Prediction:
+        raise RuntimeError("provider hiccup")
+
+    translator.refine.acall = broken_refine  # type: ignore[method-assign]
+    lm = DummyLM([{"translations": {**GOOD, "a.b": "안녕 세계"}}], adapter=dspy.JSONAdapter())
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        pred = await translator.acall(
+            source_lang="en_us",
+            target_lang="ko_kr",
+            context="test",
+            glossary="",
+            entries=ENTRIES,
+        )
+    assert pred.translations["c.d"] == GOOD["c.d"]
+    assert "a.b" in pred.failed
+
+
+async def test_rollout_id_reaches_the_first_request() -> None:
+    lm = DummyLM([{"translations": GOOD}], adapter=dspy.JSONAdapter())
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
+        await BatchTranslator(max_refine=1).acall(
+            source_lang="en_us",
+            target_lang="ko_kr",
+            context="test",
+            glossary="",
+            entries=ENTRIES,
+            rollout_id=7,
+        )
+    assert lm.history[0]["kwargs"].get("rollout_id") == 7

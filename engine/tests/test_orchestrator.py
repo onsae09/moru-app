@@ -77,6 +77,7 @@ class RecordingTranslator:
         glossary: str,
         style_directives: str,
         entries: dict[str, str],
+        **_extra: Any,
     ) -> dspy.Prediction:
         self.batches.append(dict(entries))
         return dspy.Prediction(
@@ -426,6 +427,7 @@ class GlossaryRecordingTranslator:
         glossary: str,
         style_directives: str,
         entries: dict[str, str],
+        **_extra: Any,
     ) -> dspy.Prediction:
         self.batches.append((glossary, dict(entries)))
         return dspy.Prediction(
@@ -893,6 +895,7 @@ class FullRecordingTranslator:
         glossary: str,
         style_directives: str,
         entries: dict[str, str],
+        **_extra: Any,
     ) -> dspy.Prediction:
         self.style_directives.append(style_directives)
         self.calls.append((context, glossary, dict(entries)))
@@ -1035,6 +1038,7 @@ class CancelOnKeyTranslator:
         glossary: str,
         style_directives: str,
         entries: dict[str, str],
+        **_extra: Any,
     ) -> dspy.Prediction:
         if self.cancel_key in entries:
             raise asyncio.CancelledError("simulated mid-flight cancellation")

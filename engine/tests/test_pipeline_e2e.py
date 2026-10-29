@@ -42,6 +42,7 @@ class FakeTranslator:
         glossary,
         style_directives="",
         entries,
+        **_extra,
     ):
         self.calls += 1
         translations: dict[str, str] = {}
@@ -88,6 +89,7 @@ class PartiallyBlockingTranslator(FakeTranslator):
         glossary,
         style_directives="",
         entries,
+        **_extra,
     ):
         self.calls += 1
         if self.calls > 2:
@@ -294,6 +296,7 @@ class GlossaryCapturingTranslator(FakeTranslator):
         glossary,
         style_directives="",
         entries,
+        **_extra,
     ):
         self.glossaries.append(glossary)
         return await super().acall(
@@ -546,6 +549,7 @@ class InventingTranslator:
         glossary,
         style_directives="",
         entries,
+        **_extra,
     ):
         return dspy.Prediction(
             translations={k: f"KO {v} {{{{ARG99}}}}" for k, v in entries.items()},

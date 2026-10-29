@@ -10,6 +10,7 @@ one entry mixes distinct literals of a kind) and must preserve every one.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from typing import TYPE_CHECKING
@@ -173,6 +174,10 @@ class BatchTranslator(dspy.Module):
                     glossary=glossary,
                     style_directives=style_directives,
                     entries=missing,
+                    # When nothing came back, ``missing`` is the very prompt
+                    # just sent; without a fresh cache key the retry would
+                    # replay the same empty answer from the disk cache.
+                    config={"rollout_id": attempt + 1},
                 )
                 retry_translations, retry_failed = self._initial_state(
                     missing, retry_pred
@@ -206,7 +211,11 @@ class BatchTranslator(dspy.Module):
         glossary: str,
         entries: dict[str, str],
         style_directives: str = "",
+        rollout_id: int | None = None,
     ) -> dspy.Prediction:
+        # A rollout id keys a separate cache entry: an explicit "translate
+        # again" must reach the model instead of replaying the cached answer.
+        first_config = {} if rollout_id is None else {"rollout_id": rollout_id}
         pred = await self.translate.acall(
             source_lang=source_lang,
             target_lang=target_lang,
@@ -214,6 +223,7 @@ class BatchTranslator(dspy.Module):
             glossary=glossary,
             style_directives=style_directives,
             entries=entries,
+            config=first_config,
         )
         translations, failed = self._initial_state(entries, pred)
 
@@ -235,6 +245,10 @@ class BatchTranslator(dspy.Module):
                     glossary=glossary,
                     style_directives=style_directives,
                     entries=missing,
+                    # When nothing came back, ``missing`` is the very prompt
+                    # just sent; without a fresh cache key the retry would
+                    # replay the same empty answer from the disk cache.
+                    config={"rollout_id": (rollout_id or 0) * 100 + attempt + 1},
                 )
                 retry_translations, retry_failed = self._initial_state(
                     missing, retry_pred
@@ -248,15 +262,24 @@ class BatchTranslator(dspy.Module):
                     "Refine pass %d: %d invalid entries", attempt + 1, len(invalid)
                 )
             for key, errors in invalid.items():
-                fixed = (
-                    await self.refine.acall(
-                        source=entries[key],
-                        bad_translation=translations.get(key, ""),
-                        validation_errors="; ".join(errors),
-                        glossary=glossary,
-                        target_lang=target_lang,
-                    )
-                ).fixed_translation
+                try:
+                    fixed = (
+                        await self.refine.acall(
+                            source=entries[key],
+                            bad_translation=translations.get(key, ""),
+                            validation_errors="; ".join(errors),
+                            glossary=glossary,
+                            target_lang=target_lang,
+                        )
+                    ).fixed_translation
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — LLM/adapter errors
+                    # One failed refine must not discard the whole batch:
+                    # the other keys already translated and were paid for.
+                    logger.warning("Refine of %s failed: %s", key, exc)
+                    still_failed[key] = [*errors, f"refine failed: {exc}"]
+                    continue
                 self._apply_fix(entries, translations, still_failed, key, errors, fixed)
             failed = still_failed
 

@@ -41,6 +41,7 @@ import {
   entryId,
   fileLabel,
   nextRowId,
+  reviewKeyAction,
   reviewedPercent,
   sortFiles,
 } from "./w5ReviewModel";
@@ -435,22 +436,29 @@ export function W5Review() {
         return;
       }
       const el = e.target as HTMLElement | null;
-      if (el !== null && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      if (e.key === "ArrowDown") {
+      if (el !== null && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+        return;
+      }
+      // The retranslate confirm owns the keyboard while it is open.
+      if (confirmRetrans !== null || e.metaKey || e.ctrlKey || e.altKey) return;
+      const action = reviewKeyAction(e.key);
+      if (action === "next") {
         e.preventDefault();
         moveSelection(1);
-      } else if (e.key === "ArrowUp") {
+      } else if (action === "prev") {
         e.preventDefault();
         moveSelection(-1);
-      } else if (e.key === "e" || e.key === "E") {
+      } else if (action === "toggleReviewed") {
+        // Space on a focused button is that button's click, not a review mark.
+        if (el !== null && (el.tagName === "BUTTON" || el.tagName === "SELECT" || el.tagName === "A")) {
+          return;
+        }
+        e.preventDefault(); // also keeps the list from scrolling a page
+        if (selected !== null && !e.repeat) toggleReviewed(selected);
+      } else if (action === "edit") {
         e.preventDefault();
         editRef.current?.focus();
-      } else if (
-        (e.key === "r" || e.key === "R") &&
-        selected !== null &&
-        !retransMut.isPending &&
-        confirmRetrans === null
-      ) {
+      } else if (action === "retranslate" && selected !== null && !retransMut.isPending) {
         e.preventDefault();
         requestRetranslate(selected);
       }
@@ -910,6 +918,7 @@ export function W5Review() {
             </div>
             <div className="flex gap-3">
               <span className="text-text3">{t("w5.hintMove")}</span>
+              <span className="text-text3">{t("w5.hintReviewed")}</span>
               <span className="text-text3">{t("w5.hintEdit")}</span>
               <span className="text-text3">{t("w5.hintRetranslate")}</span>
             </div>

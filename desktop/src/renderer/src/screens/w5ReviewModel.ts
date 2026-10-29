@@ -56,6 +56,37 @@ export function sortFiles<T extends { file: string }>(files: readonly T[]): T[] 
   });
 }
 
+export type ReviewKeyAction = "next" | "prev" | "toggleReviewed" | "edit" | "retranslate";
+
+/**
+ * The review screen's single-key shortcuts. J/K mirror the arrows so a
+ * reviewer can keep one hand on the home row; Space signs the current entry
+ * off and moves on. Case-insensitive, so Caps Lock does not disable them.
+ */
+export function reviewKeyAction(key: string): ReviewKeyAction | null {
+  switch (key) {
+    case "ArrowDown":
+    case "j":
+    case "J":
+      return "next";
+    case "ArrowUp":
+    case "k":
+    case "K":
+      return "prev";
+    case " ":
+    case "Spacebar":
+      return "toggleReviewed";
+    case "e":
+    case "E":
+      return "edit";
+    case "r":
+    case "R":
+      return "retranslate";
+    default:
+      return null;
+  }
+}
+
 /** Share of entries signed off, as a 0..100 percentage; null when empty. */
 export function reviewedPercent(reviewed: number | null, total: number | null): number | null {
   if (reviewed === null || total === null || total <= 0) return null;

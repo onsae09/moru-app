@@ -2,7 +2,25 @@ import { expect, test } from "bun:test";
 
 import ko from "../i18n/ko/w5.json";
 import en from "../i18n/en/w5.json";
-import { entryId, fileLabel, nextRowId, reviewedPercent, sortFiles } from "./w5ReviewModel.ts";
+import {
+  entryId,
+  fileLabel,
+  nextRowId,
+  reviewKeyAction,
+  reviewedPercent,
+  sortFiles,
+} from "./w5ReviewModel.ts";
+
+test("J/K mirror the arrows and Space signs off", () => {
+  expect(reviewKeyAction("j")).toBe("next");
+  expect(reviewKeyAction("ArrowDown")).toBe("next");
+  expect(reviewKeyAction("K")).toBe("prev");
+  expect(reviewKeyAction("ArrowUp")).toBe("prev");
+  expect(reviewKeyAction(" ")).toBe("toggleReviewed");
+  expect(reviewKeyAction("R")).toBe("retranslate");
+  expect(reviewKeyAction("e")).toBe("edit");
+  expect(reviewKeyAction("x")).toBeNull();
+});
 
 test("a lang file is labelled by its mod namespace", () => {
   expect(fileLabel("kubejs/assets/create/lang/en_us.json")).toEqual({

@@ -86,17 +86,12 @@ class SNBTParser(BaseParser):
 
             original_data = slib.loads(original_content)
 
-            # Update the original structure with translated values
-            updated_data = self._unflatten_snbt(original_data, flat_data=data)
-
-            # Escape ampersands
-            processed_data = self._replace_ampersand(updated_data)
-
-            # Convert Python data to SNBT tag types
-            snbt_data = self._convert_to_snbt_type(processed_data)
-
-            # Serialize to an SNBT string
-            snbt_content = slib.dumps(snbt_data)
+            # Swap translated values into the ORIGINAL tag tree. Every other
+            # tag keeps its own type (1b, 2.0f, 3L, [I; ...], true) and its
+            # text: rebuilding the tree from plain Python values turned them
+            # into ints, doubles and plain lists.
+            escaped = {key: self._replace_ampersand(value) for key, value in data.items()}
+            snbt_content = slib.dumps(self._unflatten_snbt(original_data, flat_data=escaped))
 
             # Write the file asynchronously
             async with aiofiles.open(self.path, "w", encoding="utf-8") as f:
@@ -264,8 +259,10 @@ class SNBTParser(BaseParser):
     def _replace_ampersand(obj: Any) -> Any:
         """Escape ``&`` characters in an object (Minecraft color codes excluded)."""
         if isinstance(obj, str):
-            # Keep Minecraft color codes (&0-&9, &a-&f, &k-&o, &r) unescaped
-            pattern = r"&(?![0-9a-fk-or])"
+            # Keep Minecraft color codes (&0-&9, &a-&f, &k-&o, &r) unescaped,
+            # and an already escaped "\&" as it is: output read back in (a
+            # migration, a re-run) must not grow another backslash each time.
+            pattern = r"(?<!\\)&(?![0-9a-fk-or])"
             return re.sub(pattern, r"\\&", re.sub(r"\n", r"\\n", obj))
         elif isinstance(obj, dict):
             return {k: SNBTParser._replace_ampersand(v) for k, v in obj.items()}
@@ -273,38 +270,3 @@ class SNBTParser(BaseParser):
             return [SNBTParser._replace_ampersand(item) for item in obj]
         else:
             return obj
-
-    @staticmethod
-    def _convert_to_snbt_type(value: Any) -> Any:
-        """Convert a Python value to the corresponding SNBT tag type."""
-        try:
-            from ftb_snbt_lib.tag import Bool, Compound, Double, Integer, Long, String
-            from ftb_snbt_lib.tag import List as SNBTList
-
-            if isinstance(value, bool):
-                return Bool(value)
-            elif isinstance(value, int):
-                if -2147483648 <= value <= 2147483647:
-                    return Integer(value)
-                else:
-                    return Long(value)
-            elif isinstance(value, float):
-                return Double(value)
-            elif isinstance(value, str):
-                return String(value)
-            elif isinstance(value, list):
-                converted_items = [
-                    SNBTParser._convert_to_snbt_type(item) for item in value
-                ]
-                return SNBTList(converted_items)
-            elif isinstance(value, dict):
-                snbt_dict = {}
-                for k, v in value.items():
-                    if not isinstance(k, str):
-                        k = str(k)
-                    snbt_dict[k] = SNBTParser._convert_to_snbt_type(v)
-                return Compound(snbt_dict)
-            else:
-                return String(str(value))
-        except ImportError:
-            return value

@@ -100,7 +100,7 @@ export function ManualQueue(): ReactNode {
         <div className="mb-[6px] flex items-baseline justify-between font-mono text-[11px]">
           <span className="text-text2">
             {formatInt(settledCount)}
-            <span className="text-text4"> / {formatInt(refs.length)}</span>
+            <span className="text-text3"> / {formatInt(refs.length)}</span>
           </span>
           <span className="text-accent">{percent.toFixed(1)}%</span>
         </div>
@@ -108,7 +108,7 @@ export function ManualQueue(): ReactNode {
           <div className="h-full bg-accent" style={{ width: `${percent}%` }} />
         </div>
         {refs.length < total && (
-          <div className="mt-[6px] font-mono text-[10px] text-text4">
+          <div className="mt-[6px] font-mono text-[10px] text-text3">
             {t("w5m.queue.loaded", {
               loaded: formatInt(refs.length),
               total: formatInt(total),
@@ -181,7 +181,7 @@ export function ManualQueue(): ReactNode {
                 <div className="sticky top-0 flex items-baseline gap-[6px] border-b border-line bg-hover px-3 py-[5px]">
                   <span className="font-mono text-[10px] font-bold text-accent">{label.mod}</span>
                   <span className="truncate font-mono text-[10px] text-text3">{label.name}</span>
-                  <span className="ml-auto shrink-0 font-mono text-[10px] text-text4">
+                  <span className="ml-auto shrink-0 font-mono text-[10px] text-text3">
                     {group.kind}
                   </span>
                 </div>

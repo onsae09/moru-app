@@ -404,7 +404,7 @@ function CliProviderCard({ provider }: { provider: Provider }) {
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[11px] leading-[1.6] text-text3">{guidance}</div>
           {transport !== null && (
-            <div className="mt-[6px] font-mono text-[10px] text-text4">
+            <div className="mt-[6px] font-mono text-[10px] text-text3">
               {t("settings.models.cliTransport", { transport })}
             </div>
           )}

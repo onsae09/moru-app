@@ -426,7 +426,7 @@ export function W5Manual(): ReactNode {
 
       {/* Footer: shortcuts + route out */}
       <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
-        <div className="flex flex-wrap gap-3 font-mono text-[10px] text-text4">
+        <div className="flex flex-wrap gap-3 font-mono text-[10px] text-text3">
           <span>{t("w5m.hint.commit")}</span>
           <span>{t("w5m.hint.move")}</span>
           <span>{t("w5m.hint.copySource")}</span>

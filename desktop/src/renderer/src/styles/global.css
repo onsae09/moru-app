@@ -30,8 +30,10 @@
   /* text */
   --color-text: #eaf5ef;
   --color-text2: #a2b3ab;
-  --color-text3: #6a7c74;
-  --color-text4: #4a5a52;
+  /* text3 is the floor for readable information: >= 4.5:1 on bg/raised/hover.
+     text4 is for decoration, disabled states and placeholders only. */
+  --color-text3: #7d8f87;
+  --color-text4: #6a7c74;
 
   /* accent (emerald) */
   --color-accent: #3ddc84;

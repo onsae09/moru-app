@@ -197,7 +197,7 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
         <div className="mb-[2px] text-[13px] font-bold text-text">{title}</div>
         <div className="font-mono text-[11px] leading-[1.6] text-text2">{detail}</div>
         {transport !== null && (
-          <div className="mt-[6px] font-mono text-[10px] text-text4">
+          <div className="mt-[6px] font-mono text-[10px] text-text3">
             {t("settings.models.cliTransport", { transport })}
           </div>
         )}
@@ -640,7 +640,7 @@ export function W3Settings() {
       <div className="mb-5 border border-line2 bg-raised p-4">
         <div className="mb-3 flex items-baseline gap-2">
           <span className="text-[12px] font-semibold text-text3">{t("w3.style.label")}</span>
-          <span className="font-mono text-[11px] text-text4">{t("w3.style.hint")}</span>
+          <span className="font-mono text-[11px] text-text3">{t("w3.style.hint")}</span>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -754,7 +754,7 @@ export function W3Settings() {
                   </span>
                 </div>
                 <div
-                  className={`mt-[2px] font-mono text-[10px] ${isConnected ? "text-accent" : "text-text4"}`}
+                  className={`mt-[2px] font-mono text-[10px] ${isConnected ? "text-accent" : "text-text3"}`}
                 >
                   {status}
                 </div>

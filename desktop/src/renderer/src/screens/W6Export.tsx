@@ -931,25 +931,25 @@ export function W6Export() {
                   <div className="font-mono text-base font-bold text-text">
                     {stats !== null ? `${trim1(stats.coverage_percent)}%` : "—"}
                   </div>
-                  <div className="font-mono text-[9px] text-text3">{t("w6.share.statCoverage")}</div>
+                  <div className="font-mono text-[10px] text-text3">{t("w6.share.statCoverage")}</div>
                 </div>
                 <div className="border border-edge bg-card p-2">
                   <div className="font-mono text-base font-bold text-text">
                     {stats !== null ? formatInt(stats.translated_entries) : "—"}
                   </div>
-                  <div className="font-mono text-[9px] text-text3">{t("w6.share.statEntries")}</div>
+                  <div className="font-mono text-[10px] text-text3">{t("w6.share.statEntries")}</div>
                 </div>
                 <div className="border border-edge bg-card p-2">
                   <div className="font-mono text-base font-bold text-text">
                     {stats !== null ? `${trim1(stats.quality_score * 100)}%` : "—"}
                   </div>
-                  <div className="font-mono text-[9px] text-text3">{t("w6.share.statQuality")}</div>
+                  <div className="font-mono text-[10px] text-text3">{t("w6.share.statQuality")}</div>
                 </div>
                 <div className="border border-edge bg-card p-2">
                   <div className="font-mono text-base font-bold text-text">
                     {stats !== null ? formatDuration(stats.duration_seconds, lang) : "—"}
                   </div>
-                  <div className="font-mono text-[9px] text-text3">{t("w6.share.statDuration")}</div>
+                  <div className="font-mono text-[10px] text-text3">{t("w6.share.statDuration")}</div>
                 </div>
               </div>
             </div>

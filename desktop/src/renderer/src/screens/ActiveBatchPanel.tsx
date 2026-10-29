@@ -41,17 +41,17 @@ export function ActiveBatchPanel({
                 title={`${batch.file}\n${batch.key}`}
                 className="min-w-0 border border-accent-lo bg-tint px-2 py-1.5"
               >
-                <div className="flex items-center justify-between font-mono text-[9px] text-accent">
+                <div className="flex items-center justify-between font-mono text-[10px] text-accent">
                   <span>REQ {batch.requestId}</span>
                   <span>{elapsed}s</span>
                 </div>
-                <div className="mt-0.5 truncate font-mono text-[9px] text-text2">
+                <div className="mt-0.5 truncate font-mono text-[10px] text-text2">
                   {fileName}
                 </div>
-                <div className="truncate font-mono text-[9px] text-text3">
+                <div className="truncate font-mono text-[10px] text-text3">
                   {batch.key}
                 </div>
-                <div className="mt-0.5 font-mono text-[8px] text-text4">
+                <div className="mt-0.5 font-mono text-[10px] text-text3">
                   {t("w4.concurrent.entries", { count: batch.entries })}
                 </div>
               </div>

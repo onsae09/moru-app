@@ -958,7 +958,7 @@ function GroupRow({
       <span className="truncate font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase">
         {label}
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-text4">
+      <span className="shrink-0 font-mono text-[10px] text-text3">
         {includedCount}/{group.categories.length}
       </span>
       <span className="ml-auto shrink-0 font-mono text-[11px] text-text2">
@@ -1031,7 +1031,7 @@ function CategoryRow({
         >
           {category.name}
         </span>
-        <span className="shrink-0 font-mono text-[10px] text-text4">{category.handler}</span>
+        <span className="shrink-0 font-mono text-[10px] text-text3">{category.handler}</span>
         <span
           className={`ml-auto shrink-0 font-mono text-[11px] ${
             expanded ? "text-accent" : checked ? "text-text2" : "text-text4"
@@ -1067,7 +1067,7 @@ function CategoryRow({
             </div>
           ))}
           {moreFiles > 0 && (
-            <div className="py-1 font-mono text-[10px] text-text4">
+            <div className="py-1 font-mono text-[10px] text-text3">
               {t("w2.tree.moreFiles", { count: moreFiles })}
             </div>
           )}
@@ -1327,7 +1327,7 @@ function DoneState() {
       {/* Recommended-combo estimate (hidden when it is already selected) */}
       {recommendedCostUsd !== null && (
         <div className="-mt-4 mb-6 flex items-center gap-2 border border-accent-lo bg-tint px-3.5 py-2 font-mono text-[11px] text-text2">
-          <span className="bg-accent px-1.5 py-[1px] text-[9px] font-bold tracking-[0.06em] text-sel-ink uppercase">
+          <span className="bg-accent px-1.5 py-[1px] text-[10px] font-bold tracking-[0.06em] text-sel-ink uppercase">
             {t("w2.recommend.badge")}
           </span>
           <span>

@@ -981,7 +981,7 @@ export function W4Progress() {
               }}
               className="max-h-[320px] overflow-y-auto border-t border-line2 px-[14px] py-3 font-mono text-[11px] leading-[1.65] text-text2"
             >
-              {log.length === 0 && <div className="text-text4">{t("w4.log.empty")}</div>}
+              {log.length === 0 && <div className="text-text3">{t("w4.log.empty")}</div>}
               {log.map((line, idx) => (
                 <div
                   key={`${line.ts}-${idx}`}
@@ -989,7 +989,7 @@ export function W4Progress() {
                     line.level === "error" ? "-mx-[14px] bg-[rgba(242,107,107,0.06)] px-[14px]" : ""
                   }
                 >
-                  <span className="text-text4">{timeOf(line.ts)}</span>{" "}
+                  <span className="text-text3">{timeOf(line.ts)}</span>{" "}
                   <span className={LOG_LEVEL[line.level].className}>
                     {LOG_LEVEL[line.level].label}
                   </span>{" "}

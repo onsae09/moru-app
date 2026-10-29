@@ -495,7 +495,7 @@ export function W1Select() {
       ) : detectedList.length === 0 ? (
         <div className="border border-dashed border-line2 bg-card px-4 py-7 text-center">
           <div className="font-mono text-xs text-text3">{t("w1.detected.empty")}</div>
-          <div className="mt-[6px] text-[11px] text-text4">{t("w1.detected.emptyHint")}</div>
+          <div className="mt-[6px] text-[11px] text-text3">{t("w1.detected.emptyHint")}</div>
         </div>
       ) : (
         <div className="flex flex-col gap-[6px]">

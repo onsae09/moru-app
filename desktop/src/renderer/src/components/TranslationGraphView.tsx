@@ -213,7 +213,7 @@ function DetailPanel({ node }: { node: TranslationGraphNode }) {
       </div>
       {rows.map(([label, value]) => (
         <div key={label} className="mb-1.5">
-          <div className="text-[9px] text-text4 uppercase">{label}</div>
+          <div className="text-[10px] text-text3 uppercase">{label}</div>
           <div className="break-all text-text2">{value}</div>
         </div>
       ))}

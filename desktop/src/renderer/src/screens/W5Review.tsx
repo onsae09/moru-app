@@ -627,9 +627,9 @@ export function W5Review() {
           <div className="flex items-center justify-between border-t border-line2 bg-hover px-[14px] py-2 font-mono text-[11px] text-text3">
             <div>{t("w5.footerCount", { total: formatInt(total), shown: formatInt(rows.length) })}</div>
             <div className="flex gap-3">
-              <span className="text-text4">{t("w5.hintMove")}</span>
-              <span className="text-text4">{t("w5.hintEdit")}</span>
-              <span className="text-text4">{t("w5.hintRetranslate")}</span>
+              <span className="text-text3">{t("w5.hintMove")}</span>
+              <span className="text-text3">{t("w5.hintEdit")}</span>
+              <span className="text-text3">{t("w5.hintRetranslate")}</span>
             </div>
           </div>
         </div>
@@ -767,10 +767,10 @@ export function W5Review() {
               {/* Metadata */}
               <div className="flex flex-col gap-[3px] font-mono text-[11px] text-text3">
                 <div>
-                  <span className="text-text4">{t("w5.detail.file")}</span> {selected.file}
+                  <span className="text-text3">{t("w5.detail.file")}</span> {selected.file}
                 </div>
                 <div>
-                  <span className="text-text4">{t("w5.detail.model")}</span> {modelDisplayName(model)}
+                  <span className="text-text3">{t("w5.detail.model")}</span> {modelDisplayName(model)}
                 </div>
               </div>
             </>

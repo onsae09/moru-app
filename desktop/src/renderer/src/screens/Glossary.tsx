@@ -905,7 +905,7 @@ export function GlossaryScreen() {
                         {term.key_scope.join(", ")}
                       </div>
                     ) : (
-                      <div className="truncate font-mono text-[11px] text-text4">
+                      <div className="truncate font-mono text-[11px] text-text3">
                         {t("glossary.keyScopeAll")}
                       </div>
                     )}
@@ -936,7 +936,7 @@ export function GlossaryScreen() {
                         </button>
                       </div>
                     ) : (
-                      <div className="text-right font-mono text-[10px] text-text4">{t("glossary.readonly")}</div>
+                      <div className="text-right font-mono text-[10px] text-text3">{t("glossary.readonly")}</div>
                     )}
                   </div>
                 ),

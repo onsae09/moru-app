@@ -85,7 +85,7 @@ function InsertButton({
         → {value}
       </span>
       {hint !== undefined && (
-        <span className="font-mono text-[9px] text-text4">{hint}</span>
+        <span className="font-mono text-[10px] text-text3">{hint}</span>
       )}
     </button>
   );
@@ -166,11 +166,11 @@ export function ManualContextPanel({
       <Section title={t("w5m.context.origin")}>
         <div className="flex flex-col gap-[3px] font-mono text-[11px]">
           <div>
-            <span className="text-text4">{t("w5m.context.mod")} </span>
+            <span className="text-text3">{t("w5m.context.mod")} </span>
             <span className="text-accent">{context?.mod_id ?? label.mod}</span>
           </div>
           <div>
-            <span className="text-text4">{t("w5m.context.kind")} </span>
+            <span className="text-text3">{t("w5m.context.kind")} </span>
             <span className="text-text2">
               {context?.content_type ?? contentKind(entry.key)}
             </span>
@@ -297,14 +297,14 @@ export function ManualContextPanel({
                 style={{ borderColor: other.agrees ? "#24322B" : "#F5B454" }}
               >
                 <span
-                  className="font-mono text-[9px]"
+                  className="font-mono text-[10px]"
                   style={{ color: other.agrees ? "#6A7C74" : "#F5B454" }}
                 >
                   {other.agrees
                     ? t("w5m.context.sameSourceAgrees")
                     : t("w5m.context.sameSourceDiffers")}
                 </span>
-                <span className="truncate font-mono text-[9px] text-text4">{other.key}</span>
+                <span className="truncate font-mono text-[10px] text-text3">{other.key}</span>
                 <button
                   onClick={() => onInsert(other.translated_text)}
                   title={t("w5m.context.insertTerm")}
@@ -322,7 +322,7 @@ export function ManualContextPanel({
       {siblings.length > 0 && (
         <Section title={t("w5m.context.siblings")}>
           <div className="flex flex-col gap-2">
-            <p className="m-0 font-mono text-[10px] leading-relaxed text-text4">
+            <p className="m-0 font-mono text-[10px] leading-relaxed text-text3">
               {t("w5m.context.siblingsHint")}
             </p>
             {siblings.map((s) => (

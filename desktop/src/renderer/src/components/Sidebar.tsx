@@ -136,7 +136,7 @@ export function Sidebar() {
           }
           trailing={
             queueCount > 0 ? (
-              <span className="ml-auto font-mono text-[10px] text-text4">{queueCount}</span>
+              <span className="ml-auto font-mono text-[10px] text-text3">{queueCount}</span>
             ) : undefined
           }
         />
@@ -152,7 +152,7 @@ export function Sidebar() {
           }
           trailing={
             sessionCount > 0 ? (
-              <span className="ml-auto font-mono text-[10px] text-text4">{sessionCount}</span>
+              <span className="ml-auto font-mono text-[10px] text-text3">{sessionCount}</span>
             ) : undefined
           }
         />

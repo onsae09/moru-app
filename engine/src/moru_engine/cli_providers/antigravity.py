@@ -318,11 +318,12 @@ _async_gates: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semap
     weakref.WeakKeyDictionary()
 )
 
-#: Longest prompt (UTF-8 bytes, never fewer than the UTF-16 units Windows
-#: counts) passed as a `-p` argument. Windows caps the whole command line
-#: at 32,767 characters and Linux one argument at 128 KiB; past this the
-#: prompt goes over stdin instead (`_invocation`).
-_ARGV_PROMPT_LIMIT = 24_000 if os.name == "nt" else 100_000
+#: Longest prompt (UTF-8 bytes) passed as a `-p` argument; Linux caps one
+#: argument at 128 KiB. Windows is checked on the real quoted command line
+#: against its 32,767-character cap, with margin. Past either, the prompt
+#: goes over stdin instead (`_invocation`).
+_ARGV_PROMPT_LIMIT = 100_000
+_WINDOWS_COMMAND_LINE_LIMIT = 32_000
 
 #: How long one auth refusal suppresses further attempts. Long enough to
 #: spare a batch minutes of certain-to-fail waiting, short enough that
@@ -510,14 +511,26 @@ def _invocation(prompt: str, model: str) -> tuple[list[str], str | None]:
     ]
     if model:
         common += ["--model", model]
-    if len(prompt.encode("utf-8")) <= _ARGV_PROMPT_LIMIT:
-        return ["-p", prompt, "--output-format", "json", *common], None
+    argv = ["-p", prompt, "--output-format", "json", *common]
+    if _fits_command_line(prompt, argv):
+        return argv, None
     line = json.dumps(
         {"event": "user", "message": {"content": prompt}}, ensure_ascii=False
     )
     return [
         "--input-format", "stream-json", "--output-format", "stream-json", *common
     ], line + "\n"
+
+
+def _fits_command_line(prompt: str, argv: list[str]) -> bool:
+    if len(prompt.encode("utf-8")) > _ARGV_PROMPT_LIMIT:
+        return False
+    if os.name != "nt":
+        return True
+    # What CreateProcess actually counts: the quoted command line, where
+    # every '"' of a JSON-shaped prompt gains an escaping backslash.
+    binary = str(agy_path() or "agy")
+    return len(subprocess.list2cmdline([binary, *argv])) <= _WINDOWS_COMMAND_LINE_LIMIT
 
 
 def _async_slot() -> asyncio.Semaphore:

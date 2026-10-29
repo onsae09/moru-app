@@ -1510,6 +1510,17 @@ async def test_agy_async_long_prompt_goes_over_stdin(fake_agy, monkeypatch) -> N
     assert text == "stdin:500"
 
 
+def test_agy_windows_limit_counts_the_quoted_command_line(monkeypatch) -> None:
+    """CreateProcess counts the quoted line, where each '"' of a JSON-shaped
+    prompt gains a backslash: 20k bytes of quotes is 40k on the wire."""
+    monkeypatch.setattr(antigravity, "agy_path", lambda: Path("agy.exe"))
+    monkeypatch.setattr(antigravity.os, "name", "nt")
+    argv, stdin = antigravity._invocation('"' * 20_000, "m")
+    assert "-p" not in argv and stdin is not None
+    argv, stdin = antigravity._invocation("x" * 20_000, "m")
+    assert "-p" in argv and stdin is None
+
+
 def _alive(pid: int) -> bool:
     import os
 

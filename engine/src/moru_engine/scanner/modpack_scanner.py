@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tomllib
 import zipfile
 from collections import Counter
@@ -142,6 +143,15 @@ def asset_namespaces(zf: zipfile.ZipFile) -> set[str]:
         if len(parts) > 2 and parts[0] == "assets" and parts[1]:
             found.add(parts[1])
     return found
+
+
+#: Marker inside a resource-pack extraction naming the ZIP stamp it came
+#: from. Extension-less, so no handler ever reads it as a translation file.
+_EXTRACT_STAMP_NAME = ".moru-extract-stamp"
+#: Declared uncompressed size beyond which a resource-pack ZIP is refused.
+#: Real packs with lang files are tens of MB even with textures; a crafted
+#: one could otherwise expand into the user's disk.
+MAX_RESOURCE_PACK_UNPACKED_BYTES = 2 * 1024**3
 
 
 #: Cache-key form of a JAR: size and mtime identify the exact bytes
@@ -472,10 +482,41 @@ class ModpackScanner:
         glob-based resource pack scan can pick up ``assets/<ns>/lang/*``
         entries inside.
         """
-        os.makedirs(extract_dir, exist_ok=True)
+        stamp = _jar_stamp(zip_path)
+        marker = Path(extract_dir) / _EXTRACT_STAMP_NAME
+        try:
+            if stamp and marker.read_text(encoding="utf-8") == stamp:
+                logger.debug("Resource pack already extracted: %s", zip_path)
+                return
+        except OSError:
+            pass
+        # Keyed on the ZIP's size+mtime: an updated pack used to keep being
+        # read from its first extraction for as long as the folder existed.
+        # A stale tree is removed whole so a file the new ZIP dropped does
+        # not linger as a phantom source.
+        shutil.rmtree(extract_dir, ignore_errors=True)
         with zipfile.ZipFile(zip_path, "r") as zf:
+            declared = sum(info.file_size for info in zf.infolist())
+            if declared > MAX_RESOURCE_PACK_UNPACKED_BYTES:
+                raise zipfile.BadZipFile(
+                    f"uncompressed size {declared} bytes exceeds the "
+                    f"{MAX_RESOURCE_PACK_UNPACKED_BYTES}-byte cap"
+                )
             logger.info("Extracting resource pack ZIP: %s", zip_path)
+            os.makedirs(extract_dir, exist_ok=True)
             zf.extractall(extract_dir)
+        if stamp:
+            marker.write_text(stamp, encoding="utf-8")
+
+    @staticmethod
+    def _prune_extractions(slug_root: Path, keep: set[str]) -> None:
+        try:
+            entries = list(slug_root.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name not in keep and entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
 
     async def _extract_resource_pack_zips(self, modpack_path: Path) -> None:
         """Unpack resource-pack ZIPs from every root a pack can be installed in.
@@ -498,17 +539,19 @@ class ModpackScanner:
 
             pattern = self._normalize_glob_path(modpack_path / rel_root / "*.zip")
             zip_files = await self._safe_iglob(str(pattern), recursive=False)
+            slug = rel_root.replace("/", "_")
+            # A ZIP removed from the pack must take its extraction with it,
+            # or its strings keep being scanned as a live source.
+            await asyncio.to_thread(
+                self._prune_extractions,
+                cache_root / slug,
+                {os.path.basename(path) for path in zip_files},
+            )
             if not zip_files:
                 continue
 
-            slug = rel_root.replace("/", "_")
             for zip_path in zip_files:
                 extract_dir = cache_root / slug / os.path.basename(zip_path)
-
-                if await asyncio.to_thread(extract_dir.exists):
-                    logger.debug("Resource pack already extracted: %s", zip_path)
-                    continue
-
                 try:
                     await asyncio.to_thread(
                         self._extract_resource_pack_sync,

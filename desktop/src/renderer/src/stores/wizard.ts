@@ -1263,7 +1263,10 @@ export const useWizard = create<WizardStore>((set, get) => ({
     let apiKey: string | undefined;
     translateLaunching = true; // see startTranslate
     try {
-      model = await resumeModel(record.model, state.interruptReason, settings.model);
+      // The reason on screen belongs to the wizard's session, which need not
+      // be the one being resumed (History can resume any row).
+      const reason = state.sessionId === sessionId ? state.interruptReason : null;
+      model = await resumeModel(record.model, reason, settings.model);
       // The key is never written into the checkpoint, so it is re-read here.
       // A local runtime's address is environment, not run semantics: current.
       providerId = providerIdOf(model);
@@ -1303,6 +1306,9 @@ export const useWizard = create<WizardStore>((set, get) => ({
     get().appendLog("info", `translate resume: ${record.modpackName} → ${record.targetLocale}`);
     if (model !== record.model) {
       get().appendLog("warn", `model switched for resume: ${record.model} → ${model}`);
+      // History must show (and a later resume start from) the model the
+      // rest of the run actually uses.
+      useSessions.getState().patch(sessionId, { model });
     }
     moru.setBusy(true);
     useSessions.getState().patch(sessionId, { status: "running", finishedAt: null, error: null });

@@ -1015,6 +1015,9 @@ export const useWizard = create<WizardStore>((set, get) => ({
         void api
           .scanResult(job.id)
           .then((result) => {
+            // A newer scan (or a reset) took over while this result was in
+            // flight: it must not overwrite that scan's state.
+            if (get().scanJobId !== job.id) return;
             // Confident launcher-metadata identity beats the folder-name guess.
             const identity = result.identity;
             set({
@@ -1031,12 +1034,14 @@ export const useWizard = create<WizardStore>((set, get) => ({
             });
           })
           .catch((error) => {
+            if (get().scanJobId !== job.id) return;
             set({ scanState: "failed", scanError: String(error) });
           });
       };
       closeScanEvents = openJobEvents(
         job.id,
         (frame) => {
+          if (get().scanJobId !== job.id) return; // superseded scan
           if (frame.type === "progress") {
             set({
               scanProgress: {

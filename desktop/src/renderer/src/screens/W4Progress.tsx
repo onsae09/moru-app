@@ -147,12 +147,12 @@ const FileRow = memo(function FileRow({
   return (
     <div
       className={`grid grid-cols-[24px_1fr_100px_80px_90px] items-center gap-[10px] border-b border-line px-[14px] py-2 ${
-        isDone ? "" : "bg-[#17211D]"
+        isDone ? "" : "bg-raised-hover"
       }`}
     >
       {isDone ? (
         <div className="flex h-3.5 w-3.5 items-center justify-center bg-accent">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0A100D" strokeWidth="2">
+          <svg className="text-sel-ink" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M1 5 L4 8 L9 2" />
           </svg>
         </div>
@@ -202,12 +202,12 @@ function GlossaryRow({ progress }: { progress: GlossaryProgress }) {
   return (
     <div
       className={`grid grid-cols-[24px_1fr_100px_80px_90px] items-center gap-[10px] border-b border-line px-[14px] py-2 ${
-        isDone ? "" : "bg-[#17211D]"
+        isDone ? "" : "bg-raised-hover"
       }`}
     >
       {isDone ? (
         <div className="flex h-3.5 w-3.5 items-center justify-center bg-purple">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0A100D" strokeWidth="2">
+          <svg className="text-sel-ink" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M1 5 L4 8 L9 2" />
           </svg>
         </div>
@@ -614,7 +614,7 @@ export function W4Progress() {
       {runState === "done" && (
         <div className="mb-4 flex items-center gap-3 border border-accent-lo bg-tint px-4 py-3">
           <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-accent">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0A100D" strokeWidth="2">
+            <svg className="text-sel-ink" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M1 5 L4 8 L9 2" />
             </svg>
           </div>
@@ -635,7 +635,7 @@ export function W4Progress() {
       {runState === "failed" && (
         <div className="mb-4 flex items-center gap-3 border border-red/40 bg-red/6 px-4 py-3">
           <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-red/16">
-            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#F26B6B" strokeWidth="2">
+            <svg className="text-red" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M2 2 L6 6 M6 2 L2 6" />
             </svg>
           </div>
@@ -667,7 +667,7 @@ export function W4Progress() {
         <div className="mb-4 flex items-center gap-3 border border-amber/40 bg-amber/6 px-4 py-3">
           <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-amber/16">
             <svg width="8" height="8" viewBox="0 0 8 8" shapeRendering="crispEdges">
-              <rect x="1" y="1" width="6" height="6" fill="#F5B454" />
+              <rect className="text-amber" x="1" y="1" width="6" height="6" fill="currentColor" />
             </svg>
           </div>
           <div className="min-w-0 flex-1">
@@ -694,8 +694,8 @@ export function W4Progress() {
         <div className="mb-4 flex items-center gap-3 border border-amber/40 bg-amber/6 px-4 py-3">
           <div className="flex h-4 w-4 shrink-0 items-center justify-center bg-amber/16">
             <svg width="8" height="8" viewBox="0 0 8 8" shapeRendering="crispEdges">
-              <rect x="1" y="1" width="2" height="6" fill="#F5B454" />
-              <rect x="5" y="1" width="2" height="6" fill="#F5B454" />
+              <rect className="text-amber" x="1" y="1" width="2" height="6" fill="currentColor" />
+              <rect className="text-amber" x="5" y="1" width="2" height="6" fill="currentColor" />
             </svg>
           </div>
           <div className="min-w-0 flex-1">
@@ -737,7 +737,7 @@ export function W4Progress() {
             className="absolute inset-0"
             style={{
               backgroundImage:
-                "radial-gradient(circle at 2px 2px, rgba(61,220,132,0.06) 1px, transparent 1px)",
+                "radial-gradient(circle at 2px 2px, color-mix(in srgb, var(--color-accent) 6%, transparent) 1px, transparent 1px)",
               backgroundSize: "12px 12px",
             }}
           />
@@ -748,13 +748,14 @@ export function W4Progress() {
                 className="h-full w-full -rotate-90"
                 shapeRendering="crispEdges"
               >
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#0F1613" strokeWidth="10" />
+                <circle className="text-card" cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="10" />
                 <circle
+                  className="text-accent"
                   cx="50"
                   cy="50"
                   r="42"
                   fill="none"
-                  stroke="#3DDC84"
+                  stroke="currentColor"
                   strokeWidth="10"
                   strokeDasharray={
                     pct === null
@@ -1028,7 +1029,7 @@ export function W4Progress() {
             className="flex cursor-pointer items-center justify-between px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase"
           >
             <div className="flex items-center gap-1.5">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3DDC84" strokeWidth="1.5">
+              <svg className="text-accent" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="1" y="1" width="8" height="8" />
                 <path d="M3 3 L5 5 L3 7" />
               </svg>

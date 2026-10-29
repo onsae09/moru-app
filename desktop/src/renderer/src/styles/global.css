@@ -57,8 +57,11 @@
   --color-red-hi: #f58585; /* danger button hover */
   --color-amber: #f5b454;
   --color-blue: #6bb3f5;
+  --color-sky: #38bdf8; /* OpenAI-compatible server card */
   --color-purple: #a78bfa;
   --color-discord: #5865f2;
+  /* untranslated entries: brighter than text4 (skipped), it is work to do */
+  --color-pending: #8a9aa8;
 
   /* motion (design keyframes, verbatim timing) */
   --animate-pxspin: pxspin 1s linear infinite;
@@ -135,6 +138,59 @@
       transform: none;
     }
   }
+}
+
+/*
+ * Light theme. Every --color-* token above is redefined here; lib/theme.ts
+ * sets data-theme on <html> from the persisted setting ("system" resolves
+ * through prefers-color-scheme in JS, so this is the only copy).
+ *
+ * Contrast rules (WCAG AA, enforced by styles/theme.test.mjs):
+ * - text, text2, text3 and the status/accent colors are >= 4.5:1 on every
+ *   surface token (ink … tint), since they are all used as text;
+ * - sel-ink (white here) is >= 4.5:1 on every fill it sits on (accent,
+ *   accent-hi/mid/lo, red, red-hi, amber, blue, purple, discord);
+ * - edge / edge2 (input and strong borders) are >= 3:1 on every surface;
+ * - line / line2 stay decorative hairlines, text4 decoration only, as in dark.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-ink: #e2e9e5;
+  --color-bar: #e9efec;
+  --color-well: #f2f6f4;
+  --color-panel: #edf2ef;
+  --color-bg: #f6f9f7;
+  --color-card: #eef3f0;
+  --color-hover: #e5ede9;
+  --color-raised: #ffffff;
+  --color-raised-hover: #f1f6f3;
+  --color-line: #dbe4df;
+  --color-line2: #cfdad4;
+  --color-edge: #74887f;
+  --color-edge2: #5a6d64;
+  --color-tint: #e1f2e8;
+
+  --color-text: #0e1a14;
+  --color-text2: #34453d;
+  --color-text3: #4f6158;
+  --color-text4: #6b7c74;
+
+  --color-accent: #0f733f;
+  --color-accent-hi: #0a5e33;
+  --color-accent-bright: #0a5e33;
+  --color-accent-mid: #0d6b3b;
+  --color-accent-lo: #0b6638;
+  --color-sel-ink: #ffffff;
+
+  --color-red: #c22b2b;
+  --color-red-hi: #a32020;
+  --color-amber: #8f5a00;
+  --color-blue: #1d64a8;
+  --color-sky: #0b6a94;
+  --color-purple: #6a46cc;
+  --color-discord: #4752c4;
+  --color-pending: #566778;
 }
 
 /* Element defaults live in the base layer so Tailwind utility classes

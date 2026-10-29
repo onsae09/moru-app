@@ -519,11 +519,12 @@ export function HistoryScreen(): React.JSX.Element {
           </button>
           <div className="mr-1 flex min-w-[220px] items-center gap-1.5 border border-edge bg-card px-2.5 py-1.5">
             <svg
+              className="text-text4"
               width="12"
               height="12"
               viewBox="0 0 12 12"
               fill="none"
-              stroke="#6A7C74"
+              stroke="currentColor"
               strokeWidth="1.5"
             >
               <circle cx="5" cy="5" r="3.5" />

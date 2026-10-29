@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { EntryCounts } from "../../../shared/engine";
-import { STATUS_COLOR, StatusIcon } from "@/components/EntryText";
+import { STATUS_TOKEN, StatusIcon, tint } from "@/components/EntryText";
 import { api } from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import {
@@ -26,10 +26,10 @@ import {
 } from "@/stores/manual";
 
 const FILTER_COLOR: Record<ManualFilter, string> = {
-  all: "#3DDC84",
-  failed: "#F26B6B",
-  warning: "#F5B454",
-  modified: "#6BB3F5",
+  all: "var(--color-accent)",
+  failed: "var(--color-red)",
+  warning: "var(--color-amber)",
+  modified: "var(--color-blue)",
 };
 
 export function ManualQueue(): ReactNode {
@@ -132,7 +132,7 @@ export function ManualQueue(): ReactNode {
               className={`flex items-center gap-1 border px-[8px] py-[4px] text-[10px] font-semibold ${
                 active ? "" : "border-edge text-text2 hover:border-edge2 hover:text-text"
               }`}
-              style={active ? { background: `${c}14`, borderColor: c, color: c } : undefined}
+              style={active ? { background: tint(c, 8), borderColor: c, color: c } : undefined}
             >
               <div className="h-[4px] w-[4px]" style={{ background: c }} />
               {t(`w5m.filter.${f}`)}
@@ -193,7 +193,7 @@ export function ManualQueue(): ReactNode {
                   const hasDraft = jobDrafts[id] !== undefined;
                   const isFlagged = jobFlags.includes(id);
                   const color =
-                    entry === undefined ? "#6A7C74" : STATUS_COLOR[entry.status];
+                    entry === undefined ? "var(--color-text4)" : STATUS_TOKEN[entry.status];
                   // Numbered siblings share a run; the bracket is what tells a
                   // translator this line continues into the next one.
                   const inRun = group.refs.length > 1;
@@ -208,7 +208,7 @@ export function ManualQueue(): ReactNode {
                       style={
                         isSel
                           ? {
-                              background: `linear-gradient(90deg, ${color}14 0%, transparent 100%)`,
+                              background: `linear-gradient(90deg, ${tint(color, 8)} 0%, transparent 100%)`,
                               borderLeft: `2px solid ${color}`,
                             }
                           : { borderLeft: "2px solid transparent" }
@@ -236,8 +236,8 @@ export function ManualQueue(): ReactNode {
                           width="8"
                           height="8"
                           viewBox="0 0 8 8"
-                          fill="#F5B454"
-                          className="shrink-0"
+                          fill="currentColor"
+                          className="text-amber shrink-0"
                         >
                           <path d="M1 0 H7 V8 L4 5.5 L1 8 Z" />
                         </svg>

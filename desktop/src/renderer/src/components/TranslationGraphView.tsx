@@ -23,6 +23,7 @@ import type {
 } from "../../../shared/engine";
 import { pressable } from "@/components/a11y";
 import { api, EngineApiError } from "@/lib/api";
+import { cssVar, useResolvedTheme, withAlpha } from "@/lib/theme";
 
 echarts.use([GraphChart, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -32,16 +33,34 @@ type ChartOption = echarts.ComposeOption<
 
 type StatusFilter = "all" | "settled" | "pending";
 
-/** Palette mirrors the app tokens: accent green / amber / muted gray. */
-const COLOR_SETTLED = "#3DDC84";
-const COLOR_PENDING = "#E3B341";
-const COLOR_ENTRY = "#7D8590";
+type EdgeStyle = { color: string; type: "solid" | "dashed"; opacity: number };
 
-const EDGE_STYLE: Record<string, { color: string; type: "solid" | "dashed"; opacity: number }> = {
-  defines: { color: "rgba(61,220,132,0.55)", type: "solid", opacity: 0.9 },
-  mentions: { color: "rgba(125,133,144,0.35)", type: "solid", opacity: 0.6 },
-  sibling: { color: "rgba(167,139,250,0.55)", type: "dashed", opacity: 0.8 },
-};
+/**
+ * Canvas colors come from the live CSS tokens (ECharts cannot resolve
+ * var()), read at render time so a theme switch repaints the graph.
+ */
+function readPalette() {
+  const accent = cssVar("--color-accent");
+  const amber = cssVar("--color-amber");
+  const muted = cssVar("--color-text3");
+  const purple = cssVar("--color-purple");
+  const edges: Record<string, EdgeStyle> = {
+    defines: { color: withAlpha(accent, 0.55), type: "solid", opacity: 0.9 },
+    mentions: { color: withAlpha(muted, 0.35), type: "solid", opacity: 0.6 },
+    sibling: { color: withAlpha(purple, 0.55), type: "dashed", opacity: 0.8 },
+  };
+  return {
+    settled: accent,
+    pending: amber,
+    entry: muted,
+    edges,
+    tooltipBg: cssVar("--color-well"),
+    tooltipBorder: cssVar("--color-edge"),
+    tooltipText: cssVar("--color-text"),
+    legendText: cssVar("--color-text2"),
+    labelText: cssVar("--color-text2"),
+  };
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -73,6 +92,7 @@ function GraphCanvas({
   const chartRef = useRef<echarts.ECharts | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const theme = useResolvedTheme();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -96,18 +116,19 @@ function GraphCanvas({
   useEffect(() => {
     const chart = chartRef.current;
     if (chart === null) return;
+    const palette = readPalette();
     const categories = [
-      { name: t("graph.legend.settledTerm"), itemStyle: { color: COLOR_SETTLED } },
-      { name: t("graph.legend.pendingTerm"), itemStyle: { color: COLOR_PENDING } },
-      { name: t("graph.legend.entry"), itemStyle: { color: COLOR_ENTRY } },
+      { name: t("graph.legend.settledTerm"), itemStyle: { color: palette.settled } },
+      { name: t("graph.legend.pendingTerm"), itemStyle: { color: palette.pending } },
+      { name: t("graph.legend.entry"), itemStyle: { color: palette.entry } },
     ];
     const option: ChartOption = {
       backgroundColor: "transparent",
       tooltip: {
         confine: true,
-        backgroundColor: "#0A0D0B",
-        borderColor: "#2A2F2B",
-        textStyle: { color: "#E6EDE8", fontSize: 11, fontFamily: "monospace" },
+        backgroundColor: palette.tooltipBg,
+        borderColor: palette.tooltipBorder,
+        textStyle: { color: palette.tooltipText, fontSize: 11, fontFamily: "monospace" },
         formatter: (params) => {
           const node = nodeOfDatum(
             Array.isArray(params) ? params[0]?.data : params.data,
@@ -137,7 +158,7 @@ function GraphCanvas({
         icon: "rect",
         itemWidth: 8,
         itemHeight: 8,
-        textStyle: { color: "#9BA8A0", fontSize: 10, fontFamily: "monospace" },
+        textStyle: { color: palette.legendText, fontSize: 10, fontFamily: "monospace" },
         data: categories.map((c) => c.name),
       },
       series: [
@@ -150,7 +171,7 @@ function GraphCanvas({
           force: { repulsion: 130, edgeLength: [40, 110], gravity: 0.08, friction: 0.2 },
           label: {
             position: "right",
-            color: "#C7D2CB",
+            color: palette.labelText,
             fontSize: 10,
             fontFamily: "monospace",
           },
@@ -169,13 +190,14 @@ function GraphCanvas({
           links: snapshot.edges.map((edge) => ({
             source: edge.source,
             target: edge.target,
-            lineStyle: EDGE_STYLE[edge.kind] ?? EDGE_STYLE.mentions,
+            lineStyle: palette.edges[edge.kind] ?? palette.edges.mentions,
           })),
         },
       ],
     };
     chart.setOption(option);
-  }, [snapshot, t]);
+    // `theme` is read through the CSS tokens above, so it must re-run this.
+  }, [snapshot, t, theme]);
 
   return <div ref={containerRef} className="h-[420px] w-full" />;
 }
@@ -302,7 +324,7 @@ function GraphBody({ jobId, live }: { jobId: string; live: boolean }) {
         ))}
         <div className="ml-auto flex items-center gap-2 font-mono text-[10px] text-text3">
           {snapshot?.truncated === true && (
-            <span className="bg-[rgba(227,179,65,0.1)] px-1.5 py-0.5 text-amber">
+            <span className="bg-amber/10 px-1.5 py-0.5 text-amber">
               {t("graph.truncated")}
             </span>
           )}
@@ -362,7 +384,7 @@ export function TranslationGraphView({ jobId, live }: { jobId: string; live: boo
         className="flex cursor-pointer items-center justify-between px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase"
       >
         <div className="flex items-center gap-1.5">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3DDC84" strokeWidth="1.5">
+          <svg className="text-accent" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
             <circle cx="2.5" cy="2.5" r="1.5" />
             <circle cx="7.5" cy="7.5" r="1.5" />
             <path d="M3.5 3.5 L6.5 6.5" />

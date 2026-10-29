@@ -205,7 +205,7 @@ export function W6Export() {
             }}
           />
           <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center border border-edge bg-raised">
-            <svg width="24" height="24" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="#1F8A5B">
+            <svg className="text-accent-lo" width="24" height="24" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="currentColor">
               <rect x="2" y="4" width="16" height="2" />
               <rect x="2" y="4" width="2" height="12" />
               <rect x="16" y="4" width="2" height="12" />
@@ -362,28 +362,28 @@ export function W6Export() {
         <div
           className="absolute -right-5 -top-5 h-[140px] w-[140px] opacity-10"
           style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, ${cancelled ? "#F5B454" : "#3DDC84"} 1px, transparent 1px)`,
+            backgroundImage: `radial-gradient(circle at 2px 2px, ${cancelled ? "var(--color-amber)" : "var(--color-accent)"} 1px, transparent 1px)`,
             backgroundSize: "8px 8px",
           }}
         />
         <div
           className={`flex h-14 w-14 shrink-0 items-center justify-center ${cancelled ? "bg-amber" : "bg-accent"}`}
           style={{
-            boxShadow: `0 0 32px ${cancelled ? "rgba(245,180,84,0.35)" : "rgba(61,220,132,0.35)"}`,
+            boxShadow: `0 0 32px ${cancelled ? "color-mix(in srgb, var(--color-amber) 35%, transparent)" : "color-mix(in srgb, var(--color-accent) 35%, transparent)"}`,
           }}
         >
           {cancelled ? (
             <svg viewBox="0 0 32 32" width="32" height="32" shapeRendering="crispEdges">
-              <rect x="10" y="8" width="4" height="16" fill="#0A100D" />
-              <rect x="18" y="8" width="4" height="16" fill="#0A100D" />
+              <rect className="text-sel-ink" x="10" y="8" width="4" height="16" fill="currentColor" />
+              <rect className="text-sel-ink" x="18" y="8" width="4" height="16" fill="currentColor" />
             </svg>
           ) : (
             <svg viewBox="0 0 32 32" width="32" height="32" shapeRendering="crispEdges">
-              <rect x="6" y="16" width="4" height="4" fill="#0A100D" />
-              <rect x="10" y="20" width="4" height="4" fill="#0A100D" />
-              <rect x="14" y="16" width="4" height="4" fill="#0A100D" />
-              <rect x="18" y="12" width="4" height="4" fill="#0A100D" />
-              <rect x="22" y="8" width="4" height="4" fill="#0A100D" />
+              <rect className="text-sel-ink" x="6" y="16" width="4" height="4" fill="currentColor" />
+              <rect className="text-sel-ink" x="10" y="20" width="4" height="4" fill="currentColor" />
+              <rect className="text-sel-ink" x="14" y="16" width="4" height="4" fill="currentColor" />
+              <rect className="text-sel-ink" x="18" y="12" width="4" height="4" fill="currentColor" />
+              <rect className="text-sel-ink" x="22" y="8" width="4" height="4" fill="currentColor" />
             </svg>
           )}
         </div>
@@ -449,10 +449,10 @@ export function W6Export() {
                 className="flex h-10 w-10 shrink-0 items-center justify-center border border-edge bg-card"
                 style={{
                   backgroundImage:
-                    "repeating-linear-gradient(45deg, transparent 0 3px, rgba(61,220,132,0.06) 3px 4px)",
+                    "repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--color-accent) 6%, transparent) 3px 4px)",
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="#3DDC84">
+                <svg className="text-accent" width="20" height="20" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="currentColor">
                   <rect x="2" y="4" width="16" height="2" />
                   <rect x="2" y="4" width="2" height="12" />
                   <rect x="16" y="4" width="2" height="12" />
@@ -560,10 +560,10 @@ export function W6Export() {
           <div className="border border-line2 bg-raised p-5">
             <div className="flex items-start gap-[14px]">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-edge bg-card">
-                <svg width="20" height="20" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="#F5B454">
+                <svg className="text-amber" width="20" height="20" viewBox="0 0 20 20" shapeRendering="crispEdges" fill="currentColor">
                   <rect x="2" y="4" width="16" height="14" />
                   <rect x="4" y="2" width="12" height="2" />
-                  <rect x="4" y="10" width="12" height="2" fill="#0A100D" />
+                  <rect className="text-sel-ink" x="4" y="10" width="12" height="2" fill="currentColor" />
                 </svg>
               </div>
               <div className="flex-1">
@@ -679,8 +679,8 @@ export function W6Export() {
             </div>
           </div>
           <div
-            className="relative flex-1 overflow-hidden border border-[#5B3EBD] p-6"
-            style={{ background: "linear-gradient(135deg, #16141F 0%, var(--color-raised) 100%)" }}
+            className="relative flex-1 overflow-hidden border border-purple/50 p-6"
+            style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--color-purple) 8%, var(--color-raised)) 0%, var(--color-raised) 100%)" }}
           >
             <div
               className="absolute -bottom-[30px] -right-[30px] h-[120px] w-[120px] opacity-15"
@@ -963,8 +963,8 @@ export function W6Export() {
             <div
               className="relative mb-[14px] border px-3 py-[10px] text-[11px] leading-[1.5] text-text2"
               style={{
-                background: "rgba(167,139,250,0.06)",
-                borderColor: "rgba(167,139,250,0.2)",
+                background: "color-mix(in srgb, var(--color-purple) 6%, transparent)",
+                borderColor: "color-mix(in srgb, var(--color-purple) 20%, transparent)",
               }}
             >
               <b className="text-purple">{t("w6.share.noticeStrong")}</b>
@@ -1071,8 +1071,8 @@ export function W6Export() {
                   </div>
                 )}
                 <button
-                  className="flex w-full items-center justify-center gap-[6px] bg-[linear-gradient(180deg,#A78BFA_0%,#7C5CE0_100%)] p-3 text-[13px] font-bold text-sel-ink hover:bg-[linear-gradient(180deg,#B99BFF_0%,#8B6CE8_100%)] disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ boxShadow: "0 4px 12px rgba(167,139,250,0.2)" }}
+                  className="flex w-full items-center justify-center gap-[6px] bg-[linear-gradient(180deg,var(--color-purple)_0%,color-mix(in_srgb,var(--color-purple)_78%,#000)_100%)] p-3 text-[13px] font-bold text-sel-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ boxShadow: "0 4px 12px color-mix(in srgb, var(--color-purple) 20%, transparent)" }}
                   disabled={
                     upload.kind === "running" ||
                     wizard.translateJobId === null ||

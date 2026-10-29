@@ -119,9 +119,9 @@ export function ModelSelect({
           height="10"
           viewBox="0 0 10 10"
           fill="none"
-          stroke="#6A7C74"
+          stroke="currentColor"
           strokeWidth="1.5"
-          className="shrink-0"
+          className="text-text4 shrink-0"
         >
           <path d="M2 3 L5 6 L8 3" />
         </svg>

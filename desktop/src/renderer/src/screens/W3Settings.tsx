@@ -112,7 +112,7 @@ const TERM_STYLES: readonly TermStyle[] = ["auto", "translate", "transliterate"]
 
 function KeyIcon({ color }: { color: string }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth="1.5">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={{ color }} strokeWidth="1.5">
       <path d="M4 5 A2 2 0 0 1 8 5 A2 2 0 0 1 4 5 Z" />
       <path d="M6 7 V12 M4 10 H6" />
     </svg>
@@ -123,7 +123,7 @@ function KeyIcon({ color }: { color: string }) {
  *  that authenticates through a terminal and never takes one. */
 function TerminalIcon({ color }: { color: string }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth="1.5">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" style={{ color }} strokeWidth="1.5">
       <rect x="1.5" y="2.5" width="11" height="9" />
       <path d="M4 6 L6 8 L4 10 M7.5 10 H10" />
     </svg>
@@ -148,8 +148,8 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
   const disabled = provider.disabled === true;
   const ready = !disabled && state.kind === "ready";
   const tone = ready
-    ? { border: "border-accent-lo", chip: "rgba(61,220,132,0.12)", ink: "#3DDC84" }
-    : { border: "border-amber", chip: "rgba(245,180,84,0.12)", ink: "#F5B454" };
+    ? { border: "border-accent-lo", chip: "color-mix(in srgb, var(--color-accent) 12%, transparent)", ink: "var(--color-accent)" }
+    : { border: "border-amber", chip: "color-mix(in srgb, var(--color-amber) 12%, transparent)", ink: "var(--color-amber)" };
 
   const name = providerLabel(provider, t);
   const title = ready
@@ -181,7 +181,7 @@ function CliSetupBand({ provider, state }: { provider: Provider; state: CliSetup
   return (
     <div
       className={`relative mb-5 flex items-center gap-[14px] border ${tone.border} ${ready ? "bg-tint" : ""} px-[18px] py-4`}
-      style={ready ? undefined : { background: "rgba(245,180,84,0.04)" }}
+      style={ready ? undefined : { background: "color-mix(in srgb, var(--color-amber) 4%, transparent)" }}
     >
       <div
         className="flex h-8 w-8 shrink-0 items-center justify-center"
@@ -617,7 +617,7 @@ export function W3Settings() {
                     ? "flex cursor-pointer items-center gap-2 border border-accent px-3 py-[6px] text-[12px] font-semibold text-text"
                     : "flex cursor-pointer items-center gap-2 border border-edge bg-transparent px-3 py-[6px] text-[12px] text-text2 hover:border-edge2 hover:text-text"
                 }
-                style={selected ? { background: "rgba(61,220,132,0.08)" } : undefined}
+                style={selected ? { background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" } : undefined}
               >
                 <div className="h-3 w-[18px]" style={flag} />
                 {t(`w3.lang.${code}`)}
@@ -744,7 +744,7 @@ export function W3Settings() {
                     ? "cursor-pointer border border-accent px-3 py-[8px] text-left"
                     : "cursor-pointer border border-edge bg-transparent px-3 py-[8px] text-left hover:border-edge2"
                 }
-                style={active ? { background: "rgba(61,220,132,0.08)" } : undefined}
+                style={active ? { background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" } : undefined}
               >
                 <div className="flex items-center gap-2">
                   <div
@@ -804,9 +804,9 @@ export function W3Settings() {
         <div className="mb-5 flex items-center gap-[14px] border border-purple bg-hover px-[18px] py-4">
           <div
             className="flex h-8 w-8 items-center justify-center"
-            style={{ background: "rgba(167,139,250,0.12)" }}
+            style={{ background: "color-mix(in srgb, var(--color-purple) 12%, transparent)" }}
           >
-            <KeyIcon color="#A78BFA" />
+            <KeyIcon color="var(--color-purple)" />
           </div>
           <div className="flex-1">
             <div className="mb-[2px] text-[13px] font-bold text-text">
@@ -884,9 +884,9 @@ export function W3Settings() {
         <div className="relative mb-5 flex items-center gap-[14px] border border-accent-lo bg-tint px-[18px] py-4">
           <div
             className="flex h-8 w-8 items-center justify-center"
-            style={{ background: "rgba(61,220,132,0.12)" }}
+            style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
           >
-            <KeyIcon color="#3DDC84" />
+            <KeyIcon color="var(--color-accent)" />
           </div>
           <div className="flex-1">
             <div className="mb-[2px] text-[13px] font-bold text-text">
@@ -909,13 +909,13 @@ export function W3Settings() {
       ) : (
         <div
           className="relative mb-5 flex items-center gap-[14px] border border-amber px-[18px] py-4"
-          style={{ background: "rgba(245,180,84,0.04)" }}
+          style={{ background: "color-mix(in srgb, var(--color-amber) 4%, transparent)" }}
         >
           <div
             className="flex h-8 w-8 items-center justify-center"
-            style={{ background: "rgba(245,180,84,0.12)" }}
+            style={{ background: "color-mix(in srgb, var(--color-amber) 12%, transparent)" }}
           >
-            <KeyIcon color="#F5B454" />
+            <KeyIcon color="var(--color-amber)" />
           </div>
           <div className="flex-1">
             <div className="mb-[2px] text-[13px] font-bold text-text">
@@ -1011,7 +1011,7 @@ export function W3Settings() {
                         ? "cursor-pointer border border-purple px-3 py-[8px] text-left"
                         : "cursor-pointer border border-edge bg-transparent px-3 py-[8px] text-left hover:border-edge2"
                     }
-                    style={selected ? { background: "rgba(167,139,250,0.08)" } : undefined}
+                    style={selected ? { background: "color-mix(in srgb, var(--color-purple) 8%, transparent)" } : undefined}
                   >
                     <div
                       className={`truncate text-[12px] font-bold ${selected ? "text-text" : "text-text2"}`}
@@ -1048,7 +1048,7 @@ export function W3Settings() {
                     ? {
                         background: "linear-gradient(135deg, var(--color-tint) 0%, var(--color-raised) 100%)",
                         border: "2px solid var(--color-accent)",
-                        boxShadow: "0 0 24px rgba(61,220,132,0.12)",
+                        boxShadow: "0 0 24px color-mix(in srgb, var(--color-accent) 12%, transparent)",
                       }
                     : undefined
                 }
@@ -1067,7 +1067,7 @@ export function W3Settings() {
                       bottom: "-20px",
                       right: "-20px",
                       backgroundImage:
-                        "radial-gradient(circle at 2px 2px, #3DDC84 1px, transparent 1px)",
+                        "radial-gradient(circle at 2px 2px, var(--color-accent) 1px, transparent 1px)",
                       backgroundSize: "6px 6px",
                     }}
                   />
@@ -1440,7 +1440,7 @@ export function W3Settings() {
           above, because it is the same kind of news: the button you pressed
           did not do the thing, and here is why. */}
       {manualSeedRefusal !== null && (
-        <div className="mb-8 border border-amber/40 px-3 py-2 text-[11px] leading-[1.5]" style={{ background: "rgba(245,180,84,0.06)" }}>
+        <div className="mb-8 border border-amber/40 px-3 py-2 text-[11px] leading-[1.5]" style={{ background: "color-mix(in srgb, var(--color-amber) 6%, transparent)" }}>
           <span className="font-semibold text-amber">{t("w3.manualSeed.refused")}</span>
           <span className="text-text2"> — {t(`w3.manualSeed.${manualSeedRefusal}`)}</span>
           {manualSeedRefusal === "requestFailed" && (
@@ -1519,7 +1519,7 @@ export function W3Settings() {
                 go("w4");
               }}
               className={buttonClass("primary", "md")}
-              style={canStart ? { boxShadow: "0 0 24px rgba(61,220,132,0.25)" } : undefined}
+              style={canStart ? { boxShadow: "0 0 24px color-mix(in srgb, var(--color-accent) 25%, transparent)" } : undefined}
             >
               {t("w3.footer.start")}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">

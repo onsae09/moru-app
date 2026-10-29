@@ -673,7 +673,7 @@ export function GlossaryScreen() {
         <div className="flex items-center gap-1.5 border border-accent bg-accent/8 px-3 py-1.5">
           <LocaleFlag locale={SOURCE_LANG} className="h-3 w-[18px] shrink-0" />
           <span className="font-mono text-[11px] text-text">{SOURCE_LANG}</span>
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#3DDC84" strokeWidth="1.8">
+          <svg className="text-accent" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M2 3 L6 3 M3 4 L5 4 M4 5 L4 5" />
           </svg>
           <LocaleFlag locale={targetMeta.code} className="h-3 w-[18px] shrink-0" />
@@ -704,7 +704,7 @@ export function GlossaryScreen() {
         <div className="flex-1" />
 
         <div className="flex min-w-[240px] items-center gap-1.5 border border-edge bg-card px-2.5 py-1.5 focus-within:border-accent">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#6A7C74" strokeWidth="1.5">
+          <svg className="text-text4" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
             <circle cx="5" cy="5" r="3.5" />
             <path d="M8 8 L11 11" />
           </svg>

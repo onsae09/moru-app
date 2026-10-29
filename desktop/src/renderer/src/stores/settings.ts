@@ -34,6 +34,9 @@ export const DEFAULT_MOD_BLACKLIST: readonly string[] = [
 
 export type PresetId = "fast" | "balanced" | "best";
 
+/** "system" follows the OS prefers-color-scheme (see lib/theme.ts). */
+export type ThemeSetting = "dark" | "light" | "system";
+
 /** Serializable translation inputs locked when an unattended queue starts. */
 export interface TranslationRunSettings {
   outputDir: string | null;
@@ -65,7 +68,7 @@ export interface TranslationRunSettings {
 
 interface SettingsStore {
   uiLanguage: "ko" | "en";
-  theme: "dark" | "light";
+  theme: ThemeSetting;
   outputDir: string | null;
   /** last-used translate settings, restored as W3 defaults */
   preset: PresetId | "custom";
@@ -188,9 +191,14 @@ export const useSettings = create<SettingsStore>()(
         const added = DEFAULT_MOD_BLACKLIST.filter(
           (id) => !seen.includes(id) && !blacklist.includes(id),
         );
+        // Anything but a known value (hand-edited storage) falls back to the
+        // dark default every existing install already has.
+        const theme: ThemeSetting =
+          saved.theme === "light" || saved.theme === "system" ? saved.theme : "dark";
         return {
           ...current,
           ...saved,
+          theme,
           launcherPaths,
           modBlacklist: [...blacklist, ...added],
           seenDefaultBlacklist: [...DEFAULT_MOD_BLACKLIST],

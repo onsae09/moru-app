@@ -296,6 +296,7 @@ export function W4Progress() {
     targetLocale,
     startTranslate,
     cancelTranslate,
+    pauseTranslate,
     resumeTranslate,
   } = wizard;
 
@@ -446,6 +447,7 @@ export function W4Progress() {
 
   /* ---- cancel dialog ---- */
   const [showCancel, setShowCancel] = useState(false);
+  const [pausing, setPausing] = useState(false);
 
   /* ---- live log panel ---- */
   const [logOpen, setLogOpen] = useState(true);
@@ -521,9 +523,21 @@ export function W4Progress() {
         />
         {running && (
           <div className="flex gap-1.5">
-            {/* A pause control goes here once the engine supports pausing a
-                run (i18n keys w4.controls.pause / pauseSoon are kept for it).
-                A permanently disabled button only read as broken. */}
+            <button
+              type="button"
+              disabled={pausing}
+              onClick={() => {
+                setPausing(true);
+                void pauseTranslate().finally(() => setPausing(false));
+              }}
+              className="flex items-center gap-1.5 border border-edge bg-transparent px-3 py-1.5 text-[11px] font-semibold text-text2 enabled:hover:border-edge2 enabled:hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" shapeRendering="crispEdges">
+                <rect x="1" y="1" width="3" height="8" fill="currentColor" />
+                <rect x="6" y="1" width="3" height="8" fill="currentColor" />
+              </svg>
+              {t("w4.controls.pause")}
+            </button>
             <button
               onClick={() => setShowCancel(true)}
               className="flex items-center gap-1.5 border border-edge bg-transparent px-3 py-1.5 text-[11px] font-semibold text-text2 hover:border-red hover:text-red"

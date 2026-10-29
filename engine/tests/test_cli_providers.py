@@ -1615,3 +1615,45 @@ def test_reason_codes_stay_a_small_closed_set() -> None:
     }
     # Stable wire strings: renderers key their copy off these.
     assert all(value == value.lower() and " " not in value for value in codes.values())
+
+
+# --------------------------------------------------------------------------
+# Event loop hygiene
+# --------------------------------------------------------------------------
+
+
+def _off_loop_probe(seen: list[bool]):
+    import threading
+
+    def probe(*_args: object) -> str:
+        seen.append(threading.current_thread() is not threading.main_thread())
+        raise credentials.CliAuthError("stop here")
+
+    return probe
+
+
+async def test_codex_refreshes_credentials_off_the_event_loop(monkeypatch) -> None:
+    """A stale grant refreshes over sync httpx (30s timeout): on the loop it
+    froze every concurrent batch and the job WebSocket."""
+    seen: list[bool] = []
+    monkeypatch.setattr(credentials.CODEX_STORE, "credentials", _off_loop_probe(seen))
+    with pytest.raises(credentials.CliAuthError):
+        await codex.CodexLLM().acompletion(
+            model="gpt-5.5", messages=[], model_response=ModelResponse()
+        )
+    with pytest.raises(credentials.CliAuthError):
+        await codex.fetch_models()
+    assert seen == [True, True]
+
+
+async def test_gemini_refreshes_credentials_off_the_event_loop(monkeypatch) -> None:
+    seen: list[bool] = []
+    monkeypatch.setattr(
+        type(credentials.GEMINI_CLI_STORE), "transport", property(lambda self: "http")
+    )
+    monkeypatch.setattr(credentials.GEMINI_CLI_STORE, "token", _off_loop_probe(seen))
+    with pytest.raises(credentials.CliAuthError):
+        await gemini_cli.GeminiCliLLM().acompletion(
+            model="gemini-3.5-flash", messages=[], model_response=ModelResponse()
+        )
+    assert seen == [True]

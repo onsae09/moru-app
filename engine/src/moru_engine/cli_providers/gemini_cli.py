@@ -272,8 +272,10 @@ class GeminiCliLLM(CustomLLM):
             return await asyncio.to_thread(
                 _agy_response, kwargs["model_response"], model, kwargs["messages"]
             )
-        token = GEMINI_CLI_STORE.token()
-        project = GEMINI_CLI_STORE.project()
+        # Token refresh and the first-run project lookup are blocking HTTP
+        # calls (up to 30s each): off the event loop like the agy path.
+        token = await asyncio.to_thread(GEMINI_CLI_STORE.token)
+        project = await asyncio.to_thread(GEMINI_CLI_STORE.project)
         payload = build_payload(
             model, kwargs["messages"], kwargs.get("optional_params") or {}, project
         )

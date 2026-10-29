@@ -14,6 +14,7 @@ transformer drops them — see the note in oh-my-pi's ``RequestBody``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -286,7 +287,7 @@ async def fetch_models() -> list[str]:
     that kills the whole translate run, so the live list is the only
     authority — a hardcoded guess is how "gpt-5.6-codex-mini" shipped.
     """
-    creds = CODEX_STORE.credentials()
+    creds = await asyncio.to_thread(CODEX_STORE.credentials)
     headers = build_headers(creds.access, creds.account_id, str(uuid.uuid4()))
     headers["Accept"] = "application/json"
     params = {"client_version": CODEX_CLIENT_VERSION}
@@ -325,7 +326,10 @@ class CodexLLM(CustomLLM):
 
     async def acompletion(self, *args: Any, **kwargs: Any) -> ModelResponse:
         model = kwargs["model"]
-        creds = CODEX_STORE.credentials()
+        # A stale grant is refreshed over a blocking HTTP call (up to 30s)
+        # and a file write: off the event loop, or every concurrent batch
+        # and the job WebSocket stall behind it.
+        creds = await asyncio.to_thread(CODEX_STORE.credentials)
         payload = build_payload(model, kwargs["messages"], kwargs.get("optional_params") or {})
         headers = build_headers(creds.access, creds.account_id, str(uuid.uuid4()))
         state = _StreamState()

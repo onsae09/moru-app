@@ -462,3 +462,22 @@ def test_explicit_max_tokens_and_non_thinking_claude_untouched():
         "max_tokens"
     ] == 1
     assert build_lm("anthropic/claude-sonnet-4-6", cache=False).kwargs["max_tokens"] == 8192
+
+
+def test_cli_auth_refusal_is_not_a_transport_error() -> None:
+    import litellm
+
+    from moru_engine.cli_providers.credentials import CliAuthError
+    from moru_engine.dspy_modules.lm import cli_auth_failure, is_transport_error
+
+    original = CliAuthError("log in again")
+    try:
+        try:
+            raise original
+        except CliAuthError as inner:
+            raise litellm.exceptions.APIConnectionError(
+                message=str(inner), llm_provider="claude-code", model="x"
+            ) from inner
+    except litellm.exceptions.APIConnectionError as wrapped:
+        assert cli_auth_failure(wrapped) is original
+        assert is_transport_error(wrapped) is False

@@ -957,3 +957,24 @@ def test_delete_empties_a_checkpoint_it_cannot_unlink(
     assert store.summaries() == []
     assert store.for_session("s1").load() is None
     assert not store.for_session("s1").exists()
+
+
+@pytest.mark.asyncio
+async def test_refused_cli_login_interrupts_instead_of_backing_off(tmp_path: Path) -> None:
+    import litellm
+
+    from moru_engine.cli_providers.credentials import CliAuthError
+
+    modpack, scan = _lang_pack(tmp_path, LANG_ENTRIES)
+    try:
+        raise litellm.exceptions.APIConnectionError(
+            message="login", llm_provider="claude-code", model="x"
+        ) from CliAuthError("`claude login`으로 다시 로그인해 주세요.")
+    except litellm.exceptions.APIConnectionError as exc:
+        wrapped = exc
+    refused = ExhaustedAfter(1, wrapped)
+    _, result = await _run(_lang_config(modpack, tmp_path / "out"), refused, scan=scan)
+
+    assert result.interruption is not None
+    assert result.interruption.reason == "auth"
+    assert refused.refusals == 1

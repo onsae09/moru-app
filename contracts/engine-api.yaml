@@ -137,7 +137,8 @@ paths:
         detail?}: reason is quota (the provider reported spent credit or an
         exhausted daily quota, which stops the run at once, or kept refusing
         for capacity (429) with no call succeeding for 120 s; the run stops
-        instead of failing every remaining batch) or
+        instead of failing every remaining batch), auth (a CLI subscription
+        provider refused or lacks its login, or is switched off) or
         shutdown (the engine stopped mid-run); error is a user-facing message
         and detail the provider's own error excerpt;
         done export frames carry {zip_path, overrides_zip_path,
@@ -633,7 +634,7 @@ paths:
         a fresh run with the same session_id replaces it. A run still live in
         this engine process is listed with state running. Resume with
         POST /jobs {type: translate, params: {session_id, resume: true,
-        api_key?, api_base?}}.
+        api_key?, api_base?, model?}}.
       responses:
         "200":
           content:
@@ -959,7 +960,9 @@ components:
             starts over and discards that session's checkpoint. resume: true
             continues the session's checkpoint instead (404 when there is
             none): every other param comes from the checkpoint - only
-            session_id, api_key and api_base are read from the request - the
+            session_id, api_key, api_base and model are read from the request
+            (model only to move a run off a provider that refused its login or
+            was switched off) - the
             modpack is scanned afresh, translations whose source text is
             unchanged are reused without a provider call, only the remaining
             entries are sent, and the run then validates, writes the TM and
@@ -1555,6 +1558,12 @@ components:
             Codex, Gemini CLI), which authenticate off the CLI's own OAuth
             grant and never take an API key.
         connected: { type: boolean }
+        disabled:
+          type: boolean
+          description: >-
+            Present and true for a provider switched off in this build. It is
+            listed so a saved selection can explain itself, but is never
+            probed, and POST /jobs refuses a translate run on it (422).
         login_hint:
           type: string
           nullable: true
@@ -1602,7 +1611,7 @@ components:
         reason:
           type: string
           nullable: true
-          enum: [quota, shutdown, null]
+          enum: [quota, auth, shutdown, null]
         error: { type: string, nullable: true }
         translated_entries:
           type: integer

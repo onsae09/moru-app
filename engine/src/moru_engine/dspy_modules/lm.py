@@ -220,6 +220,26 @@ _TRANSPORT_EXCEPTIONS = (
 _TRANSPORT_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 
 
+def cli_auth_failure(exc: BaseException) -> BaseException | None:
+    """The CLI provider's credential refusal behind a failed call, if any.
+
+    LiteLLM wraps whatever a custom provider raises in APIConnectionError,
+    which reads as a transport failure and earns backoff and retries. A
+    missing login or a switched-off provider never clears by waiting, so
+    the original is dug out of the cause chain and handled on its own.
+    """
+    from ..cli_providers.credentials import CliAuthError
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, CliAuthError):
+            return current
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return None
+
+
 def is_transport_error(exc: BaseException) -> bool:
     """Whether a failed provider call means the server could not serve it,
     as opposed to the model having answered badly.
@@ -238,6 +258,8 @@ def is_transport_error(exc: BaseException) -> bool:
     """
     if isinstance(exc, TimeoutError):
         return True
+    if cli_auth_failure(exc) is not None:
+        return False
     if isinstance(exc, _TRANSPORT_EXCEPTIONS):
         return True
     status = getattr(exc, "status_code", None)

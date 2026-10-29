@@ -569,6 +569,8 @@ export interface ResumeTranslateParams {
   resume: true;
   api_key?: string;
   api_base?: string;
+  /** Only to move a run off a provider that refused it or was switched off. */
+  model?: string;
 }
 
 /** GET /checkpoints — a translate session that can be resumed. */
@@ -584,7 +586,7 @@ export interface CheckpointSummary {
   /** `running`: live in this engine process — reattach, never resume. */
   state: "running" | "interrupted" | "cancelled" | "failed";
   /** Why an interrupted run stopped; null when the process died first. */
-  reason: "quota" | "shutdown" | null;
+  reason: "quota" | "auth" | "shutdown" | null;
   error: string | null;
   /** Entries a resume will not send to the provider again. */
   translated_entries: number;
@@ -753,8 +755,8 @@ export interface TerminalFrame extends JobEventMeta {
    * so "이어서 번역" can continue it. True for every outcome except done.
    */
   resumable?: boolean;
-  /** interrupted: `quota` (provider capacity spent) or `shutdown`. */
-  reason?: "quota" | "shutdown";
+  /** interrupted: `quota` (capacity spent), `auth` (login refused) or `shutdown`. */
+  reason?: "quota" | "auth" | "shutdown";
   /** interrupted: the provider's own error excerpt, for the live log. */
   detail?: string;
   stats?: PipelineStats;

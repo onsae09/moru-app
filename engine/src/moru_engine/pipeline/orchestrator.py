@@ -31,6 +31,7 @@ from ..community import (
 )
 from ..dspy_modules import GlossaryExtractor, build_lm, load_translator
 from ..dspy_modules.lm import (
+    cli_auth_failure,
     context_window_filled,
     is_transport_error,
     provider_limit,
@@ -106,6 +107,10 @@ CAPACITY_GIVE_UP_SECONDS = 120.0
 #: Shown when a run stops because the provider account is out of capacity.
 #: Korean-first like the engine's other surfaced messages; the desktop renders
 #: its own localized copy from the interruption reason and falls back to this.
+AUTH_INTERRUPTION_MESSAGE = (
+    "AI 제공자가 인증을 거부해 번역을 일시 중지했습니다. 다시 로그인하거나 "
+    "다른 제공자를 고른 뒤 '이어서 번역'으로 계속할 수 있습니다."
+)
 QUOTA_INTERRUPTION_MESSAGE = (
     "AI 제공자의 사용량 한도(할당량·크레딧)에 도달해 번역을 일시 중지했습니다. "
     "완료된 번역은 저장되었으니 한도가 초기화된 뒤 '이어서 번역'으로 "
@@ -741,6 +746,21 @@ class TranslationPipeline:
         ):
             raise asyncio.CancelledError("pipeline cancelled")
 
+    def _interrupt_for_auth(self, exc: BaseException) -> NoReturn:
+        """Stop the run resumably: the provider refused the credential.
+
+        Same unwinding as :meth:`_interrupt_for_quota`. Without it a
+        logged-out CLI provider read as a transport failure, and a run whose
+        every call is refused backed off batch after batch for hours.
+        """
+        if self._interruption is None:
+            detail = str(exc)[:500]
+            self._interruption = PipelineInterruption(
+                reason="auth", message=AUTH_INTERRUPTION_MESSAGE, detail=detail
+            )
+            logger.warning("Provider refused the credential; interrupting: %s", detail)
+        raise asyncio.CancelledError("provider credential refused")
+
     def _interrupt_for_quota(self, exc: BaseException) -> NoReturn:
         """Stop the whole run resumably: the provider has no capacity left.
 
@@ -1062,8 +1082,12 @@ class TranslationPipeline:
                     # here is weak evidence; translation applies its own
                     # backoff before deciding. An exhausted account, though,
                     # cannot translate either.
-                    if self._interruptible and provider_limit(exc) == "quota":
-                        self._interrupt_for_quota(exc)
+                    if self._interruptible:
+                        auth = cli_auth_failure(exc)
+                        if auth is not None:
+                            self._interrupt_for_auth(auth)
+                        if provider_limit(exc) == "quota":
+                            self._interrupt_for_quota(exc)
                     return []
                 # Full error text goes back to the model; pydantic messages
                 # name the offending index/field, which is exactly the fix
@@ -1156,6 +1180,13 @@ class TranslationPipeline:
                             **({} if rollout_id is None else {"rollout_id": rollout_id}),
                         )
                 except Exception as exc:  # noqa: BLE001 — LLM/adapter errors
+                    auth = cli_auth_failure(exc)
+                    if auth is not None:
+                        if self._interruptible:
+                            self._interrupt_for_auth(auth)
+                        # One-off calls (retranslate, retry): neither retry
+                        # nor split — every half would be refused the same.
+                        return {}, {key: [str(auth)] for key in batch}
                     if self._interruptible and provider_limit(exc) == "quota":
                         # The account itself is out (spent credit, a daily
                         # quota): every retry and every queued batch would be

@@ -27,6 +27,7 @@ from platformdirs import user_data_dir
 from pydantic import ValidationError
 
 from .. import __version__
+from ..cli_providers import is_disabled_model
 from ..glossary.pair_harvester import is_untranslated_copy
 from ..handlers.base import create_default_registry
 from ..migration import MigrationCatalog, build_migration_catalog, logical_file_id
@@ -261,7 +262,10 @@ _CHECKPOINT_PARAM_EXCLUDES = frozenset(
 #: Connection settings a resume request may supply: where and as whom to
 #: reach the provider, never what or how to translate. Everything else comes
 #: from the checkpoint, so the resumed output matches an uninterrupted run.
-_RESUME_OVERRIDES = ("api_key", "api_base")
+#: ``model`` is the one exception: a session whose provider was switched
+#: off or logged out could otherwise never finish, so the desktop may move
+#: the rest of the run to another model.
+_RESUME_OVERRIDES = ("api_key", "api_base", "model")
 #: Why a translate job the engine itself stopped (shutdown) is resumable.
 SHUTDOWN_INTERRUPTION_MESSAGE = (
     "앱 또는 번역 엔진이 종료되어 번역이 중단되었습니다. 완료된 번역은 "
@@ -842,6 +846,11 @@ class JobManager:
                 config = PipelineConfig(**config_params)
             except ValidationError as exc:
                 raise JobParamsError(f"invalid translate params: {exc}") from exc
+            if not config.source_text_only and is_disabled_model(config.model):
+                # Every call would be refused; fail the request, not the run.
+                raise JobParamsError(
+                    f"provider of {config.model} is switched off; choose another model"
+                )
             if config.glossary_store_dir is None:
                 config.glossary_store_dir = self._glossary_store_dir
             scan_record = self._jobs.get(str(scan_job_id)) if scan_job_id else None

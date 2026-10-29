@@ -401,8 +401,10 @@ export function W3Settings() {
       (cliState === null &&
         !hasLocalKey &&
         (secretQuery.isPending || secretQuery.isFetching || secretsQuery.isFetching)));
+  // A switched-off provider never starts, whatever its credentials say.
   const hasKey =
-    cliState !== null ? cliState.kind === "ready" : hasLocalKey || provider?.has_key === true;
+    provider?.disabled !== true &&
+    (cliState !== null ? cliState.kind === "ready" : hasLocalKey || provider?.has_key === true);
   const modelMatches = providerIdOf(settings.model) === providerId;
   const canStart = isLocal ? modelMatches : hasKey && modelMatches;
 
@@ -710,7 +712,7 @@ export function W3Settings() {
                 onClick={() => settings.set({ provider: id })}
                 className={
                   off
-                    ? "cursor-not-allowed border border-edge bg-transparent px-3 py-[8px] text-left opacity-40"
+                    ? `cursor-not-allowed border ${active ? "border-amber" : "border-edge"} bg-transparent px-3 py-[8px] text-left opacity-60`
                     : active
                     ? "cursor-pointer border border-accent px-3 py-[8px] text-left"
                     : "cursor-pointer border border-edge bg-transparent px-3 py-[8px] text-left hover:border-edge2"

@@ -11,6 +11,7 @@ import type {
   JobEventFrame,
   JobSnapshot,
   PipelineStats,
+  Provider,
   ScanResult,
   TranslateParams,
 } from "../../../shared/engine";
@@ -403,6 +404,29 @@ function attachTranslationEvents(jobId: string, sessionId: string, after?: numbe
 }
 
 /** The engine's checkpoint for a session whose run is no longer live. */
+/**
+ * Model a resume continues on: the run's own, unless its provider refused
+ * the login (`auth`) or is switched off now — then the settings' current
+ * choice, provided that one is usable.
+ */
+async function resumeModel(
+  original: string,
+  interruptReason: string | null,
+  current: string,
+): Promise<string> {
+  if (current === original) return original;
+  let providers: Provider[] = [];
+  try {
+    providers = await api.providers();
+  } catch {
+    return original;
+  }
+  const disabled = (model: string): boolean =>
+    providers.some((p) => p.id === providerIdOf(model) && p.disabled === true);
+  if (disabled(current)) return original;
+  return interruptReason === "auth" || disabled(original) ? current : original;
+}
+
 async function findCheckpoint(sessionId: string): Promise<CheckpointSummary | null> {
   try {
     const checkpoints = await api.checkpoints();
@@ -1188,11 +1212,15 @@ export const useWizard = create<WizardStore>((set, get) => ({
       return "gone";
     }
 
+    // A run stopped because its provider refused the login, or whose
+    // provider has since been switched off, could never finish on that
+    // model: it continues on the model currently chosen in settings.
+    const settings = useSettings.getState();
+    const model = await resumeModel(record.model, state.interruptReason, settings.model);
     // The key is never written into the checkpoint, so it is re-read here. A
     // local runtime's address is environment, not run semantics: current one.
-    const providerId = providerIdOf(record.model);
+    const providerId = providerIdOf(model);
     const apiKey = (await moru.secrets.get(`apikey:${providerId}`)) ?? undefined;
-    const settings = useSettings.getState();
     const apiBase =
       providerId === "ollama"
         ? settings.ollamaBaseUrl
@@ -1218,11 +1246,14 @@ export const useWizard = create<WizardStore>((set, get) => ({
       ...initialJobState,
       scanState: record.scanTotals !== null ? "done" : "idle",
       scanTotals: record.scanTotals,
-      model: record.model,
+      model,
       runState: "running",
       startedAt: Date.now(),
     });
     get().appendLog("info", `translate resume: ${record.modpackName} → ${record.targetLocale}`);
+    if (model !== record.model) {
+      get().appendLog("warn", `model switched for resume: ${record.model} → ${model}`);
+    }
     moru.setBusy(true);
     useSessions.getState().patch(sessionId, { status: "running", finishedAt: null, error: null });
 
@@ -1232,6 +1263,7 @@ export const useWizard = create<WizardStore>((set, get) => ({
         resume: true,
         api_key: apiKey,
         api_base: apiBase,
+        ...(model !== record.model ? { model } : {}),
       });
       set({ translateJobId: job.id });
       useSessionJobs.getState().register(sessionId, job.id);

@@ -2502,3 +2502,21 @@ def test_deleting_a_running_session_is_refused(
     res = client.delete(f"/sessions/{done_translate_job.id}", headers=AUTH)
     assert res.status_code == 409
     assert client.app.state.job_manager.get(done_translate_job.id) is done_translate_job
+
+
+def test_translate_with_a_switched_off_provider_is_refused(
+    client: TestClient, tmp_path: Path
+) -> None:
+    res = client.post(
+        "/jobs",
+        json={
+            "type": "translate",
+            "params": {
+                "modpack_path": str(tmp_path),
+                "model": "claude-code/claude-sonnet-4-6",
+            },
+        },
+        headers=AUTH,
+    )
+    assert res.status_code == 422
+    assert "switched off" in res.json()["detail"]

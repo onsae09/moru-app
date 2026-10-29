@@ -235,6 +235,14 @@ function GlossaryRow({ progress }: { progress: GlossaryProgress }) {
 }
 
 
+
+/** i18n keys of the interrupted banner for a run's stop reason. */
+function interruptBanner(reason: string | null): { title: string; body: string } {
+  if (reason === "quota") return { title: "w4.banner.quotaTitle", body: "w4.banner.quotaBody" };
+  if (reason === "auth") return { title: "w4.banner.authTitle", body: "w4.banner.authBody" };
+  return { title: "w4.banner.interruptedTitle", body: "w4.banner.interruptedBody" };
+}
+
 export function W4Progress() {
   const { t, i18n } = useTranslation();
   const lang: "ko" | "en" = i18n.language === "en" ? "en" : "ko";
@@ -618,10 +626,10 @@ export function W4Progress() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-bold text-amber">
-              {t(interruptReason === "quota" ? "w4.banner.quotaTitle" : "w4.banner.interruptedTitle")}
+              {t(interruptBanner(interruptReason).title)}
             </div>
             <div className="mt-0.5 text-[11.5px] text-text2">
-              {t(interruptReason === "quota" ? "w4.banner.quotaBody" : "w4.banner.interruptedBody")}
+              {t(interruptBanner(interruptReason).body)}
             </div>
           </div>
           {resumable && sessionId !== null && (

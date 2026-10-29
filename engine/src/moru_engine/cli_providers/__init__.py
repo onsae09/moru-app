@@ -39,6 +39,7 @@ __all__ = [
     "CLI_PROVIDER_CATALOG",
     "CLI_PROVIDER_IDS",
     "CliAuthError",
+    "is_disabled_model",
     "provider_models",
     "provider_status",
     "register_cli_providers",
@@ -110,6 +111,12 @@ CLI_PROVIDER_CATALOG: tuple[dict[str, Any], ...] = (
 
 
 CLI_PROVIDER_IDS: frozenset[str] = frozenset(p["id"] for p in CLI_PROVIDER_CATALOG)
+
+
+def is_disabled_model(model: str) -> bool:
+    """Whether ``model`` routes to a catalog provider switched off here."""
+    prefix = model.split("/", 1)[0]
+    return any(p["id"] == prefix and p.get("disabled") for p in CLI_PROVIDER_CATALOG)
 
 
 def to_wire_model(model: str) -> str:

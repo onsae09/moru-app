@@ -16,6 +16,7 @@ Three contracts are load-bearing here and each has a real failure mode:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -224,6 +225,9 @@ def test_counts_returns_every_bucket_in_one_call(manual_session):
         "modified",
         "flagged",
         "stale_source",
+        "reviewed",
+        "unreviewed",
+        "glossary",
     }
     assert counts["all"] == 2
     assert counts["modified"] == 1
@@ -414,3 +418,116 @@ def test_human_translations_resolver_selects_by_provenance(manual_session):
 def test_human_translations_resolver_is_empty_without_a_journal(tmp_path):
     store = ManualStore(SessionStore(sessions_dir=tmp_path / "sessions"))
     assert store.human_translations("no-such-job") == {}
+
+
+def _mark(ctx, refs, reviewed: bool) -> dict:
+    res = ctx["client"].post(
+        f"/translate/{ctx['job_id']}/entries/reviewed",
+        json={
+            "refs": [{"file": f, "key": k} for f, k in refs],
+            "reviewed": reviewed,
+        },
+        headers=AUTH,
+    )
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _bucket(ctx, bucket: str, client=None) -> list[str]:
+    res = (client or ctx["client"]).get(
+        f"/translate/{ctx['job_id']}/entries?filter={bucket}", headers=AUTH
+    )
+    assert res.status_code == 200, res.text
+    return [e["key"] for e in res.json()["entries"]]
+
+
+def test_review_marks_drive_their_buckets_in_one_journal_line(manual_session):
+    body = _mark(
+        manual_session,
+        [("a.snbt", "q.desc1"), ("a.snbt", "q.desc2"), ("a.snbt", "nope")],
+        True,
+    )
+    # The unknown ref is skipped, not fatal for the rest of the page.
+    assert body == {"matched": 2, "changed": 2}
+    # A whole page signed off is one fsync'd append, not one per entry.
+    assert _kinds(manual_session["journal"]) == ["review"]
+    assert _bucket(manual_session, "reviewed") == ["q.desc1", "q.desc2"]
+    assert _bucket(manual_session, "unreviewed") == []
+
+    # Re-marking is a no-op and writes nothing.
+    assert _mark(manual_session, [("a.snbt", "q.desc1")], True)["changed"] == 0
+    assert len(_kinds(manual_session["journal"])) == 1
+
+    _mark(manual_session, [("a.snbt", "q.desc2")], False)
+    assert _bucket(manual_session, "reviewed") == ["q.desc1"]
+    assert _bucket(manual_session, "unreviewed") == ["q.desc2"]
+
+    res = manual_session["client"].get(
+        f"/translate/{manual_session['job_id']}/entries", headers=AUTH
+    )
+    marks = {e["key"]: e.get("reviewed", False) for e in res.json()["entries"]}
+    assert marks == {"q.desc1": True, "q.desc2": False}
+
+    counts = manual_session["client"].get(
+        f"/translate/{manual_session['job_id']}/entries/counts", headers=AUTH
+    ).json()
+    assert counts["reviewed"] == 1
+    assert counts["unreviewed"] == 1
+
+
+def test_review_route_validates_its_body(manual_session):
+    res = manual_session["client"].post(
+        f"/translate/{manual_session['job_id']}/entries/reviewed",
+        json={"refs": [], "reviewed": True},
+        headers=AUTH,
+    )
+    assert res.status_code == 422
+
+
+def test_review_marks_survive_a_fresh_process(manual_session):
+    _mark(manual_session, [("a.snbt", "q.desc2")], True)
+
+    client = TestClient(create_app("tok", config_dir=manual_session["cfg_root"]))
+    res = client.post(
+        "/sessions/import",
+        json={"input_path": str(manual_session["imported"])},
+        headers=AUTH,
+    )
+    assert res.status_code == 200, res.text
+    assert _bucket(manual_session, "reviewed", client) == ["q.desc2"]
+
+
+def test_compaction_keeps_flags_review_marks_and_drafts(tmp_path):
+    """Compaction folds committed text into the snapshot. Everything the
+    snapshot cannot hold must be carried over, not deleted with the journal."""
+    store = ManualStore(SessionStore(sessions_dir=tmp_path / "sessions"))
+    journal = store.journal("job1")
+    journal.commit(file="a", key="k1", text="t", src_sha=None, origin="human")
+    journal.flag(file="a", key="k2", on=True)
+    journal.review(refs=[("a", "k1"), ("a", "k3")], on=True)
+    # Text that spells the carry marker must not be mistaken for one.
+    journal.draft(file="a", key="k4", text='초안 "carry":true', src_sha=None)
+    journal.draft(file="a", key="k5", text='x', src_sha=None)
+
+    asyncio.run(store.compacted("job1"))
+    state = ManualJournal(journal.path).replay()
+    assert state[entry_ref("a", "k2")].flagged is True
+    assert state[entry_ref("a", "k1")].reviewed is True
+    assert state[entry_ref("a", "k3")].reviewed is True
+    assert state[entry_ref("a", "k4")].draft == '초안 "carry":true'
+    # Committed text went to the snapshot; the journal does not repeat it.
+    assert state[entry_ref("a", "k1")].text is None
+
+    # Carried-over lines are not new edits and must not re-trigger a
+    # compaction on the next save, however many entries they cover.
+    reopened = ManualJournal(journal.path)
+    assert reopened.line_count == 4
+    assert reopened.lines_since_compaction == 0
+    reopened.flag(file="a", key="k6", on=True)
+    assert ManualJournal(journal.path).lines_since_compaction == 1
+
+
+def test_draft_text_spelling_the_marker_still_counts_as_an_edit(tmp_path):
+    journal = ManualJournal(tmp_path / "j.manual.jsonl")
+    journal.draft(file="a", key="k", text='"carry":true', src_sha=None)
+    assert ManualJournal(journal.path).lines_since_compaction == 1

@@ -188,10 +188,14 @@ paths:
         - name: filter
           in: query
           description: >-
-            Entry status buckets, plus two manual-translation views that are
-            not statuses: `flagged` (bookmarked by a hand translator) and
+            Entry status buckets, plus views over editing-session state that
+            are not statuses: `flagged` (bookmarked by a hand translator),
             `stale_source` (hand-translated, then the source string changed
-            under it on a later scan).
+            under it on a later scan), `reviewed` / `unreviewed` (signed
+            off on the review screen, or not yet), and `glossary` (the source
+            contains a user-glossary term — honouring its key_scope — whose
+            agreed target text is missing from the translation; entries with
+            no translation yet are never in it).
           schema:
             type: string
             enum:
@@ -203,6 +207,9 @@ paths:
                 modified,
                 flagged,
                 stale_source,
+                reviewed,
+                unreviewed,
+                glossary,
               ]
         - name: page
           in: query
@@ -217,11 +224,40 @@ paths:
             text. Applied to the whole filtered set BEFORE pagination, so the
             review screen can find entries on any page.
           schema: { type: string, maxLength: 200 }
+        - name: file
+          in: query
+          description: Only entries of this source file (exact Entry.file).
+          schema: { type: string, maxLength: 1024 }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EntryPage" }
+  /translate/{jobId}/entries/files:
+    get:
+      summary: >
+        Per-source-file progress for the review screen's side list, in one
+        pass over the result: total, failed, modified and reviewed counts
+        per Entry.file, sorted by file.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [file, total, failed, modified, reviewed]
+                      properties:
+                        file: { type: string }
+                        total: { type: integer }
+                        failed: { type: integer }
+                        modified: { type: integer }
+                        reviewed: { type: integer }
   /translate/{jobId}/graph:
     get:
       summary: >
@@ -356,6 +392,46 @@ paths:
               schema: { $ref: "#/components/schemas/Entry" }
         "409": { description: translate job still running }
         "422": { description: translator build or retranslation failure }
+  /translate/{jobId}/entries/reviewed:
+    post:
+      summary: >
+        Mark entries reviewed (or take the mark back). One durable journal
+        line per request however many refs it carries, so signing off a
+        whole page is one write. Persisted with the session; survives
+        restarts and journal compaction. An AI retranslate clears the mark,
+        since the new text was never reviewed.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refs, reviewed]
+              properties:
+                refs:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [key, file]
+                    properties:
+                      key: { type: string }
+                      file: { type: string }
+                reviewed: { type: boolean }
+      responses:
+        "200":
+          description: >-
+            `matched` refs named a known entry (unknown ones are skipped);
+            `changed` of them were not already in the requested state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matched: { type: integer }
+                  changed: { type: integer }
   /translate/{jobId}/entries/counts:
     get:
       summary: >
@@ -368,6 +444,10 @@ paths:
           in: query
           description: Applied before counting, same semantics as /entries.
           schema: { type: string, maxLength: 200 }
+        - name: file
+          in: query
+          description: Count only this source file's entries, as /entries.
+          schema: { type: string, maxLength: 1024 }
       responses:
         "200":
           content:
@@ -1323,6 +1403,16 @@ components:
           type: boolean
           default: false
           description: Bookmarked by a hand translator to revisit.
+        reviewed:
+          type: boolean
+          default: false
+          description: Signed off on the review screen.
+        glossary_missing:
+          type: array
+          items: { type: string }
+          description: >-
+            Agreed glossary target terms the translation lacks although its
+            source names them. Present only on /entries rows that lack any.
         stale_source:
           type: boolean
           default: false

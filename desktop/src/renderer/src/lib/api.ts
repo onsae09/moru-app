@@ -11,6 +11,7 @@ import type {
   Entry,
   EntryContext,
   EntryCounts,
+  EntryFileProgress,
   EntryFilter,
   EntryPage,
   ExportParams,
@@ -159,11 +160,16 @@ export const api = {
     page: number,
     pageSize = 100,
     search = "",
+    file: string | null = null,
   ) =>
     request<EntryPage>(
       `/translate/${jobId}/entries?filter=${filter}&page=${page}&page_size=${pageSize}` +
-        (search === "" ? "" : `&search=${encodeURIComponent(search)}`),
+        (search === "" ? "" : `&search=${encodeURIComponent(search)}`) +
+        (file === null ? "" : `&file=${encodeURIComponent(file)}`),
     ),
+  /** Per-source-file totals for the review screen's side list. */
+  entryFiles: (jobId: string) =>
+    request<{ files: EntryFileProgress[] }>(`/translate/${jobId}/entries/files`),
   /**
    * Every failed entry's identity, walked across pages.
    *
@@ -185,12 +191,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ file }),
     }),
+  /**
+   * Sign entries off on the review screen (or take the mark back). The
+   * engine journals the whole batch as one line, so a page is one write.
+   */
+  markReviewed: (jobId: string, refs: { key: string; file: string }[], reviewed: boolean) =>
+    request<{ matched: number; changed: number }>(`/translate/${jobId}/entries/reviewed`, {
+      method: "POST",
+      body: JSON.stringify({ refs, reviewed }),
+    }),
   /** Every bucket's count in one server-side pass over the result. */
-  entryCounts: (jobId: string, search = "") =>
-    request<EntryCounts>(
-      `/translate/${jobId}/entries/counts` +
-        (search === "" ? "" : `?search=${encodeURIComponent(search)}`),
-    ),
+  entryCounts: (jobId: string, search = "", file: string | null = null) => {
+    const params = new URLSearchParams();
+    if (search !== "") params.set("search", search);
+    if (file !== null) params.set("file", file);
+    const qs = params.toString();
+    return request<EntryCounts>(`/translate/${jobId}/entries/counts` + (qs === "" ? "" : `?${qs}`));
+  },
   /**
    * Commit or draft one hand translation. No model, no provider, no network
    * beyond the loopback engine — this is the manual write path.

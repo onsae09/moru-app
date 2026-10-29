@@ -75,6 +75,8 @@ from .jobs import (
     scan_result_payload,
 )
 from .live_models import LIVE_MODEL_PROVIDERS, fetch_live_models
+from .glossary_check import GlossaryMissIndex
+from .manual_journal import entry_ref
 from .manual_state import EntryBucket, ManualStore
 from .sessions import SessionStore
 
@@ -211,6 +213,20 @@ class EntryPatch(BaseModel):
 
 class RetranslateRequest(BaseModel):
     file: str | None = None
+
+
+class EntryRef(BaseModel):
+    key: str
+    file: str
+
+
+class ReviewMark(BaseModel):
+    """Sign entries off on the review screen, or take the mark back."""
+
+    #: A page at most is what the review screen marks at once; the bound
+    #: keeps one request from writing an unbounded journal line.
+    refs: list[EntryRef] = Field(min_length=1, max_length=1000)
+    reviewed: bool
 
 
 class ValidateRequest(BaseModel):
@@ -404,6 +420,7 @@ def create_app(
     #: keystroke must reuse the instance rather than rebuild it.
     assist_holder: dict[str, Glossary] = {}
     validator_holder: dict[str, TranslationValidator] = {}
+    miss_index_holder: dict[str, GlossaryMissIndex] = {}
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -632,6 +649,33 @@ def create_app(
             assist_holder[cache_key] = cached
         return cached
 
+    def _glossary_misses(result: PipelineResult) -> dict[str, tuple[str, ...]]:
+        """Entries missing a required glossary term, by journal ref."""
+        config = result.config
+        cache_key = f"{config.source_locale}\u0000{config.target_locale}"
+        index = miss_index_holder.get(cache_key)
+        if index is None:
+            index = GlossaryMissIndex(_assist_glossary(result))
+            miss_index_holder[cache_key] = index
+        return index.for_entries(result.entries)
+
+    def _in_file(
+        entries: list[EntryResult], file: str | None
+    ) -> list[EntryResult]:
+        """Entries of one source file, or all of them when none is named."""
+        return entries if file is None else [e for e in entries if e.file == file]
+
+    def _drop_glossary_caches() -> None:
+        """Forget every glossary-derived cache after the glossary changed.
+
+        Without this the aid panel, live validation and the review screen's
+        glossary filter keep answering from the glossary as it was when they
+        first looked, until the sidecar restarts.
+        """
+        assist_holder.clear()
+        validator_holder.clear()
+        miss_index_holder.clear()
+
     def _assist_validator(result: PipelineResult) -> TranslationValidator:
         config = result.config
         cache_key = f"{config.source_locale}\u0000{config.target_locale}"
@@ -679,11 +723,62 @@ def create_app(
     # otherwise swallow "counts" as an entry key.
     @api.get("/translate/{job_id}/entries/counts")
     async def translate_entry_counts(
-        job_id: str, search: str = Query("", max_length=200)
+        job_id: str,
+        search: str = Query("", max_length=200),
+        file: str | None = Query(None, max_length=1024),
     ) -> dict[str, int]:
-        """Every bucket's size in one pass over the result."""
+        """Every bucket's size in one pass over the result (or one file)."""
         _, result = _get_pipeline_result(job_id)
-        return manual.counts(job_id, result.entries, search)
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        return manual.counts(job_id, _in_file(result.entries, file), search, misses)
+
+    @api.get("/translate/{job_id}/entries/files")
+    async def translate_entry_files(job_id: str) -> dict[str, Any]:
+        """Per-source-file progress for the review screen's side list.
+
+        One pass over the result. The review table is paginated, so the
+        client cannot add these up from the rows it holds.
+        """
+        _, result = _get_pipeline_result(job_id)
+        state = manual.state(job_id)
+        files: dict[str, dict[str, Any]] = {}
+        for e in result.entries:
+            row = files.get(e.file)
+            if row is None:
+                row = files[e.file] = {
+                    "file": e.file,
+                    "total": 0,
+                    "failed": 0,
+                    "modified": 0,
+                    "reviewed": 0,
+                }
+            row["total"] += 1
+            if e.status is EntryStatus.FAILED:
+                row["failed"] += 1
+            elif e.status is EntryStatus.MODIFIED:
+                row["modified"] += 1
+            mark = state.get(entry_ref(e.file, e.key))
+            if mark is not None and mark.reviewed:
+                row["reviewed"] += 1
+        return {"files": sorted(files.values(), key=lambda r: r["file"])}
+
+    @api.post("/translate/{job_id}/entries/reviewed")
+    async def mark_reviewed(job_id: str, body: ReviewMark) -> dict[str, int]:
+        """Mark entries reviewed. One journal line, whatever the batch size.
+
+        Unknown refs are skipped rather than failing the batch: the list was
+        built from a page the client fetched, and an entry vanishing between
+        fetch and mark must not cost the reviewer the rest of the page.
+        """
+        _, result = _get_pipeline_result(job_id)
+        by_ref = {(e.file, e.key): e for e in result.entries}
+        picked = [
+            entry
+            for ref in body.refs
+            if (entry := by_ref.get((ref.file, ref.key))) is not None
+        ]
+        changed = await manual.record_review(job_id, picked, body.reviewed)
+        return {"matched": len(picked), "changed": changed}
 
     @api.get("/translate/{job_id}/entries")
     async def translate_entries(
@@ -692,24 +787,32 @@ def create_app(
         page: int = Query(1, ge=1),
         page_size: int = Query(100, ge=1, le=500),
         search: str = Query("", max_length=200),
+        file: str | None = Query(None, max_length=1024),
     ) -> dict[str, Any]:
-        """One page of review entries.
+        """One page of review entries, optionally from one source file.
 
         `search` filters across the WHOLE result set before paginating, so
         the review screen can find an entry that lives on any page — a
         client-side filter would only ever see the 100 rows it fetched.
+
+        `glossary_missing` lists the glossary target terms an entry's
+        translation lacks, on entries that lack any.
         """
         _, result = _get_pipeline_result(job_id)
-        entries = manual.select(job_id, result.entries, filter, search)
+        # Cached per entry: after the first call this is a dict walk.
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        entries = manual.select(
+            job_id, _in_file(result.entries, file), filter, search, misses
+        )
         start = (page - 1) * page_size
-        return {
-            "total": len(entries),
-            "page": page,
-            "entries": [
-                manual.enrich(_entry_payload(e), job_id, e)
-                for e in entries[start : start + page_size]
-            ],
-        }
+        rows: list[dict[str, Any]] = []
+        for e in entries[start : start + page_size]:
+            payload = manual.enrich(_entry_payload(e), job_id, e)
+            missing = misses.get(entry_ref(e.file, e.key))
+            if missing:
+                payload["glossary_missing"] = list(missing)
+            rows.append(payload)
+        return {"total": len(entries), "page": page, "entries": rows}
 
     @api.get("/translate/{job_id}/graph")
     async def translate_graph(
@@ -869,9 +972,12 @@ def create_app(
             ) from exc
         finally:
             pipeline.close()
+        # New model text was never looked at, so a sign-off of the old text
+        # must not carry over to it.
+        await manual.record_review(job_id, [entry], False)
         manager.refresh_translate_stats(record)
         await _persist_session(record)
-        return _entry_payload(entry)
+        return manual.enrich(_entry_payload(entry), job_id, entry)
 
     @api.get("/translate/{job_id}/stats")
     async def translate_stats(job_id: str) -> dict[str, Any]:
@@ -1105,6 +1211,7 @@ def create_app(
         path = _glossary_path(body.source_lang, body.target_lang)
         data = body.model_dump()
         _atomic_write_json(path, data)
+        _drop_glossary_caches()
         return data
 
     # -- tm / community / providers / config --------------------------------------------
@@ -1123,6 +1230,9 @@ def create_app(
             raise HTTPException(
                 status_code=502, detail=f"community sync failed: {exc}"
             ) from exc
+        finally:
+            # The sync writes community terms into the glossary store.
+            _drop_glossary_caches()
 
     @api.get("/community/translation")
     async def community_translation(

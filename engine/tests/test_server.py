@@ -2610,3 +2610,213 @@ def test_scan_cache_signature_ignores_runtime_and_output_trees(tmp_path: Path) -
     assert JobManager._scan_tree_signature(tmp_path) == signature
     (tmp_path / "mods" / "b.jar").write_bytes(b"jar2")
     assert JobManager._scan_tree_signature(tmp_path) != signature
+
+
+# -- review: glossary filter -------------------------------------------------
+
+
+def _install_glossary_review_job(client: TestClient, tmp_path: Path) -> JobRecord:
+    """A finished run in its own locale pair, so no other test's glossary
+    (the client is module-scoped) leaks into it."""
+    entries = [
+        # Source names "Pickaxe"; translation dropped the agreed term.
+        EntryResult(
+            key="item.pick",
+            file="mod/lang/en_us.json",
+            source_text="Iron Pickaxe",
+            translated_text="鉄のつるはし",
+            status=EntryStatus.PASSED,
+        ),
+        # Carries the agreed term: fine.
+        EntryResult(
+            key="item.pick2",
+            file="mod/lang/en_us.json",
+            source_text="Gold Pickaxe",
+            translated_text="金のピッケル",
+            status=EntryStatus.PASSED,
+        ),
+        # "pickaxes" is not the alias "pickaxe" (word boundary), so no rule.
+        EntryResult(
+            key="item.other",
+            file="mod/lang/en_us.json",
+            source_text="Many pickaxes",
+            translated_text="たくさん",
+            status=EntryStatus.PASSED,
+        ),
+        # Scoped rule: "Wither" -> "衰弱" applies to effect.* keys only.
+        EntryResult(
+            key="entity.wither",
+            file="mod/lang/en_us.json",
+            source_text="Wither",
+            translated_text="ウィザー",
+            status=EntryStatus.PASSED,
+        ),
+        EntryResult(
+            key="effect.wither",
+            file="mod/lang/en_us.json",
+            source_text="Wither",
+            translated_text="ウィザー",
+            status=EntryStatus.PASSED,
+        ),
+        # Untranslated: nothing to check yet.
+        EntryResult(
+            key="item.pick3",
+            file="mod/lang/en_us.json",
+            source_text="Stone Pickaxe",
+            translated_text=None,
+            status=EntryStatus.FAILED,
+        ),
+    ]
+    result = PipelineResult(
+        config=PipelineConfig(
+            modpack_path=tmp_path / "modpack",
+            output_dir=tmp_path / "out",
+            source_locale="en_us",
+            target_locale="ja_jp",
+            model="openai/gpt-4o-mini",
+        ),
+        entries=entries,
+        stats=PipelineStats(total_entries=len(entries)),
+    )
+    record = JobRecord(
+        id=str(uuid.uuid4()),
+        type=JobType.TRANSLATE,
+        params={"modpack_path": str(tmp_path / "modpack")},
+        status=JobStatus.DONE,
+        result=result,
+        finished=True,
+    )
+    client.app.state.job_manager.register_job(record)
+    client.app.state.job_manager.session_store.save_job_session(record)
+    return record
+
+
+def _put_ja_glossary(client: TestClient, terms: list[dict[str, Any]]) -> None:
+    response = client.put(
+        "/glossary",
+        json={"source_lang": "en_us", "target_lang": "ja_jp", "terms": terms},
+        headers=AUTH,
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_glossary_filter_lists_entries_missing_a_required_term(
+    client: TestClient, tmp_path: Path
+) -> None:
+    _put_ja_glossary(
+        client,
+        [
+            {"source": "Pickaxe", "target": "ピッケル"},
+            {"source": "Wither", "target": "衰弱", "key_scope": ["effect.*"]},
+        ],
+    )
+    record = _install_glossary_review_job(client, tmp_path)
+
+    response = client.get(
+        f"/translate/{record.id}/entries", params={"filter": "glossary"}, headers=AUTH
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [e["key"] for e in body["entries"]] == ["item.pick", "effect.wither"]
+    assert body["entries"][0]["glossary_missing"] == ["ピッケル"]
+    assert body["entries"][1]["glossary_missing"] == ["衰弱"]
+
+    # Unfiltered rows carry the annotation too, and only where it applies.
+    rows = client.get(f"/translate/{record.id}/entries", headers=AUTH).json()["entries"]
+    annotated = {e["key"] for e in rows if "glossary_missing" in e}
+    assert annotated == {"item.pick", "effect.wither"}
+
+    counts = client.get(f"/translate/{record.id}/entries/counts", headers=AUTH).json()
+    assert counts["glossary"] == 2
+
+
+def test_glossary_filter_follows_edits_and_glossary_changes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    _put_ja_glossary(client, [{"source": "Pickaxe", "target": "ピッケル"}])
+    record = _install_glossary_review_job(client, tmp_path)
+
+    def glossary_keys() -> list[str]:
+        response = client.get(
+            f"/translate/{record.id}/entries",
+            params={"filter": "glossary"},
+            headers=AUTH,
+        )
+        assert response.status_code == 200, response.text
+        return [e["key"] for e in response.json()["entries"]]
+
+    assert glossary_keys() == ["item.pick"]
+
+    # Fixing the translation clears it: the per-entry cache sees the change.
+    response = client.patch(
+        f"/translate/{record.id}/entries/item.pick",
+        json={"translated_text": "鉄のピッケル", "file": "mod/lang/en_us.json"},
+        headers=AUTH,
+    )
+    assert response.status_code == 200, response.text
+    assert glossary_keys() == []
+
+    # A changed glossary is picked up without a restart.
+    _put_ja_glossary(client, [{"source": "Iron", "target": "鉄鋼"}])
+    assert glossary_keys() == ["item.pick"]
+
+    _put_ja_glossary(client, [])
+    assert glossary_keys() == []
+    counts = client.get(f"/translate/{record.id}/entries/counts", headers=AUTH).json()
+    assert counts["glossary"] == 0
+
+
+# -- review: per-file progress -----------------------------------------------
+
+
+def test_files_endpoint_aggregates_and_file_param_narrows(
+    client: TestClient, tmp_path: Path
+) -> None:
+    record = _install_glossary_review_job(client, tmp_path)
+    other = "kubejs/assets/other/lang/en_us.json"
+    record.result.entries.append(
+        EntryResult(
+            key="item.x",
+            file=other,
+            source_text="X",
+            translated_text="エックス",
+            status=EntryStatus.MODIFIED,
+        )
+    )
+    response = client.post(
+        f"/translate/{record.id}/entries/reviewed",
+        json={
+            "refs": [
+                {"file": "mod/lang/en_us.json", "key": "item.pick"},
+                {"file": other, "key": "item.x"},
+            ],
+            "reviewed": True,
+        },
+        headers=AUTH,
+    )
+    assert response.status_code == 200, response.text
+
+    # Not swallowed by the `{entry_key:path}` routes.
+    response = client.get(f"/translate/{record.id}/entries/files", headers=AUTH)
+    assert response.status_code == 200, response.text
+    assert response.json()["files"] == [
+        {"file": other, "total": 1, "failed": 0, "modified": 1, "reviewed": 1},
+        {
+            "file": "mod/lang/en_us.json",
+            "total": 6,
+            "failed": 1,
+            "modified": 0,
+            "reviewed": 1,
+        },
+    ]
+
+    response = client.get(
+        f"/translate/{record.id}/entries", params={"file": other}, headers=AUTH
+    )
+    assert [e["key"] for e in response.json()["entries"]] == ["item.x"]
+    counts = client.get(
+        f"/translate/{record.id}/entries/counts", params={"file": other}, headers=AUTH
+    ).json()
+    assert counts["all"] == 1
+    assert counts["reviewed"] == 1
+    assert counts["unreviewed"] == 0

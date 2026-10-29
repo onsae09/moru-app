@@ -41,7 +41,7 @@ export type EntryStatus =
   | "skipped"
   | "pending";
 
-/** Entry buckets the engine can filter by. Two are views, not statuses. */
+/** Entry buckets the engine can filter by. Some are views, not statuses. */
 export type EntryFilter =
   | "all"
   | "pending"
@@ -49,7 +49,10 @@ export type EntryFilter =
   | "warning"
   | "modified"
   | "flagged"
-  | "stale_source";
+  | "stale_source"
+  | "reviewed"
+  | "unreviewed"
+  | "glossary";
 
 /** Who produced `translated_text`. Absent on entries written before it existed. */
 export type EntryOrigin = "machine" | "human" | "tm" | "community";
@@ -63,6 +66,13 @@ export interface Entry {
   errors: string[];
   origin?: EntryOrigin | null;
   flagged?: boolean;
+  /** Signed off on the review screen. Absent means not yet. */
+  reviewed?: boolean;
+  /**
+   * Agreed glossary target terms the translation lacks although its source
+   * names them. Only on `/entries` rows that lack any.
+   */
+  glossary_missing?: string[];
   /**
    * The entry holds a human translation whose recorded source hash no longer
    * matches the scanned source: the pack changed the string underneath it.
@@ -80,6 +90,15 @@ export interface EntryPage {
 
 /** GET /translate/{jobId}/entries/counts — every bucket in one pass. */
 export type EntryCounts = Record<EntryFilter, number>;
+
+/** GET /translate/{jobId}/entries/files — one row per source file. */
+export interface EntryFileProgress {
+  file: string;
+  total: number;
+  failed: number;
+  modified: number;
+  reviewed: number;
+}
 
 /**
  * POST /translate/{jobId}/validate — structured issues, unlike the flattened

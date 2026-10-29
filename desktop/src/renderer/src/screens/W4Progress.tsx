@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { pressable } from "@/components/a11y";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
@@ -509,7 +510,7 @@ export function W4Progress() {
           : "text-text3";
 
   return (
-    <div className="animate-fade-in-up px-10 py-7">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       {/* Step header + controls */}
       <div className="mb-2 flex items-center gap-[10px] font-mono text-[11px] font-semibold tracking-[0.08em] text-text3 uppercase">
         <span className={`${stepColor} ${running ? "animate-pxpulse" : ""}`}>04</span>

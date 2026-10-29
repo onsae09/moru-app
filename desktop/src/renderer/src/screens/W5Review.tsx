@@ -25,6 +25,7 @@ import {
   tokenColorMap,
   useTokenPatterns,
 } from "@/components/EntryText";
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { activateOnKey } from "@/components/a11y";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
@@ -342,7 +343,7 @@ export function W5Review() {
   /* ---- empty state: no translate job yet ---- */
   if (translateJobId === null) {
     return (
-      <div className="animate-fade-in-up px-10 py-[28px]">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         {stepHeader}
         <div
           className="flex flex-col items-center justify-center gap-2 border border-line2 bg-raised py-20"
@@ -411,7 +412,7 @@ export function W5Review() {
   };
 
   return (
-    <div className="animate-fade-in-up px-10 py-[28px]">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       {stepHeader}
 
       {/* Translation graph of the finished run (collapsible) */}

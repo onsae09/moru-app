@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 
 import type { HardcodedMod, ScanCategory, ScanFile } from "../../../shared/engine";
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { pressable } from "@/components/a11y";
 import { api, type TranslationMatch } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -176,7 +177,7 @@ function ScanningState() {
       : 0;
 
   return (
-    <div className="animate-fade-in-up px-10 py-8">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       <StepHeader label={t("w2.stepLabel")} />
       <h1 className="m-0 mb-1.5 text-[26px] font-bold tracking-[-0.02em] text-text">
         {t("w2.scanning.title")}
@@ -233,7 +234,7 @@ function FailedState() {
   const go = useRouter((s) => s.go);
 
   return (
-    <div className="animate-fade-in-up px-10 py-8">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       <StepHeader label={t("w2.stepLabel")} />
       <div className="mx-auto mt-16 max-w-[520px] border border-red/40 bg-card p-8 text-center">
         <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center bg-red/12">
@@ -1225,7 +1226,7 @@ function DoneState() {
     // The blacklist band renders here too: a list broad enough to empty the
     // scan is exactly when the user needs to see it and put a mod back.
     return (
-      <div className="animate-fade-in-up px-10 py-8">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         <StepHeader label={t("w2.stepLabel")} />
         <div className="mt-4">
           <HardcodedBand />
@@ -1237,7 +1238,7 @@ function DoneState() {
   }
 
   return (
-    <div className="animate-fade-in-up px-10 py-8">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       <StepHeader label={t("w2.stepLabel")} />
       <h1 className="m-0 mb-1.5 text-[26px] font-bold tracking-[-0.02em] text-text">
         {t("w2.title")}

@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { ManualContextPanel } from "@/components/ManualContextPanel";
 import { ManualQueue } from "@/components/ManualQueue";
 import {
@@ -188,7 +189,7 @@ export function W5Manual(): ReactNode {
 
   if (translateJobId === null) {
     return (
-      <div className="animate-fade-in-up px-10 py-[28px]">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         {stepHeader}
         <div className="flex flex-col items-center justify-center gap-2 border border-line2 bg-raised py-20">
           <h2 className="m-0 text-[18px] font-bold text-text">{t("w5m.empty.title")}</h2>
@@ -215,7 +216,7 @@ export function W5Manual(): ReactNode {
   if (seedPreparing) {
     const total = scanTotals?.entries ?? 0;
     return (
-      <div className="animate-fade-in-up px-10 py-[28px]">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         {stepHeader}
         <div className="flex flex-col items-center justify-center gap-2 border border-line2 bg-raised py-20">
           <span className="mb-1 inline-block h-4 w-4 animate-pxspin border-2 border-accent border-t-transparent" />
@@ -240,7 +241,7 @@ export function W5Manual(): ReactNode {
    *  blank list the user cannot act on. */
   if (seedFailed) {
     return (
-      <div className="animate-fade-in-up px-10 py-[28px]">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         {stepHeader}
         <div className="flex flex-col items-center justify-center gap-2 border border-red/30 bg-red/5 py-20">
           <h2 className="m-0 text-[18px] font-bold text-text">{t("w5m.failed.title")}</h2>
@@ -268,7 +269,7 @@ export function W5Manual(): ReactNode {
     entry === undefined ? new Map<string, number>() : tokenColorMap(entry.source_text, text);
 
   return (
-    <div className="animate-fade-in-up flex h-full min-h-0 flex-col px-10 py-[28px]">
+    <div className={`${WIZARD_PAGE_CLASS} flex h-full min-h-0 flex-col`}>
       {stepHeader}
 
       <div className="mb-4 flex items-end justify-between gap-6">

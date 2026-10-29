@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Provider, SpeechLevel, TermStyle } from "../../../shared/engine";
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { activateOnKey, pressable } from "@/components/a11y";
 import { ErrorDetails } from "@/components/ErrorDetails";
 import { Button, buttonClass } from "@/components/Button";
@@ -578,7 +579,7 @@ export function W3Settings() {
   );
 
   return (
-    <div className="max-w-[1100px] animate-fade-in-up px-10 py-8">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       {/* Step header */}
       <div className="mb-2 flex items-center gap-[10px] font-mono text-[11px] font-semibold tracking-[0.08em] text-text3 uppercase">
         <span className="text-accent">03</span>

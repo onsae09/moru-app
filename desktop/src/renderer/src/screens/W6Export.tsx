@@ -17,6 +17,7 @@ import type {
   PipelineStats,
   UploadParams,
 } from "../../../shared/engine";
+import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { Button } from "@/components/Button";
 import { ErrorDetails } from "@/components/ErrorDetails";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
@@ -192,7 +193,7 @@ export function W6Export() {
   if (wizard.runState !== "done" && !partial) {
     const toStart = wizard.runState === "idle";
     return (
-      <div className="max-w-[1200px] animate-fade-in-up px-10 py-8">
+      <div className={`${WIZARD_PAGE_CLASS}`}>
         {kicker}
         <div className="relative mt-6 overflow-hidden border border-line2 bg-card px-10 py-16 text-center">
           <div
@@ -349,7 +350,7 @@ export function W6Export() {
   }
 
   return (
-    <div className="max-w-[1200px] animate-fade-in-up px-10 py-8">
+    <div className={`${WIZARD_PAGE_CLASS}`}>
       {kicker}
 
       {/* Success banner */}

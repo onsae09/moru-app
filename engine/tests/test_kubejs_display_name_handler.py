@@ -206,3 +206,30 @@ async def test_tooltip_rewrite_touches_only_the_text(tmp_path: Path) -> None:
     out = tmp_path / "out.js"
     await KubeJSDisplayNameHandler().apply(script, {"tooltip.0001": "아주 무거운 돌"}, out)
     assert out.read_text(encoding="utf-8") == "event.add('minecraft:stone', '아주 무거운 돌')\n"
+
+
+@pytest.mark.asyncio
+async def test_tag_events_are_never_mistaken_for_tooltips(tmp_path: Path) -> None:
+    script = tmp_path / "modpack/kubejs/server_scripts/tags.js"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "ServerEvents.tags('item', event => {\n"
+        "  event.add('forge:ingots', 'kubejs:my_ingot')\n"
+        "  event.add('forge:gems', 'Shiny Gem')\n"
+        "})\n",
+        encoding="utf-8",
+    )
+    assert await KubeJSDisplayNameHandler().extract(script) == {}
+
+
+@pytest.mark.asyncio
+async def test_client_tag_shaped_add_and_lang_entries_are_skipped(tmp_path: Path) -> None:
+    script = tmp_path / "modpack/kubejs/client_scripts/lang.js"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "ClientEvents.lang('en_us', event => { event.add('item.kubejs.gem', 'Gem') })\n"
+        "ItemEvents.tooltip(event => { event.add('#forge:ingots', 'forge:ores') })\n"
+        "ItemEvents.tooltip(event => { event.add('#forge:ingots', 'Smeltable') })\n",
+        encoding="utf-8",
+    )
+    assert await KubeJSDisplayNameHandler().extract(script) == {"tooltip.0001": "Smeltable"}

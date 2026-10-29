@@ -45,12 +45,21 @@ _TEXT_CALL_RE = re.compile(
 )
 
 #: ``event.add(<item>, '…')`` inside ``ItemEvents.tooltip``: the item is a
-#: quoted id or an array of them; only the SECOND argument is text.
+#: quoted id (``mod:item``, ``#mod:tag``) or an array of them; only the
+#: SECOND argument is text. The same call shape registers TAGS in server
+#: scripts (``event.add('forge:ingots', 'kubejs:ingot')``) and lang entries
+#: in ``ClientEvents.lang`` (``event.add('item.x', 'Name')``, key without a
+#: colon), so it is read only in client scripts, only after an id-shaped
+#: first argument, and never when the "text" is itself an id.
+_ID = r"#?[a-z0-9_.-]+:[a-z0-9_./-]+"
 _TOOLTIP_ADD_RE = re.compile(
     r"\b(?:event|e|evt|tooltip)\.add\s*\(\s*"
-    r"(?:'[^'\\\n]*'|\"[^\"\\\n]*\"|\[(?:\s*(?:'[^'\\\n]*'|\"[^\"\\\n]*\")\s*,?)+\s*\])"
+    rf"(?:'{_ID}'|\"{_ID}\"|\[(?:\s*(?:'{_ID}'|\"{_ID}\")\s*,?)+\s*\])"
     r"\s*,\s*"
 )
+
+#: A literal that is a resource id or tag, not prose.
+_RESOURCE_ID_RE = re.compile(rf"^{_ID}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,12 +183,17 @@ def _call_literals(
     return found
 
 
-#: Call shapes beside ``displayName`` and the key prefix each one files under.
-_EXTRA_CALLS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("tooltip", _TOOLTIP_CALL_RE),
-    ("tooltip", _TOOLTIP_ADD_RE),
-    ("text", _TEXT_CALL_RE),
+#: Call shapes beside ``displayName``: key prefix, pattern, and whether the
+#: shape is read only in ``client_scripts/``.
+_EXTRA_CALLS: tuple[tuple[str, re.Pattern[str], bool], ...] = (
+    ("tooltip", _TOOLTIP_CALL_RE, False),
+    ("tooltip", _TOOLTIP_ADD_RE, True),
+    ("text", _TEXT_CALL_RE, False),
 )
+
+
+def _is_client_script(path: Path) -> bool:
+    return "client_scripts" in (part.lower() for part in path.parts)
 
 
 def _display_name_literals(source: str, path: Path) -> list[_DisplayNameLiteral]:
@@ -211,8 +225,13 @@ def _display_name_literals(source: str, path: Path) -> list[_DisplayNameLiteral]
             )
         )
     extra: list[tuple[str, str, int, int]] = []
-    for prefix, call_re in _EXTRA_CALLS:
+    client = _is_client_script(path)
+    for prefix, call_re, client_only in _EXTRA_CALLS:
+        if client_only and not client:
+            continue
         for quote, start, end in _call_literals(source, path, regions, call_re, prefix):
+            if _RESOURCE_ID_RE.match(source[start:end]):
+                continue
             if start not in taken:
                 taken.add(start)
                 extra.append((prefix, quote, start, end))

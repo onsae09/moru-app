@@ -27,6 +27,7 @@ import { persist } from "zustand/middleware";
 import type { Entry, EntryFilter } from "../../../shared/engine";
 import { installTokenPatterns } from "../components/EntryText";
 import { api } from "../lib/api";
+import { useWizard } from "./wizard";
 
 /** Entries fetched per request. The engine caps `page_size` at 500. */
 const PAGE_SIZE = 500;
@@ -239,6 +240,12 @@ interface ManualStore {
   drafts: Record<string, Record<string, string>>;
   /** Revisit bookmarks, per job. Persisted. */
   flags: Record<string, string[]>;
+  /**
+   * Last job id each session's drafts were filed under. Restoring a session
+   * hands it a new job id; without this its drafts stayed under the old one,
+   * invisible and never cleaned up. Persisted.
+   */
+  sessionJobs: Record<string, string>;
 
   open: (jobId: string) => Promise<void>;
   setFilter: (filter: ManualFilter) => Promise<void>;
@@ -301,6 +308,7 @@ export const useManual = create<ManualStore>()(
       ...EMPTY_STATE,
       drafts: {},
       flags: {},
+      sessionJobs: {},
 
       open: async (jobId) => {
         // Idempotent per job: React mounts effects twice under StrictMode, and
@@ -317,7 +325,9 @@ export const useManual = create<ManualStore>()(
         if (current.jobId === jobId && (current.loading || current.error === null)) {
           return;
         }
+        requestEpoch += 1;
         set({ jobId, ...EMPTY_STATE });
+        adoptSessionDrafts(jobId);
         // Adopt the engine's placeholder grammar. The renderer's fallback is
         // close but not identical, and the engine is the authority because the
         // engine is what rejects the translation. Failure is survivable: the
@@ -330,6 +340,7 @@ export const useManual = create<ManualStore>()(
       },
 
       setFilter: async (filter) => {
+        requestEpoch += 1;
         set({ filter, ...EMPTY_STATE });
         await get().loadMore();
       },
@@ -337,12 +348,14 @@ export const useManual = create<ManualStore>()(
       setFlaggedOnly: (on) => set({ flaggedOnly: on, cursor: 0 }),
 
       setSearch: async (search) => {
+        requestEpoch += 1;
         set({ search, ...EMPTY_STATE });
         await get().loadMore();
       },
 
       refresh: async () => {
         const { cursor } = get();
+        requestEpoch += 1;
         set({ ...EMPTY_STATE });
         await get().loadMore();
         // Keep the translator roughly where they were after a re-snapshot.
@@ -354,14 +367,19 @@ export const useManual = create<ManualStore>()(
         if (jobId === null || loading) return;
         if (pagesLoaded > 0 && refs.length >= total) return;
         const wanted = pagesLoaded + 1;
+        const epoch = requestEpoch;
         set({ loading: true, error: null });
         try {
           const page = await api.entries(jobId, filter, wanted, PAGE_SIZE, search);
           const ordered = orderQueue(page.entries);
           set((s) => {
-            // The snapshot moved on while this request was in flight (filter
-            // change, refresh, or a concurrent load): drop this page rather
-            // than appending it out of sequence.
+            // A filter/search change or refresh started over meanwhile: this
+            // page belongs to the old list, and the loading flag to the new
+            // request — leave both alone.
+            if (epoch !== requestEpoch) return {};
+            // The snapshot moved on while this request was in flight (a
+            // concurrent load): drop this page rather than appending it out
+            // of sequence.
             if (s.jobId !== jobId || s.pagesLoaded + 1 !== wanted) {
               return { loading: false };
             }
@@ -376,6 +394,7 @@ export const useManual = create<ManualStore>()(
             };
           });
         } catch (err) {
+          if (epoch !== requestEpoch) return;
           set({
             loading: false,
             error: err instanceof Error ? err.message : String(err),
@@ -490,10 +509,39 @@ export const useManual = create<ManualStore>()(
       // Unlike the other persisted stores this one MUST partialize: `refs`
       // and `entries` are a server snapshot that would exceed the
       // localStorage quota on a large pack, and re-fetching them is correct.
-      partialize: (state) => ({ drafts: state.drafts, flags: state.flags }),
+      partialize: (state) => ({
+        drafts: state.drafts,
+        flags: state.flags,
+        sessionJobs: state.sessionJobs,
+      }),
     },
   ),
 );
+
+/** Bumped whenever the list starts over; an older page response is stale. */
+let requestEpoch = 0;
+
+/** Move the current session's drafts and flags onto its new job id. */
+function adoptSessionDrafts(jobId: string): void {
+  const sessionId = useWizard.getState().sessionId;
+  if (sessionId === null) return;
+  useManual.setState((s) => {
+    const previous = s.sessionJobs[sessionId];
+    const sessionJobs = { ...s.sessionJobs, [sessionId]: jobId };
+    if (previous === undefined || previous === jobId) return { sessionJobs };
+    const drafts = { ...s.drafts };
+    const flags = { ...s.flags };
+    if (drafts[previous] !== undefined) {
+      drafts[jobId] = { ...drafts[previous], ...(drafts[jobId] ?? {}) };
+      delete drafts[previous];
+    }
+    if (flags[previous] !== undefined) {
+      flags[jobId] = [...new Set([...flags[previous], ...(flags[jobId] ?? [])])];
+      delete flags[previous];
+    }
+    return { sessionJobs, drafts, flags };
+  });
+}
 
 /**
  * `sha256(source_text)` truncated to 16 hex chars — the same shape the engine

@@ -172,3 +172,53 @@ test("flags are scoped per job", () => {
   const flags = { other: [refId(refs[0])] };
   expect(visibleQueue({ refs, flaggedOnly: true, flags, jobId: "job1" })).toEqual([]);
 });
+
+test("a page requested under the old filter never lands in the new list", async () => {
+  const { useManual } = await import("./manual.ts");
+  const { useEngineStore } = await import("./engine.ts");
+  useEngineStore.setState({ info: { state: "ready", port: 1, token: "t", restarts: 0 } });
+  const pending = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url) =>
+    new Promise((resolve) => pending.push({ url: String(url), resolve }));
+  const page = (keys) =>
+    new Response(JSON.stringify({ entries: keys.map((k) => entry(k)), total: keys.length }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  try {
+    useManual.setState({ jobId: "job", filter: "all", refs: [], entries: {}, pagesLoaded: 0, total: 0, loading: false });
+    const first = useManual.getState().loadMore();
+    const second = useManual.getState().setFilter("pending");
+    await new Promise((r) => setTimeout(r, 0));
+    // The new filter's page answers first, the stale one afterwards.
+    pending[1].resolve(page(["new.a"]));
+    await second;
+    pending[0].resolve(page(["old.a", "old.b"]));
+    await first;
+    expect(useManual.getState().refs.map((r) => r.key)).toEqual(["new.a"]);
+    expect(useManual.getState().loading).toBe(false);
+  } finally {
+    globalThis.fetch = realFetch;
+    // One bun process runs every test file: hand the next one a clean store.
+    useManual.setState({ jobId: null, filter: "all", refs: [], entries: {}, pagesLoaded: 0, total: 0 });
+  }
+});
+
+test("restoring a session keeps its drafts under the new job id", async () => {
+  const { useManual } = await import("./manual.ts");
+  const { useWizard } = await import("./wizard.ts");
+  useWizard.setState({ sessionId: "sess" });
+  useManual.setState({ sessionJobs: { sess: "old-job" }, drafts: { "old-job": { "a.snbt\u0000k": "초안" } }, flags: {} });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ entries: [], total: 0, patterns: [] }), { status: 200 });
+  try {
+    await useManual.getState().open("new-job");
+    expect(useManual.getState().drafts["new-job"]).toEqual({ "a.snbt\u0000k": "초안" });
+    expect(useManual.getState().drafts["old-job"]).toBeUndefined();
+  } finally {
+    globalThis.fetch = realFetch;
+    useManual.setState({ jobId: null, drafts: {}, flags: {}, sessionJobs: {}, refs: [], entries: {} });
+    useWizard.setState({ sessionId: null });
+  }
+});

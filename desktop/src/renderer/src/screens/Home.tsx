@@ -7,6 +7,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { ErrorDetails } from "@/components/ErrorDetails";
 import { toast } from "@/components/Toast";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
+import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatCompact, formatInt, formatRelative, formatUsd, packInitials } from "@/lib/format";
 import { modelDisplayName } from "@/lib/models";
@@ -460,6 +461,19 @@ export function HomeScreen() {
   const beginSession = async (path: string) => {
     if (queueActive) {
       go("queue");
+      return;
+    }
+    if (/\.(zip|mrpack)$/i.test(path)) {
+      // A dropped launcher export opens like W1's archive picker does.
+      try {
+        const imported = await api.importModpack(path);
+        const probe = await moru.probeModpack(imported.modpack_path);
+        startSession(imported.modpack_path, probe);
+        if (!imported.has_mods) toast(t("w1.import.noModsBody"), { tone: "warn" });
+        go("w1");
+      } catch {
+        toast(t("w1.error.importFailed"), { tone: "err" });
+      }
       return;
     }
     const probe = await moru.probeModpack(path);

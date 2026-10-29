@@ -766,6 +766,18 @@ export interface GlossaryProgressFrame extends JobEventMeta {
   skipped?: boolean;
 }
 
+/**
+ * A resumed run reusing its checkpoint: `checkpointed` arrives first (the
+ * file loaded, before the rescan), then `reused`/`remaining` once every file
+ * is prepared and the saved translations were matched.
+ */
+export interface ResumeFrame extends JobEventMeta {
+  type: "resume";
+  checkpointed: number;
+  reused?: number;
+  remaining?: number;
+}
+
 export interface TerminalFrame extends JobEventMeta {
   type: "done" | "failed" | "cancelled" | "interrupted";
   status: JobStatus;
@@ -803,6 +815,7 @@ export type JobEventFrame =
   | BatchFinishedFrame
   | GlossaryProgressFrame
   | GlossaryExtractedFrame
+  | ResumeFrame
   | TerminalFrame;
 
 /** POST /modpacks/import — an archive opened as a folder to scan. */

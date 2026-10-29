@@ -97,5 +97,11 @@
     "body": "Partial results translated so far will be preserved. You can inspect them in the review step.",
     "keep": "Keep running",
     "confirm": "Cancel translation"
+  },
+  "resume": {
+    "loadingTitle": "Picking up {{count}} translations from the last run",
+    "loadingBody": "Rescanning the modpack and preparing files. No AI call is made in this step; once it is done only what is left gets translated. A large pack can take a few minutes.",
+    "readyTitle": "Reused {{reused}} · translating the remaining {{remaining}}",
+    "readyBody": "Reused translations are not requested again."
   }
 }

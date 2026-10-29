@@ -155,6 +155,11 @@ interface WizardStore {
   interruptReason: string | null;
   /** This run was paused by the budget ceiling (settings.budgetUsd). */
   budgetPaused: boolean;
+  /**
+   * Set while a resumed run reuses its checkpoint: what it saved, then how
+   * much the replay reused and left for the model. null for a fresh run.
+   */
+  resumeInfo: { checkpointed: number; reused: number | null; remaining: number | null } | null;
   startedAt: number | null;
   /** First provider batch start; excludes scan/glossary from live throughput. */
   translationStartedAt: number | null;
@@ -568,6 +573,14 @@ function translationFramePatch(
       delete activeBatches[frame.request_id];
       return { activeBatches };
     }
+    case "resume":
+      return {
+        resumeInfo: {
+          checkpointed: frame.checkpointed,
+          reused: frame.reused ?? prev.resumeInfo?.reused ?? null,
+          remaining: frame.remaining ?? prev.resumeInfo?.remaining ?? null,
+        },
+      };
     case "tokens":
       return {
         promptTokens: frame.prompt_tokens,
@@ -699,6 +712,7 @@ const initialJobState = {
   resumable: false,
   interruptReason: null,
   budgetPaused: false,
+  resumeInfo: null,
   startedAt: null,
   translationStartedAt: null,
   finishedAt: null,
@@ -1128,6 +1142,7 @@ export const useWizard = create<WizardStore>((set, get) => ({
       model: settings.model,
       runError: null,
       budgetPaused: false,
+      resumeInfo: null,
       startedAt: Date.now(),
       translationStartedAt: null,
       finishedAt: null,
@@ -1334,6 +1349,8 @@ export const useWizard = create<WizardStore>((set, get) => ({
       model,
       runState: "running",
       startedAt: Date.now(),
+      // Shown at once; the engine's own count replaces it when it loads.
+      resumeInfo: { checkpointed: record.doneEntries, reused: null, remaining: null },
     });
     get().appendLog("info", `translate resume: ${record.modpackName} → ${record.targetLocale}`);
     if (model !== record.model) {

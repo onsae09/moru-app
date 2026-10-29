@@ -747,3 +747,13 @@ test("reaching the budget ceiling pauses the run once", async () => {
   expect(useWizard.getState().budgetPaused).toBe(true);
   expect(pauses.filter((u) => u.endsWith("/jobs/job-1/pause"))).toHaveLength(1);
 });
+
+test("resume frames tell the screen what the checkpoint carried", () => {
+  useWizard.setState({ sessionId: "s1", runState: "running", resumeInfo: null });
+  useWizard.getState().handleTranslationFrame({ type: "resume", checkpointed: 43743 }, "s1");
+  expect(useWizard.getState().resumeInfo).toEqual({ checkpointed: 43743, reused: null, remaining: null });
+  useWizard
+    .getState()
+    .handleTranslationFrame({ type: "resume", checkpointed: 43743, reused: 43700, remaining: 5120 }, "s1");
+  expect(useWizard.getState().resumeInfo).toEqual({ checkpointed: 43743, reused: 43700, remaining: 5120 });
+});

@@ -1997,6 +1997,11 @@ class JobManager:
             if record.resume and record.checkpoint is not None
             else None
         )
+        if resume_from is not None:
+            # Said at once: the rescan and file preparation before the
+            # replay can take minutes on a big pack, and without this the
+            # screen reads like a run starting over.
+            self._emit(record, "resume", {"checkpointed": len(resume_from.entries)})
         review_edits = await self._review_edits(record) if record.resume else None
         try:
             result = await run_pipeline(

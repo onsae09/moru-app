@@ -297,6 +297,7 @@ export function W4Progress() {
     resumable,
     interruptReason,
     budgetPaused,
+    resumeInfo,
     sessionId,
     translateJobId,
     startedAt,
@@ -330,6 +331,7 @@ export function W4Progress() {
       resumable: s.resumable,
       interruptReason: s.interruptReason,
       budgetPaused: s.budgetPaused,
+      resumeInfo: s.resumeInfo,
       sessionId: s.sessionId,
       translateJobId: s.translateJobId,
       startedAt: s.startedAt,
@@ -688,6 +690,21 @@ export function W4Progress() {
           >
             {t("w4.banner.toReview")} →
           </button>
+        </div>
+      )}
+      {running && resumeInfo !== null && (
+        <div role="status" className="mb-4 border border-accent/40 bg-accent/6 px-4 py-3">
+          <div className="text-[13px] font-bold text-accent">
+            {resumeInfo.reused === null
+              ? t("w4.resume.loadingTitle", { count: resumeInfo.checkpointed })
+              : t("w4.resume.readyTitle", {
+                  reused: resumeInfo.reused,
+                  remaining: resumeInfo.remaining ?? 0,
+                })}
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-text2">
+            {t(resumeInfo.reused === null ? "w4.resume.loadingBody" : "w4.resume.readyBody")}
+          </div>
         </div>
       )}
       {runState === "interrupted" && (

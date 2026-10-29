@@ -2130,11 +2130,20 @@ class TranslationPipeline:
                     raise
 
                 if self.resume_from is not None:
+                    remaining = sum(len(prepared.to_translate) for prepared in prepared_files)
                     logger.info(
                         "Resume: %d checkpointed translations reused, %d entries "
                         "left for the model",
                         self.resumed_entries,
-                        sum(len(prepared.to_translate) for prepared in prepared_files),
+                        remaining,
+                    )
+                    self._emit(
+                        "resume",
+                        {
+                            "checkpointed": len(self.resume_from.entries),
+                            "reused": self.resumed_entries,
+                            "remaining": remaining,
+                        },
                     )
                 await self._checkpoint_plan(prepared_files)
 

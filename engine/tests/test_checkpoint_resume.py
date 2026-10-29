@@ -602,12 +602,17 @@ async def test_killed_run_resumes_with_only_the_remaining_entries(
     on_disk = killed.load()
     assert on_disk is not None and on_disk.entries
     resumed_translator = RecordingTranslator()
+    events: list[str] = []
     resumed_pipeline, resumed = await _run(
         config("run", "run.sqlite3"),
         resumed_translator,
         checkpoint=killed,
         resume_from=on_disk,
+        events=events,
     )
+    # The screen is told the replay happened before any batch is sent.
+    assert "resume" in events
+    assert events.index("resume") < events.index("batch_started")
 
     # Only the remaining entries reached the model: nothing paid for twice,
     # and together the two runs asked exactly what one run would have.
@@ -770,6 +775,15 @@ def test_quota_interrupted_job_lists_and_resumes_through_the_api(
     )
     assert response.status_code == 201, response.text
     assert _wait(client, session_id)["status"] == "done"
+    resume_frames = [
+        frame
+        for frame in client.app.state.job_manager.subscribe(session_id)[0]
+        if frame["type"] == "resume"
+    ]
+    # First the loaded checkpoint (said before the rescan), then the replay.
+    assert resume_frames[0]["checkpointed"] == len(exhausted.sent)
+    assert resume_frames[-1]["reused"] == len(exhausted.sent)
+    assert resume_frames[-1]["remaining"] == len(resumed_translator.sent)
 
     assert set(resumed_translator.sent).isdisjoint(exhausted.sent)
     assert set(resumed_translator.sent) | set(exhausted.sent) == set(

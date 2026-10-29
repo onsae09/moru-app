@@ -153,6 +153,10 @@ paths:
         /jobs/{jobId}/pause) or
         shutdown (the engine stopped mid-run); error is a user-facing message
         and detail the provider's own error excerpt;
+        A resumed translate run emits {type: resume, checkpointed} as soon
+        as its checkpoint is loaded (before the rescan), then
+        {type: resume, checkpointed, reused, remaining} once every file is
+        prepared and the saved translations were matched;
         done export frames carry {zip_path, overrides_zip_path,
         bilingual_zip_path, bilingual_overrides_zip_path, file_count}.
         Each path is null when its output tree is empty. Bilingual archive

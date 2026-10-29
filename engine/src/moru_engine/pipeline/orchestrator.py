@@ -1778,8 +1778,8 @@ class TranslationPipeline:
                             "total": prepared.work_total,
                         },
                     )
-                # lm.history aggregation is O(calls); once per completed
-                # batch keeps live token/cost counters current.
+                # Once per completed batch keeps live token/cost counters
+                # current; build_lm's LM totals usage as calls land.
                 self._emit("tokens", token_usage(self.lm))
         except asyncio.CancelledError:
             prepared.was_cancelled = True

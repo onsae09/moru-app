@@ -507,3 +507,53 @@ def test_cli_auth_refusal_is_not_a_transport_error() -> None:
     except litellm.exceptions.APIConnectionError as wrapped:
         assert cli_auth_failure(wrapped) is original
         assert is_transport_error(wrapped) is False
+
+
+def _fake_response(prompt: int, completion: int, cached: int = 0) -> object:
+    from litellm import ModelResponse
+
+    return ModelResponse(
+        model="fake",
+        choices=[{"message": {"role": "assistant", "content": "ok"}}],
+        usage={
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "prompt_tokens_details": {"cached_tokens": cached},
+        },
+    )
+
+
+def test_usage_survives_history_trimming_and_skips_global_history():
+    """dspy keeps 10,000 full-prompt entries per LM, per module and again
+    globally; token_usage re-summed all of it after every batch. Usage now
+    accumulates per call, so it stays exact past any history cap."""
+    from dspy.clients.base_lm import GLOBAL_HISTORY
+
+    from moru_engine.dspy_modules.lm import KEPT_HISTORY, token_usage
+
+    lm = build_lm("openai/gpt-4.1", cache=False)
+    global_before = len(GLOBAL_HISTORY)
+    calls = KEPT_HISTORY * 3
+    for _ in range(calls):
+        lm._process_lm_response(_fake_response(100, 10, cached=40), None, [])
+    assert len(lm.history) == KEPT_HISTORY
+    assert len(GLOBAL_HISTORY) == global_before
+    assert token_usage(lm) == {
+        "prompt_tokens": 100 * calls,
+        "completion_tokens": 10 * calls,
+        "total_tokens": 110 * calls,
+        "cached_tokens": 40 * calls,
+    }
+    # A copy starts its own count.
+    assert token_usage(lm.copy(rollout_id=1))["prompt_tokens"] == 0
+
+
+def test_context_window_peak_outlives_the_trimmed_history():
+    from moru_engine.dspy_modules.lm import KEPT_HISTORY
+
+    lm = build_lm("ollama_chat/qwen3:8b", cache=False, num_ctx=1000)
+    lm._process_lm_response(_fake_response(995, 1), None, [])
+    for _ in range(KEPT_HISTORY + 1):
+        lm._process_lm_response(_fake_response(10, 1), None, [])
+    assert context_window_filled(lm) == 995

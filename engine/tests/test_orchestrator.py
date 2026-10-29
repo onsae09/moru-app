@@ -782,7 +782,7 @@ def test_build_lm_forwards_explicit_reasoning_effort(
         seen["kwargs"] = kwargs
         return built_lm
 
-    monkeypatch.setattr(lm_module.dspy, "LM", fake_lm)
+    monkeypatch.setattr(lm_module, "UsageTrackingLM", fake_lm)
     result = lm_module.build_lm(
         "ollama_chat/qwen3:8b",
         reasoning_effort="high",

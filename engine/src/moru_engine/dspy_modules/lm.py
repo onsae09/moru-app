@@ -94,6 +94,52 @@ def _claude_rejects_temperature(model: str) -> bool:
     return version is not None and version >= (4, 7)
 
 
+#: lm.history entries kept per LM. Each one holds the full prompt (~40k
+#: characters) and response; dspy keeps 10,000 of them per LM, again per
+#: calling module, and again in its process-wide GLOBAL_HISTORY, which over
+#: a pack run is hundreds of megabytes nobody reads. Usage is accumulated
+#: as calls land instead, so trimming the history loses no token count.
+KEPT_HISTORY = 32
+
+
+class UsageTrackingLM(dspy.LM):
+    """dspy.LM that totals token usage per call and keeps a short history.
+
+    token_usage() used to re-sum the whole lm.history after every batch,
+    O(calls) each time and wrong once dspy's 10,000-entry cap started
+    dropping the oldest entries.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._reset_usage()
+
+    def _reset_usage(self) -> None:
+        self.usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
+        self.peak_prompt_tokens = 0
+
+    def update_history(self, entry: dict[str, object]) -> None:
+        # Deliberately not super(): that appends to GLOBAL_HISTORY and every
+        # caller module's history, each capped only at 10,000.
+        if dspy.settings.disable_history:
+            return
+        usage = entry.get("usage") or {}
+        prompt = int(_usage_value(usage, "prompt_tokens") or 0)
+        totals = self.usage_totals
+        totals["prompt_tokens"] += prompt
+        totals["completion_tokens"] += int(_usage_value(usage, "completion_tokens") or 0)
+        totals["cached_tokens"] += min(_cached_tokens(usage), prompt)
+        self.peak_prompt_tokens = max(self.peak_prompt_tokens, prompt)
+        self.history.append(entry)
+        if len(self.history) > KEPT_HISTORY:
+            del self.history[: len(self.history) - KEPT_HISTORY]
+
+    def copy(self, **kwargs: object) -> UsageTrackingLM:
+        new = super().copy(**kwargs)
+        new._reset_usage()
+        return new
+
+
 def build_lm(
     model: str,
     *,
@@ -212,7 +258,7 @@ def build_lm(
     logger.info("Building LM: %s", model)
     # CLI providers only: keeps LiteLLM from hijacking a model whose bare
     # name collides with its built-in OpenAI table. No-op for everything else.
-    return dspy.LM(to_wire_model(model), **kwargs)
+    return UsageTrackingLM(to_wire_model(model), **kwargs)
 
 
 def configure_engine(lm: dspy.LM, *, json_adapter: bool = True) -> None:
@@ -401,6 +447,17 @@ def token_usage(lm: dspy.LM) -> dict[str, int]:
     provider prompt cache, clamped per call so it can never exceed
     prompt_tokens.
     """
+    totals = getattr(lm, "usage_totals", None)
+    if isinstance(totals, dict):
+        prompt = totals["prompt_tokens"]
+        completion = totals["completion_tokens"]
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "cached_tokens": totals["cached_tokens"],
+        }
+    # Any other LM (tests' DummyLM): sum whatever history it kept.
     prompt = 0
     completion = 0
     cached = 0
@@ -432,6 +489,9 @@ def context_window_filled(lm: dspy.LM) -> int:
     if not isinstance(window, int) or window <= 0:
         return 0
     threshold = window * _CONTEXT_FULL_RATIO
+    peak = getattr(lm, "peak_prompt_tokens", None)
+    if isinstance(peak, int):
+        return peak if peak >= threshold else 0
     worst = 0
     for entry in getattr(lm, "history", None) or []:
         prompt = int(_usage_value(entry.get("usage") or {}, "prompt_tokens") or 0)

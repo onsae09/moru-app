@@ -188,3 +188,40 @@ def test_normalize_keeps_distinct_ids_distinct() -> None:
     # differ only in punctuation are the only ones that collapse.
     assert normalize_mod_id("archers_expansion") == normalize_mod_id("ArchersExpansion")
     assert normalize_mod_id("sodium") != normalize_mod_id("sodiumdynamiclights")
+
+
+@pytest.mark.asyncio
+async def test_parallel_jar_scan_is_deterministic_and_complete(tmp_path: Path) -> None:
+    """JARs are scanned concurrently; the merged result must not depend on
+    which one finished first."""
+    modpack = tmp_path / "pack"
+    ids = [f"mod{i:02d}" for i in range(24)]
+    for mod_id in ids:
+        _jar(modpack / "mods" / f"{mod_id}.jar", mod_id)
+    _jar(modpack / "mods" / "zz_sodium.jar", "sodium")
+
+    first = await scan_modpack(modpack, mod_blacklist=["sodium"])
+    second = await scan_modpack(modpack, mod_blacklist=["sodium"])
+
+    paths = [f.input_path for f in first.translation_files if f.file_type == "mod"]
+    assert paths == [f.input_path for f in second.translation_files if f.file_type == "mod"]
+    assert _mod_namespaces(first) == set(ids)
+    assert [m.mod_id for m in first.excluded_mods] == ["sodium"]
+
+
+@pytest.mark.parametrize(
+    ("entry", "extracted"),
+    [
+        ("data/mod/recipe/thing.json", False),
+        ("data/mod/loot_table/blocks/thing.json", False),
+        ("data/mod/advancement/root.json", False),
+        ("data/mod/recipes/thing.json", False),
+        ("assets/mod/lang/en_us.json", True),
+        # Not a data-pack root folder: a book category that holds text.
+        ("data/mod/patchouli_books/guide/en_us/entries/recipe/a.json", True),
+    ],
+)
+def test_singular_1_21_data_folders_are_not_extracted(entry: str, extracted: bool) -> None:
+    from moru_engine.scanner.modpack_scanner import ModpackScanner
+
+    assert ModpackScanner()._should_extract_from_jar(entry) is extracted

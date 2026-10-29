@@ -154,6 +154,16 @@ _EXTRACT_STAMP_NAME = ".moru-extract-stamp"
 MAX_RESOURCE_PACK_UNPACKED_BYTES = 2 * 1024**3
 
 
+#: JARs extracted concurrently during a scan.
+_JAR_SCAN_WORKERS = min(8, os.cpu_count() or 4)
+#: Minecraft 1.21's singular data-pack folders (recipes/ -> recipe/, ...):
+#: game data, never player-facing text, like their plural predecessors.
+_SINGULAR_DATA_DIR_RE = re.compile(
+    r"(?:^|/)data/[^/]+/(?:recipe|loot_table|advancement|structure|predicate"
+    r"|item_modifier)/"
+)
+
+
 #: Cache-key form of a JAR: size and mtime identify the exact bytes
 #: without hashing megabytes, the same trade every build system makes.
 def _jar_stamp(jar_path: str) -> str:
@@ -854,24 +864,39 @@ class ModpackScanner:
         try:
             jar_files = await self._safe_iglob(str(pattern))
             total_jars = len(jar_files)
-            jar_files_found = 0
+            jar_files_found = total_jars
+            done = 0
+            # JARs are independent and the work is zip inflation plus file
+            # writes, both of which release the GIL: one JAR at a time left
+            # a 300-mod pack's scan bound to a single core.
+            gate = asyncio.Semaphore(_JAR_SCAN_WORKERS)
 
-            for i, jar_path in enumerate(jar_files):
-                jar_files_found += 1
-
+            async def scan_one(jar_path: str) -> ScanResult:
+                nonlocal done
+                # Each JAR fills its own partial result, merged below in
+                # glob order, so the outcome never depends on which thread
+                # finished first.
+                partial = ScanResult(modpack_path=modpack_path)
+                async with gate:
+                    try:
+                        await self._extract_from_jar(modpack_path, jar_path, partial)
+                    except (zipfile.BadZipFile, OSError) as e:
+                        logger.error("Failed to process JAR file (%s): %s", jar_path, e)
+                done += 1
                 if self.progress_callback:
-                    jar_name = os.path.basename(jar_path)
                     self._report_progress(
                         "JAR 파일 스캔 중...",
                         6,
                         7,
-                        f"JAR 파일 처리 중 ({i + 1}/{total_jars}): {jar_name}",
+                        f"JAR 파일 처리 중 ({done}/{total_jars}): "
+                        f"{os.path.basename(jar_path)}",
                     )
+                return partial
 
-                try:
-                    await self._extract_from_jar(modpack_path, jar_path, result)
-                except (zipfile.BadZipFile, OSError) as e:
-                    logger.error("Failed to process JAR file (%s): %s", jar_path, e)
+            for partial in await asyncio.gather(*(scan_one(p) for p in jar_files)):
+                result.translation_files.extend(partial.translation_files)
+                result.excluded_mods.extend(partial.excluded_mods)
+                result.hardcoded_mods.extend(partial.hardcoded_mods)
 
             count = len([f for f in result.translation_files if f.file_type == "mod"])
             logger.info(
@@ -1035,6 +1060,11 @@ class ModpackScanner:
         for excluded in excluded_dirs:
             if excluded in entry_lower:
                 return False
+        # 1.21 renamed these data folders to the singular. Matched only
+        # directly under data/<namespace>/, since a bare "/recipe/" also
+        # names, say, a Patchouli book category that does hold text.
+        if _SINGULAR_DATA_DIR_RE.search(entry_lower.replace("\\", "/")):
+            return False
 
         return any(d.lower() in entry_lower for d in DIR_FILTER_WHITELIST)
 

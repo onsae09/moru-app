@@ -142,5 +142,12 @@
     "start": "번역 시작",
     "startManual": "손으로 번역하기",
     "custom": "커스텀"
+  },
+  "startBlocked": {
+    "modelMismatch": "선택한 모델이 {{provider}} 모델이 아니에요. 품질 단계나 고급 설정에서 모델을 다시 골라 주세요.",
+    "providerDisabled": "{{provider}} 제공자가 꺼져 있어요. 설정 > 모델에서 켜 주세요.",
+    "loading": "{{provider}} 연결 상태를 확인하는 중이에요…",
+    "cliNotReady": "{{provider}} CLI가 아직 준비되지 않았어요. 위의 안내대로 설치·로그인해 주세요.",
+    "noKey": "{{provider}} API 키가 없어요. 위에서 키를 입력해 주세요."
   }
 }

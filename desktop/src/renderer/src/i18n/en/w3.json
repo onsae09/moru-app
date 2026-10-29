@@ -142,5 +142,12 @@
     "start": "Start translating",
     "startManual": "Translate by hand",
     "custom": "Custom"
+  },
+  "startBlocked": {
+    "modelMismatch": "The selected model isn't a {{provider}} model. Pick a model again from the tiers or advanced settings.",
+    "providerDisabled": "{{provider}} is turned off. Enable it in Settings > Models.",
+    "loading": "Checking the {{provider}} connection…",
+    "cliNotReady": "The {{provider}} CLI isn't ready yet. Install and sign in as shown above.",
+    "noKey": "No {{provider}} API key yet. Enter one above."
   }
 }

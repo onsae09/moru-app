@@ -269,6 +269,11 @@ export function W3Settings() {
   const queryClient = useQueryClient();
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Source-text export is a side path; it starts collapsed unless a run of
+  // it is already under way or finished in this session.
+  const [sourceExportOpen, setSourceExportOpen] = useState(
+    () => useWizard.getState().sourceExportState !== "idle",
+  );
   const [editingKey, setEditingKey] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [compatKeyInput, setCompatKeyInput] = useState("");
@@ -413,6 +418,19 @@ export function W3Settings() {
     (cliState !== null ? cliState.kind === "ready" : hasLocalKey || provider?.has_key === true);
   const modelMatches = providerIdOf(settings.model) === providerId;
   const canStart = isLocal ? modelMatches : hasKey && modelMatches;
+  /* Why the start button is disabled, shown next to it (same inputs as canStart). */
+  const startBlocker: "modelMismatch" | "providerDisabled" | "loading" | "cliNotReady" | "noKey" | null =
+    canStart
+      ? null
+      : !modelMatches
+        ? "modelMismatch"
+        : provider?.disabled === true
+          ? "providerDisabled"
+          : keyLoading
+            ? "loading"
+            : cliState !== null
+              ? "cliNotReady"
+              : "noKey";
 
   /* self-heal: keep the persisted model consistent with the provider and,
      for tier presets, with the tier's current recommendation (catalog
@@ -1301,73 +1319,94 @@ export function W3Settings() {
           source string, so the archives line up file-for-file and
           key-for-key against a translated pack shared on moru.gg. */}
       <div className="mb-8">
-        <div className="flex items-center gap-[14px] border border-line2 bg-raised px-[18px] py-4">
+        <div
+          {...pressable(() => setSourceExportOpen((v) => !v))}
+          aria-expanded={sourceExportOpen}
+          className={`flex cursor-pointer items-center gap-[10px] border border-line2 bg-raised px-[18px] py-3 hover:bg-raised-hover ${
+            sourceExportOpen ? "border-b-0" : ""
+          }`}
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className={`text-text3 transition-transform ${sourceExportOpen ? "" : "-rotate-90"}`}
+          >
+            <path d="M2 3 L5 6 L8 3" />
+          </svg>
+          <span className="text-[12px] font-semibold text-text2">{t("w3.sourceExport.title")}</span>
           <span className="bg-line2 px-2 py-[3px] font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-text2">
             {t("w3.sourceExport.badge")}
           </span>
-          <div className="flex-1">
-            <div className="mb-[2px] text-[13px] font-bold text-text">
-              {t("w3.sourceExport.title")}
-            </div>
-            <div className="font-mono text-[11px] text-text2">
-              {t("w3.sourceExport.sub")}
-            </div>
-          </div>
-          <button
-            type="button"
-            disabled={sourceExportBusy || wizard.modpackPath === null}
-            title={wizard.modpackPath === null ? t("w3.sourceExport.needPack") : undefined}
-            onClick={handleSourceExport}
-            className="flex shrink-0 cursor-pointer items-center gap-[6px] bg-line2 px-[14px] py-[7px] text-[12px] font-semibold text-text enabled:hover:bg-edge disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {sourceExportBusy ? (
-              <>
-                <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text border-t-transparent" />
-                {t("w3.sourceExport.creating")}
-              </>
-            ) : sourceExportDone ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges" fill="currentColor">
-                  <rect x="1" y="2" width="4" height="2" />
-                  <rect x="1" y="4" width="10" height="6" />
-                  <rect x="5" y="3" width="6" height="1" />
-                </svg>
-                {t("common.action.openFolder")}
-              </>
-            ) : wizard.sourceExportState === "failed" ? (
-              t("common.action.retry")
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M6 1 V8 M3 5 L6 8 L9 5" />
-                  <path d="M1 10 H11" />
-                </svg>
-                {t("w3.sourceExport.action")}
-              </>
-            )}
-          </button>
         </div>
-        {sourceExportDone && (
-          <div className="mt-[6px] border border-accent-lo bg-tint px-3 py-2 font-mono text-[11px] leading-[1.5]">
-            <div>
-              <span className="text-text3">{t("w3.sourceExport.savedTo")} </span>
-              <span className="break-all text-accent">{wizard.sourceExportZipPath}</span>
+        {sourceExportOpen && (
+          <>
+            <div className="flex items-center gap-[14px] border border-line2 bg-raised px-[18px] py-4">
+              <div className="flex-1">
+                <div className="font-mono text-[11px] text-text2">
+                  {t("w3.sourceExport.sub")}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={sourceExportBusy || wizard.modpackPath === null}
+                title={wizard.modpackPath === null ? t("w3.sourceExport.needPack") : undefined}
+                onClick={handleSourceExport}
+                className="flex shrink-0 cursor-pointer items-center gap-[6px] bg-line2 px-[14px] py-[7px] text-[12px] font-semibold text-text enabled:hover:bg-edge disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {sourceExportBusy ? (
+                  <>
+                    <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text border-t-transparent" />
+                    {t("w3.sourceExport.creating")}
+                  </>
+                ) : sourceExportDone ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 12 12" shapeRendering="crispEdges" fill="currentColor">
+                      <rect x="1" y="2" width="4" height="2" />
+                      <rect x="1" y="4" width="10" height="6" />
+                      <rect x="5" y="3" width="6" height="1" />
+                    </svg>
+                    {t("common.action.openFolder")}
+                  </>
+                ) : wizard.sourceExportState === "failed" ? (
+                  t("common.action.retry")
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M6 1 V8 M3 5 L6 8 L9 5" />
+                      <path d="M1 10 H11" />
+                    </svg>
+                    {t("w3.sourceExport.action")}
+                  </>
+                )}
+              </button>
             </div>
-            {wizard.sourceExportOverridesZipPath !== null && (
-              <div>
-                <span className="text-text3">{t("w3.sourceExport.overrides")} </span>
-                <span className="break-all text-accent">
-                  {wizard.sourceExportOverridesZipPath}
-                </span>
+            {sourceExportDone && (
+              <div className="mt-[6px] border border-accent-lo bg-tint px-3 py-2 font-mono text-[11px] leading-[1.5]">
+                <div>
+                  <span className="text-text3">{t("w3.sourceExport.savedTo")} </span>
+                  <span className="break-all text-accent">{wizard.sourceExportZipPath}</span>
+                </div>
+                {wizard.sourceExportOverridesZipPath !== null && (
+                  <div>
+                    <span className="text-text3">{t("w3.sourceExport.overrides")} </span>
+                    <span className="break-all text-accent">
+                      {wizard.sourceExportOverridesZipPath}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
-        {wizard.sourceExportState === "failed" && (
-          <div className="mt-[6px] border border-red/30 bg-red/5 px-3 py-2 text-[11px] leading-[1.5]">
-            <span className="font-semibold text-red">{t("w3.sourceExport.failed")}</span>
-            <span className="text-text2"> — {wizard.sourceExportError}</span>
-          </div>
+            {wizard.sourceExportState === "failed" && (
+              <div className="mt-[6px] border border-red/30 bg-red/5 px-3 py-2 text-[11px] leading-[1.5]">
+                <span className="font-semibold text-red">{t("w3.sourceExport.failed")}</span>
+                <span className="text-text2"> — {wizard.sourceExportError}</span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1384,80 +1423,88 @@ export function W3Settings() {
         </div>
       )}
 
-      {/* Wizard footer */}
-      <div className="flex items-center justify-between border-t border-line pt-5">
-        <button
-          type="button"
-          onClick={() => go("w2")}
-          className="flex cursor-pointer items-center gap-[6px] bg-transparent px-[18px] py-[10px] text-[13px] font-semibold text-text2 hover:text-text"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M8 2 L4 6 L8 10" />
-          </svg>
-          {t("common.action.back")}
-        </button>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[11px] text-text3">
-            {presetName} · {modelDisplayName(settings.model)}
-            {totals.translationChars > 0 && (
-              <>
-                {" · "}
-                {t("w3.footer.tokens", { n: formatCompact(usage.totalTokens) })}
-              </>
-            )}
-            {footerCost !== null && (
-              <>
-                {" · "}
-                <span className="text-accent">{footerCost}</span>
-              </>
-            )}
-          </span>
-          {/* Never gated on `canStart`: hand translation calls no provider, so
-              requiring a working API key here would lock out exactly the user
-              this path exists for. */}
+      {/* Wizard footer: sticky so the start button stays reachable while the
+          settings above scroll. Bleeds over the page padding to cover it. */}
+      <div className="sticky bottom-0 z-10 -mx-10 -mb-8 border-t border-line bg-bg px-10 py-4">
+        {startBlocker !== null && (
+          <div role="status" className="mb-2 text-right font-mono text-[11px] text-amber">
+            {t(`w3.startBlocked.${startBlocker}`, { provider: providerName })}
+          </div>
+        )}
+        <div className="flex items-center justify-between">
           <button
             type="button"
-            disabled={wizard.runState === "running" || manualSeedPending}
-            onClick={() => {
-              setManualSeedPending(true);
-              setManualSeedRefusal(null);
-              void wizard.startManualSeed().then((outcome) => {
-                setManualSeedPending(false);
-                if (outcome === "started") {
-                  go("w5m");
-                  return;
-                }
-                // Never silently: a button press that changes nothing on
-                // screen is how this path was reported as broken.
-                setManualSeedRefusal(outcome);
-              });
-            }}
-            className="flex cursor-pointer items-center gap-[6px] border border-edge bg-card px-4 py-[10px] text-[12px] font-semibold whitespace-nowrap text-text2 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => go("w2")}
+            className="flex cursor-pointer items-center gap-[6px] bg-transparent px-[18px] py-[10px] text-[13px] font-semibold text-text2 hover:text-text"
           >
-            {manualSeedPending ? (
-              <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text2 border-t-transparent" />
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M2 10 L4 10 L10 4 L8 2 L2 8 Z" />
-              </svg>
-            )}
-            {t("w3.footer.startManual")}
-          </button>
-          <button
-            type="button"
-            disabled={!canStart}
-            onClick={() => {
-              void wizard.startTranslate();
-              go("w4");
-            }}
-            className="flex cursor-pointer items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi disabled:cursor-not-allowed disabled:opacity-40"
-            style={canStart ? { boxShadow: "0 0 24px rgba(61,220,132,0.25)" } : undefined}
-          >
-            {t("w3.footer.start")}
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 2 L10 6 L3 10 Z" fill="currentColor" />
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M8 2 L4 6 L8 10" />
             </svg>
+            {t("common.action.back")}
           </button>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[11px] text-text3">
+              {presetName} · {modelDisplayName(settings.model)}
+              {totals.translationChars > 0 && (
+                <>
+                  {" · "}
+                  {t("w3.footer.tokens", { n: formatCompact(usage.totalTokens) })}
+                </>
+              )}
+              {footerCost !== null && (
+                <>
+                  {" · "}
+                  <span className="text-accent">{footerCost}</span>
+                </>
+              )}
+            </span>
+            {/* Never gated on `canStart`: hand translation calls no provider, so
+                requiring a working API key here would lock out exactly the user
+                this path exists for. */}
+            <button
+              type="button"
+              disabled={wizard.runState === "running" || manualSeedPending}
+              onClick={() => {
+                setManualSeedPending(true);
+                setManualSeedRefusal(null);
+                void wizard.startManualSeed().then((outcome) => {
+                  setManualSeedPending(false);
+                  if (outcome === "started") {
+                    go("w5m");
+                    return;
+                  }
+                  // Never silently: a button press that changes nothing on
+                  // screen is how this path was reported as broken.
+                  setManualSeedRefusal(outcome);
+                });
+              }}
+              className="flex cursor-pointer items-center gap-[6px] border border-edge bg-card px-4 py-[10px] text-[12px] font-semibold whitespace-nowrap text-text2 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {manualSeedPending ? (
+                <span className="inline-block h-3 w-3 animate-pxspin border-2 border-text2 border-t-transparent" />
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 10 L4 10 L10 4 L8 2 L2 8 Z" />
+                </svg>
+              )}
+              {t("w3.footer.startManual")}
+            </button>
+            <button
+              type="button"
+              disabled={!canStart}
+              onClick={() => {
+                void wizard.startTranslate();
+                go("w4");
+              }}
+              className="flex cursor-pointer items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi disabled:cursor-not-allowed disabled:opacity-40"
+              style={canStart ? { boxShadow: "0 0 24px rgba(61,220,132,0.25)" } : undefined}
+            >
+              {t("w3.footer.start")}
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 2 L10 6 L3 10 Z" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>

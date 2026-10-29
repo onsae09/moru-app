@@ -296,6 +296,7 @@ export function W4Progress() {
     runError,
     resumable,
     interruptReason,
+    budgetPaused,
     sessionId,
     translateJobId,
     startedAt,
@@ -328,6 +329,7 @@ export function W4Progress() {
       runError: s.runError,
       resumable: s.resumable,
       interruptReason: s.interruptReason,
+      budgetPaused: s.budgetPaused,
       sessionId: s.sessionId,
       translateJobId: s.translateJobId,
       startedAt: s.startedAt,
@@ -698,10 +700,10 @@ export function W4Progress() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-bold text-amber">
-              {t(interruptBanner(interruptReason, wizard.budgetPaused).title)}
+              {t(interruptBanner(interruptReason, budgetPaused).title)}
             </div>
             <div className="mt-0.5 text-[11.5px] text-text2">
-              {t(interruptBanner(interruptReason, wizard.budgetPaused).body)}
+              {t(interruptBanner(interruptReason, budgetPaused).body)}
             </div>
           </div>
           {resumable && sessionId !== null && (

@@ -29,15 +29,20 @@ nsis:
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
 mac:
+  # Arch comes from the build command (release.yml passes --arm64 or --x64),
+  # because the bundled PyInstaller sidecar is built per architecture on a
+  # matching runner and cannot be merged into a universal app.
   target:
-    - target: dmg
-      arch:
-        - arm64
+    - dmg
   category: public.app-category.utilities
   darkModeSupport: true
   # Unsigned by default (ad-hoc). Provide CSC_LINK/CSC_KEY_PASSWORD +
   # notarization env in CI for a signed build; electron-updater on macOS
   # requires a valid Developer ID signature.
+linux:
+  target:
+    - AppImage
+  category: Utility
 publish:
   provider: github
   owner: kunho-park

@@ -75,8 +75,10 @@ interface SpawnPlan {
  * - packaged: bundled PyInstaller onedir under resources/engine/
  * - dev: `uv run python -m moru_engine.server` from the sibling engine repo dir
  */
-function resolveSpawnPlan(port: number, token: string): SpawnPlan {
-  const serverArgs = ["--port", String(port), "--token", token, "--exit-with-stdin"];
+function resolveSpawnPlan(port: number): SpawnPlan {
+  // The session token travels in the environment (MORU_SESSION_TOKEN), not
+  // argv: any local user can read another process's command line (`ps`).
+  const serverArgs = ["--port", String(port), "--exit-with-stdin"];
   if (app.isPackaged) {
     const bin = process.platform === "win32" ? "moru-engine-server.exe" : "moru-engine-server";
     return {
@@ -176,7 +178,7 @@ export class EngineSidecar extends EventEmitter {
     const generation = ++this.#generation;
     const port = await pickFreePort();
     const token = randomBytes(32).toString("hex");
-    const plan = resolveSpawnPlan(port, token);
+    const plan = resolveSpawnPlan(port);
     if (app.isPackaged && !existsSync(plan.command)) {
       this.#setInfo({ state: "failed", error: `engine binary missing: ${plan.command}` });
       return;
@@ -190,6 +192,7 @@ export class EngineSidecar extends EventEmitter {
       // mangled, and printing a character cp949 lacks raises.
       PYTHONUTF8: "1",
       PYTHONIOENCODING: "utf-8",
+      MORU_SESSION_TOKEN: token,
     };
     if (app.isPackaged) {
       // Frozen builds resolve optimized-prompt artifacts via env override

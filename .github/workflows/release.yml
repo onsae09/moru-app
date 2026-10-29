@@ -33,7 +33,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            builder_args: --win --x64
+          # Apple Silicon and Intel each get a sidecar built on a native
+          # runner; the dmg arch has to match it.
+          - os: macos-latest
+            builder_args: --mac --arm64
+          - os: macos-13
+            builder_args: --mac --x64
+          - os: ubuntu-latest
+            builder_args: --linux --x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -137,4 +147,4 @@ jobs:
               --config.win.azureSignOptions.publisherName="$AZURE_SIGN_PUBLISHER"
             )
           fi
-          bunx electron-builder --publish always "${SIGN_FLAGS[@]}"
+          bunx electron-builder ${{ matrix.builder_args }} --publish always "${SIGN_FLAGS[@]}"

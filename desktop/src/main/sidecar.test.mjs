@@ -22,8 +22,11 @@ mock.module("node:child_process", () => ({
     return child;
   }),
 }));
+// mock.module is process-wide in bun: keep the shape other test files use.
 mock.module("electron", () => ({
   app: { isPackaged: false, getAppPath: () => "/tmp/app", getPath: () => "/tmp/moru-sidecar-test" },
+  BrowserWindow: { getAllWindows: () => [] },
+  ipcMain: { handle: () => undefined, on: () => undefined },
 }));
 globalThis.fetch = async () => {
   throw new Error("connection refused");

@@ -1457,6 +1457,108 @@ def test_agy_auth_failure_short_circuits_the_next_call(monkeypatch) -> None:
     antigravity._clear_auth_failure()
 
 
+_FAKE_AGY = '''#!{python}
+import json, os, subprocess, sys, time
+
+args = sys.argv[1:]
+if os.environ.get("FAKE_AGY_HANG"):
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    with open(os.environ["FAKE_AGY_HANG"], "w") as fh:
+        fh.write(f"{{os.getpid()}} {{child.pid}}")
+    time.sleep(60)
+if "--input-format" in args:
+    prompt = json.loads(sys.stdin.readline())["message"]["content"]
+    via = "stdin"
+else:
+    prompt = args[args.index("-p") + 1]
+    via = "argv"
+envelope = {{"status": "SUCCESS", "structured_output": {{"text": f"{{via}}:{{len(prompt)}}"}},
+            "usage": {{"input_tokens": 3, "output_tokens": 1, "total_tokens": 4}}}}
+if "--output-format" in args and args[args.index("--output-format") + 1] == "stream-json":
+    print(json.dumps({{"event": "init", "init": {{}}}}))
+    print(json.dumps({{"event": "result", "result": envelope}}))
+else:
+    print(json.dumps(envelope))
+'''
+
+
+@pytest.fixture
+def fake_agy(tmp_path, monkeypatch):
+    import sys
+
+    script = tmp_path / "agy"
+    script.write_text(_FAKE_AGY.format(python=sys.executable))
+    script.chmod(0o755)
+    monkeypatch.setattr(antigravity, "agy_path", lambda: script)
+    antigravity._clear_auth_failure()
+    return script
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX shebang script")
+async def test_agy_async_long_prompt_goes_over_stdin(fake_agy, monkeypatch) -> None:
+    """A ~40k-character batch prompt as `-p` exceeds Windows' 32,767-char
+    command line (WinError 206); past the limit it rides stdin instead."""
+    messages = [{"role": "user", "content": "x" * 500}]
+    text, usage = await antigravity.acomplete("gemini-3.7-flash-medium", messages)
+    assert text == "argv:500"
+    assert usage["total_tokens"] == 4
+    monkeypatch.setattr(antigravity, "_ARGV_PROMPT_LIMIT", 100)
+    text, _ = await antigravity.acomplete("gemini-3.7-flash-medium", messages)
+    assert text == "stdin:500"
+    # The sync path takes the same route.
+    text, _ = antigravity.complete("gemini-3.7-flash-medium", messages)
+    assert text == "stdin:500"
+
+
+def _alive(pid: int) -> bool:
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX process groups")
+async def test_agy_cancel_kills_the_process_and_its_children(
+    fake_agy, tmp_path, monkeypatch
+) -> None:
+    """Under to_thread a cancelled run kept agy (and what it spawned) going."""
+    import asyncio
+
+    marker = tmp_path / "pids"
+    monkeypatch.setenv("FAKE_AGY_HANG", str(marker))
+    task = asyncio.create_task(
+        antigravity.acomplete("gemini-3.7-flash-medium", [{"role": "user", "content": "x"}])
+    )
+    for _ in range(200):
+        if marker.exists() and marker.read_text().strip():
+            break
+        await asyncio.sleep(0.05)
+    agy_pid, child_pid = map(int, marker.read_text().split())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    for _ in range(100):
+        if not _alive(agy_pid) and not _alive(child_pid):
+            break
+        await asyncio.sleep(0.05)
+    assert not _alive(agy_pid)
+    assert not _alive(child_pid)
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX shebang script")
+async def test_agy_async_timeout_is_a_clear_error(fake_agy, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("FAKE_AGY_HANG", str(tmp_path / "pids"))
+    monkeypatch.setattr(antigravity, "_PRINT_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(antigravity, "_KILL_GRACE_S", 0.0)
+    with pytest.raises(antigravity.AgyError, match="초 안에"):
+        await antigravity.acomplete("gemini-3.7-flash-medium", [{"role": "user", "content": "x"}])
+    agy_pid, _ = map(int, (tmp_path / "pids").read_text().split())
+    assert not _alive(agy_pid)
+
+
 def test_gemini_handler_routes_to_agy_when_that_is_the_transport(
     gemini_home, monkeypatch
 ) -> None:

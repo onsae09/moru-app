@@ -703,3 +703,18 @@ test("a double click on start launches one translation, not two", async () => {
   ]);
   expect(fetchCalls.filter((url) => url.endsWith("/jobs")).length).toBe(1);
 });
+
+test("a delete the engine refuses keeps the history row", async () => {
+  useSessions.getState().upsert(record("s1", "done"));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: "job s1 is still running" }), { status: 409 });
+  let outcome;
+  try {
+    outcome = await deleteHistorySession("s1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect(outcome).toBe("running");
+  expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(["s1"]);
+});

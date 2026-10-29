@@ -100,6 +100,12 @@ interface SettingsStore {
   recentFolders: string[];
   /** Mod ids never translated; seeded from DEFAULT_MOD_BLACKLIST. */
   modBlacklist: string[];
+  /**
+   * DEFAULT_MOD_BLACKLIST as of the last launch. A default added in a later
+   * release is appended to `modBlacklist` once; one the user removed stays
+   * removed.
+   */
+  seenDefaultBlacklist: string[];
   /** Instance folders set per launcher in Settings; absent = the default. */
   launcherPaths: LauncherPaths;
 
@@ -133,6 +139,7 @@ export const useSettings = create<SettingsStore>()(
       targetLocale: "ko_kr",
       recentFolders: [],
       modBlacklist: [...DEFAULT_MOD_BLACKLIST],
+      seenDefaultBlacklist: [...DEFAULT_MOD_BLACKLIST],
       launcherPaths: {},
 
       set: (patch) => set(patch),
@@ -162,7 +169,25 @@ export const useSettings = create<SettingsStore>()(
             }
           }
         }
-        return { ...current, ...saved, launcherPaths };
+        // Storage from before `seenDefaultBlacklist` existed cannot tell an
+        // old default the user removed from a new one: treat the current
+        // defaults as seen, so later additions are the ones that arrive.
+        const seen = Array.isArray(saved.seenDefaultBlacklist)
+          ? saved.seenDefaultBlacklist
+          : [...DEFAULT_MOD_BLACKLIST];
+        const blacklist = Array.isArray(saved.modBlacklist)
+          ? saved.modBlacklist
+          : [...DEFAULT_MOD_BLACKLIST];
+        const added = DEFAULT_MOD_BLACKLIST.filter(
+          (id) => !seen.includes(id) && !blacklist.includes(id),
+        );
+        return {
+          ...current,
+          ...saved,
+          launcherPaths,
+          modBlacklist: [...blacklist, ...added],
+          seenDefaultBlacklist: [...DEFAULT_MOD_BLACKLIST],
+        };
       },
     },
   ),

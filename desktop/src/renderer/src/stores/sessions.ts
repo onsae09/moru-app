@@ -180,13 +180,32 @@ export function reconcileCheckpoints(
   });
 }
 
+/**
+ * Rows kept in history. Every progress tick rewrites the whole list into
+ * localStorage, which has a quota of a few MB: without a bound a long-lived
+ * install eventually fails to persist at all.
+ */
+export const MAX_SESSIONS = 500;
+
+/** Newest-first list trimmed to MAX_SESSIONS, never dropping live or resumable work. */
+export function capSessions(sessions: SessionRecord[]): SessionRecord[] {
+  if (sessions.length <= MAX_SESSIONS) return sessions;
+  const keep = (s: SessionRecord): boolean => s.status === "running" || s.resumable;
+  let budget = MAX_SESSIONS - sessions.filter(keep).length;
+  return sessions.filter((s) => {
+    if (keep(s)) return true;
+    budget -= 1;
+    return budget >= 0;
+  });
+}
+
 export const useSessions = create<SessionsStore>()(
   persist(
     (set) => ({
       sessions: [],
       upsert: (record) =>
         set((state) => ({
-          sessions: [record, ...state.sessions.filter((s) => s.id !== record.id)],
+          sessions: capSessions([record, ...state.sessions.filter((s) => s.id !== record.id)]),
         })),
       patch: (id, patch) =>
         set((state) => ({

@@ -477,11 +477,23 @@ export async function reconcileResumableSessions(): Promise<void> {
  * for every checkpoint it still holds — dropping only the local record would
  * bring a resumable session straight back.
  */
-export async function deleteHistorySession(sessionId: string): Promise<void> {
+export async function deleteHistorySession(
+  sessionId: string,
+): Promise<"deleted" | "running" | "failed"> {
   const jobId = useSessionJobs.getState().jobs[sessionId] ?? sessionId;
+  try {
+    await api.deleteSession(jobId);
+  } catch (error) {
+    // 404: the engine never had (or already dropped) it — only the row is left.
+    // Anything else leaves the row: removing it locally while the engine
+    // keeps the session would bring it back on the next reconcile.
+    if (!(error instanceof EngineApiError && error.status === 404)) {
+      return error instanceof EngineApiError && error.status === 409 ? "running" : "failed";
+    }
+  }
   useSessions.getState().remove(sessionId);
   useSessionJobs.getState().unregister(sessionId);
-  await api.deleteSession(jobId).catch(() => undefined);
+  return "deleted";
 }
 
 function withLog(

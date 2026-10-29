@@ -138,3 +138,17 @@ test("a checkpoint whose history row was lost is listed again", () => {
     totalEntries: 5000,
   });
 });
+
+test("history is capped without dropping live or resumable rows", async () => {
+  const { capSessions, MAX_SESSIONS } = await import("./sessions.ts");
+  const rows = Array.from({ length: MAX_SESSIONS + 10 }, (_, i) => ({
+    id: `s${i}`,
+    status: i === MAX_SESSIONS + 9 ? "running" : "done",
+    resumable: i === MAX_SESSIONS + 8,
+  }));
+  const kept = capSessions(rows);
+  expect(kept).toHaveLength(MAX_SESSIONS);
+  expect(kept.map((s) => s.id)).toContain(`s${MAX_SESSIONS + 9}`);
+  expect(kept.map((s) => s.id)).toContain(`s${MAX_SESSIONS + 8}`);
+  expect(kept[0].id).toBe("s0");
+});

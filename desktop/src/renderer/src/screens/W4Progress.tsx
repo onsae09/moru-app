@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { pressable } from "@/components/a11y";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
 import {
@@ -956,7 +957,8 @@ export function W4Progress() {
           }`}
         >
           <div
-            onClick={() => setLogOpen((open) => !open)}
+            {...pressable(() => setLogOpen((open) => !open))}
+            aria-expanded={logOpen}
             className="flex cursor-pointer items-center justify-between px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase"
           >
             <div className="flex items-center gap-1.5">
@@ -968,6 +970,7 @@ export function W4Progress() {
               <span className="text-text4">{logOpen ? "▾" : "▸"}</span>
             </div>
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 copyLog();

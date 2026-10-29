@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Provider, SpeechLevel, TermStyle } from "../../../shared/engine";
+import { activateOnKey, pressable } from "@/components/a11y";
 import { ModelSelect } from "@/components/ModelSelect";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -231,10 +232,15 @@ function OptionCheck({
 }) {
   return (
     <div
+      role="checkbox"
+      aria-checked={checked}
+      aria-disabled={disabled || onToggle === undefined ? true : undefined}
+      tabIndex={!disabled && onToggle !== undefined ? 0 : undefined}
       className={`flex items-start gap-[10px] border border-line2 bg-raised p-3 ${
         disabled ? "cursor-not-allowed opacity-60" : onToggle !== undefined ? "cursor-pointer" : ""
       }`}
       onClick={disabled ? undefined : onToggle}
+      onKeyDown={!disabled && onToggle !== undefined ? activateOnKey(onToggle) : undefined}
     >
       {checked ? (
         <div className="mt-px flex h-4 w-4 shrink-0 items-center justify-center bg-accent">
@@ -996,14 +1002,18 @@ export function W3Settings() {
           )}
         </div>
       ) : tiers !== undefined ? (
-        <div className="mb-6 grid grid-cols-3 gap-3">
+        <div role="radiogroup" className="mb-6 grid grid-cols-3 gap-3">
           {PRESET_IDS.map((tier, index) => {
             const model = tiers[tier];
             const selected = settings.preset === tier;
             return (
               <div
                 key={tier}
+                role="radio"
+                aria-checked={selected}
+                tabIndex={0}
                 onClick={() => settings.set({ preset: tier, model })}
+                onKeyDown={activateOnKey(() => settings.set({ preset: tier, model }))}
                 className={
                   selected
                     ? "relative cursor-pointer overflow-hidden p-5"
@@ -1070,7 +1080,8 @@ export function W3Settings() {
       <div className="mb-6 border border-line2 bg-raised">
         <div
           className="flex cursor-pointer items-center gap-[10px] px-[18px] py-[14px] hover:bg-raised-hover"
-          onClick={() => setAdvancedOpen((v) => !v)}
+          {...pressable(() => setAdvancedOpen((v) => !v))}
+          aria-expanded={advancedOpen}
         >
           <svg
             width="10"

@@ -21,6 +21,7 @@ import type {
   TranslationGraphNode,
   TranslationGraphSnapshot,
 } from "../../../shared/engine";
+import { pressable } from "@/components/a11y";
 import { api, EngineApiError } from "@/lib/api";
 
 echarts.use([GraphChart, TooltipComponent, LegendComponent, CanvasRenderer]);
@@ -356,7 +357,8 @@ export function TranslationGraphView({ jobId, live }: { jobId: string; live: boo
   return (
     <div className="border border-line2 bg-raised">
       <div
-        onClick={() => setOpen((o) => !o)}
+        {...pressable(() => setOpen((o) => !o))}
+        aria-expanded={open}
         className="flex cursor-pointer items-center justify-between px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase"
       >
         <div className="flex items-center gap-1.5">

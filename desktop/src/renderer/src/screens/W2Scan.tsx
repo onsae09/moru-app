@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 
 import type { HardcodedMod, ScanCategory, ScanFile } from "../../../shared/engine";
+import { pressable } from "@/components/a11y";
 import { api, type TranslationMatch } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { WEB_URL } from "@/lib/web";
@@ -326,7 +327,8 @@ function FilterBand({
   return (
     <div className="-mt-4 mb-6 border border-line2 bg-raised">
       <div
-        onClick={onToggle}
+        {...pressable(expandable ? onToggle : undefined)}
+        aria-expanded={expandable ? expanded : undefined}
         className={`flex items-center gap-2 px-3.5 py-2 font-mono text-[11px] text-text2 ${
           expandable ? "cursor-pointer hover:bg-raised-hover" : ""
         }`}
@@ -925,15 +927,18 @@ function GroupRow({
   const entries = group.categories.reduce((sum, c) => sum + c.entry_count, 0);
   return (
     <div
-      onClick={onCollapse}
+      {...pressable(onCollapse)}
+      aria-expanded={!collapsed}
       className="flex cursor-pointer items-center gap-2.5 border-y border-line2 bg-hover px-3.5 py-2 hover:bg-raised-hover"
     >
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           onToggle(!allIncluded);
         }}
         aria-checked={allIncluded ? "true" : includedCount > 0 ? "mixed" : "false"}
+        aria-label={label}
         role="checkbox"
         className="flex shrink-0 items-center"
       >
@@ -987,7 +992,8 @@ function CategoryRow({
   return (
     <>
       <div
-        onClick={onExpand}
+        {...pressable(onExpand)}
+        aria-expanded={expanded}
         className={`flex cursor-pointer items-center gap-2.5 px-3.5 py-2.5 ${
           expanded
             ? "border-l-[3px] border-l-accent bg-[rgba(61,220,132,0.06)]"
@@ -997,11 +1003,13 @@ function CategoryRow({
         }`}
       >
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onToggle(!checked);
           }}
           aria-checked={checked}
+          aria-label={category.name}
           role="checkbox"
           className="flex shrink-0 items-center"
         >
@@ -1037,7 +1045,7 @@ function CategoryRow({
           {subFiles.map((f) => (
             <div
               key={f.path}
-              onClick={() => onPickFile(f.path)}
+              {...pressable(() => onPickFile(f.path))}
               className={`flex cursor-pointer items-center gap-2 py-1 ${
                 selectedFilePath === f.path ? "" : "hover:bg-raised-hover"
               }`}
@@ -1128,7 +1136,7 @@ function FileRows({
         return (
           <div
             key={f.path}
-            onClick={() => onPickFile(f.path)}
+            {...pressable(() => onPickFile(f.path))}
             className="flex cursor-pointer items-center border-b border-line px-3.5 py-2 hover:bg-raised-hover"
           >
             <span className="truncate font-mono text-[12px] text-text2" title={f.path}>

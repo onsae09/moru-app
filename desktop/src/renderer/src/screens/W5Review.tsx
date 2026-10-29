@@ -25,6 +25,7 @@ import {
   tokenColorMap,
   useTokenPatterns,
 } from "@/components/EntryText";
+import { activateOnKey } from "@/components/a11y";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -502,7 +503,7 @@ export function W5Review() {
             <div className="text-right">{t("w5.col.status")}</div>
           </div>
 
-          <div ref={listRef} className="max-h-[480px] overflow-y-auto">
+          <div ref={listRef} role="listbox" aria-label={t("w5.listLabel")} className="max-h-[480px] overflow-y-auto">
             {pageQuery.isPending ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <div
@@ -550,7 +551,11 @@ export function W5Review() {
                     <div
                       key={`${e.file}:${e.key}`}
                       data-key={`${e.file}:${e.key}`}
+                      role="option"
+                      aria-selected={isSel}
+                      tabIndex={isSel ? 0 : -1}
                       onClick={() => setSelectedKey(`${e.file}:${e.key}`)}
+                      onKeyDown={activateOnKey(() => setSelectedKey(`${e.file}:${e.key}`))}
                       className={`grid cursor-pointer grid-cols-[20px_200px_1fr_1fr_80px] gap-[10px] border-b border-line px-[14px] py-[10px] ${
                         isSel ? "" : "hover:bg-raised-hover"
                       }`}

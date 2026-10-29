@@ -50,5 +50,6 @@
   },
   "loadError": "Failed to load the review list",
   "failedRemain": "⚠ {{n}} failed remaining (warnings can be ignored)",
-  "next": "Next: Export"
+  "next": "Next: Export",
+  "listLabel": "Translation entries"
 }

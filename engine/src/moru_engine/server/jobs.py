@@ -1136,7 +1136,11 @@ class JobManager:
 
         Dot-directories are skipped: the scanner unpacks archives into the
         pack's own ``.mct_cache``, and counting that would change the
-        signature on every scan and defeat the cache entirely.
+        signature on every scan and defeat the cache entirely. So are the
+        runtime and output trees the migration fingerprint ignores
+        (``_FINGERPRINT_IGNORED_DIRS``): a world save, a log line or our
+        own ``moru_output`` changes nothing a scan finds, yet each used to
+        throw the cached scan away.
         """
         count = 0
         newest = 0
@@ -1152,6 +1156,12 @@ class JobManager:
                     continue
                 try:
                     if entry.is_dir(follow_symlinks=False):
+                        folded = entry.name.casefold()
+                        if (
+                            folded in _FINGERPRINT_IGNORED_DIRS
+                            or folded.endswith(".zip_extracted")
+                        ):
+                            continue
                         stack.append(Path(entry.path))
                         continue
                     stat = entry.stat(follow_symlinks=False)

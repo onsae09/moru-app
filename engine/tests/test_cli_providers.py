@@ -352,6 +352,9 @@ def test_gemini_cli_headers_identify_as_the_real_cli() -> None:
 @pytest.fixture
 def claude_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    # Never read the developer's real macOS login keychain.
+    monkeypatch.setattr(credentials.ClaudeCodeStore, "_keychain_read", lambda self: None)
+    monkeypatch.setattr(credentials.ClaudeCodeStore, "_keychain_write", lambda self, doc: False)
     return tmp_path
 
 

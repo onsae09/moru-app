@@ -784,3 +784,11 @@ export type JobEventFrame =
   | GlossaryProgressFrame
   | GlossaryExtractedFrame
   | TerminalFrame;
+
+/** POST /modpacks/import — an archive opened as a folder to scan. */
+export interface ImportedModpack {
+  modpack_path: string;
+  name: string;
+  /** False for launcher exports, which list mods instead of shipping JARs. */
+  has_mods: boolean;
+}

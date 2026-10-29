@@ -569,6 +569,40 @@ paths:
                   path: { type: string }
         "404": { description: session not found }
         "500": { description: export failed }
+  /modpacks/import:
+    post:
+      summary: Open a modpack archive (.zip / .mrpack) as a folder to scan
+      description: >-
+        Extracts the archive once into the engine's cache (keyed by path,
+        size and mtime; picking the same file again reuses it) and returns
+        the folder to pass as modpack_path. For a CurseForge export
+        (manifest.json + overrides/) or a Modrinth .mrpack that is the
+        overrides/ folder. Those formats list mods by download id instead of
+        shipping the JARs, so has_mods is false and only configs, quests,
+        scripts and resource packs are translatable. Archives with traversal
+        or link entries, or over the size/entry limits, are refused (422).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [archive_path]
+              properties:
+                archive_path: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [modpack_path, name, has_mods]
+                properties:
+                  modpack_path: { type: string }
+                  name: { type: string }
+                  has_mods: { type: boolean }
+        "404": { description: No such file }
+        "422": { description: Not a usable modpack archive }
   /sessions/import:
     post:
       summary: Import an external .moru session file into persistent store and activate it

@@ -2536,3 +2536,34 @@ def test_engine_stops_when_its_parent_closes_stdin() -> None:
     assert proc.stdin is not None
     proc.stdin.close()
     assert proc.wait(timeout=30) == 0
+
+
+def test_a_curseforge_export_zip_opens_at_its_overrides(
+    client: TestClient, tmp_path: Path
+) -> None:
+    import zipfile
+
+    archive = tmp_path / "My Pack-1.0.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("manifest.json", "{}")
+        zf.writestr("overrides/config/ftbquests/quests/chapters/a.snbt", "{ title: \"Hi\" }")
+    res = client.post("/modpacks/import", json={"archive_path": str(archive)}, headers=AUTH)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["name"] == "My Pack-1.0"
+    assert body["has_mods"] is False
+    assert Path(body["modpack_path"]).name == "overrides"
+    assert (Path(body["modpack_path"]) / "config/ftbquests/quests/chapters/a.snbt").is_file()
+    # Picking the same file again reuses the extraction.
+    again = client.post("/modpacks/import", json={"archive_path": str(archive)}, headers=AUTH)
+    assert again.json()["modpack_path"] == body["modpack_path"]
+
+
+def test_an_unsafe_archive_is_refused(client: TestClient, tmp_path: Path) -> None:
+    import zipfile
+
+    archive = tmp_path / "evil.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("../escape.txt", "x")
+    res = client.post("/modpacks/import", json={"archive_path": str(archive)}, headers=AUTH)
+    assert res.status_code == 422

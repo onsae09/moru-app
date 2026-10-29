@@ -32,7 +32,7 @@ from fastapi import (
     WebSocket,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from platformdirs import user_config_dir
+from platformdirs import user_cache_dir, user_config_dir
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.websockets import WebSocketDisconnect
 
@@ -46,6 +46,7 @@ from ..cli_providers import (
 from ..community import download_translation, find_translation, sync_community
 from ..dspy_modules import build_lm
 from ..graph import TranslationGraph
+from ..imports import ArchiveImportError, import_modpack_archive
 from ..pipeline import (
     EntryStatus,
     PipelineResult,
@@ -247,6 +248,12 @@ class CommunityDownloadRequest(BaseModel):
     download_url: str
 
 
+class ModpackImportRequest(BaseModel):
+    """A modpack archive (.zip / .mrpack) to open as a scannable folder."""
+
+    archive_path: str
+
+
 class ProviderTestRequest(BaseModel):
     provider: str
     api_key: str | None = None
@@ -363,6 +370,12 @@ def create_app(
     config_root = config_dir or Path(user_config_dir("moru", "moru"))
     config_path = config_root / "engine.json"
     glossary_dir = config_root / "glossaries"
+    # Extracted packs can be gigabytes: a cache folder, never the (roaming,
+    # on Windows) config folder — except under a test's config override.
+    imports_dir = (
+        config_root / "imports" if config_dir is not None
+        else Path(user_cache_dir("moru", "moru")) / "imports"
+    )
     session_store = SessionStore(sessions_dir=config_root / "sessions")
     manager = JobManager(
         glossary_store_dir=glossary_dir,
@@ -900,6 +913,21 @@ def create_app(
                 status_code=500, detail=f"export failed: {exc}"
             ) from exc
         return {"status": "ok", "path": str(exported)}
+
+    @api.post("/modpacks/import")
+    async def import_modpack(body: ModpackImportRequest) -> dict[str, Any]:
+        archive = Path(body.archive_path)
+        if not archive.is_file():
+            raise HTTPException(status_code=404, detail=f"no such file: {archive}")
+        try:
+            pack = await asyncio.to_thread(import_modpack_archive, archive, imports_dir)
+        except (ArchiveImportError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=f"import failed: {exc}") from exc
+        return {
+            "modpack_path": str(pack.modpack_path),
+            "name": pack.name,
+            "has_mods": pack.has_mods,
+        }
 
     @api.post("/sessions/import")
     async def import_session(body: SessionImportRequest) -> dict[str, Any]:

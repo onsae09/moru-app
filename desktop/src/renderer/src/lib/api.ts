@@ -6,6 +6,7 @@
 
 import type {
   CheckpointSummary,
+  ImportedModpack,
   CommunitySyncResult,
   Entry,
   EntryContext,
@@ -334,6 +335,13 @@ export const api = {
     request<{ status: string; id: string }>(`/sessions/${sessionId}`, { method: "DELETE" }),
   /** Sessions whose translation stopped early and can be resumed. */
   checkpoints: () => request<CheckpointSummary[]>("/checkpoints"),
+
+  /** Extract a .zip/.mrpack modpack (cached) and return the folder to scan. */
+  importModpack: (archivePath: string) =>
+    request<ImportedModpack>("/modpacks/import", {
+      method: "POST",
+      body: JSON.stringify({ archive_path: archivePath }),
+    }),
 };
 
 /**

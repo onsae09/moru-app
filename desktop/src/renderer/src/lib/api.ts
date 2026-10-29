@@ -146,6 +146,8 @@ export const api = {
   job: (id: string) => request<Job>(`/jobs/${id}`),
   jobSnapshot: (id: string) => request<JobSnapshot>(`/jobs/${id}/snapshot`),
   cancelJob: (id: string) => request<{ id: string; status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
+  /** Stop a translation resumably: it ends interrupted (reason `paused`). */
+  pauseJob: (id: string) => request<{ id: string; status: string }>(`/jobs/${id}/pause`, { method: "POST" }),
 
   scanResult: (jobId: string) => request<ScanResult>(`/scan/${jobId}/result`),
   modSources: (scanJobId: string) =>

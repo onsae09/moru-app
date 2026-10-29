@@ -267,6 +267,10 @@ _CHECKPOINT_PARAM_EXCLUDES = frozenset(
 #: the rest of the run to another model.
 _RESUME_OVERRIDES = ("api_key", "api_base", "model")
 #: Why a translate job the engine itself stopped (shutdown) is resumable.
+PAUSE_INTERRUPTION_MESSAGE = (
+    "번역을 일시정지했습니다. 완료된 번역은 저장되었으니 '이어서 번역'으로 "
+    "남은 부분을 계속할 수 있습니다."
+)
 SHUTDOWN_INTERRUPTION_MESSAGE = (
     "앱 또는 번역 엔진이 종료되어 번역이 중단되었습니다. 완료된 번역은 "
     "저장되었으니 '이어서 번역'으로 계속할 수 있습니다."
@@ -360,6 +364,9 @@ class JobRecord:
     #: The engine itself stopped the job (shutdown): it ends interrupted and
     #: resumable, not as a user cancel.
     shutdown: bool = False
+    #: The user paused the run: it stops like a cancel but ends interrupted
+    #: (reason ``paused``), so it reads as work to continue, not abandon.
+    pause_requested: bool = False
     #: A resume's previous run of this session, when it was still in memory:
     #: its partial result holds the review edits the resumed run must keep.
     #: Released once read. Execution-internal, never serialized.
@@ -1300,6 +1307,20 @@ class JobManager:
             record.task.cancel()
         return record
 
+    def pause(self, job_id: str) -> JobRecord:
+        """Stop a running translation resumably (reason ``paused``).
+
+        It unwinds exactly like :meth:`cancel` — completed batches are
+        already in the checkpoint — and "이어서 번역" continues it.
+        """
+        record = self.get(job_id)
+        if record.type is not JobType.TRANSLATE:
+            raise JobStateError(f"job {job_id} is not a translation")
+        if record.finished:
+            raise JobStateError(f"job {job_id} has already finished")
+        record.pause_requested = True
+        return self.cancel(job_id)
+
     async def aclose(self) -> None:
         """Cancel every running job (server shutdown)."""
         tasks = {
@@ -1481,10 +1502,9 @@ class JobManager:
             result = await runner
         except asyncio.CancelledError:
             # Both task.cancel() and the pipeline's cancel_check land here.
-            if record.shutdown and record.type is JobType.TRANSLATE:
-                terminal_type, terminal = self._interrupted(
-                    record, "shutdown", SHUTDOWN_INTERRUPTION_MESSAGE
-                )
+            stop = self._resumable_stop(record)
+            if stop is not None:
+                terminal_type, terminal = self._interrupted(record, *stop)
             else:
                 record.status = JobStatus.CANCELLED
                 terminal_type, terminal = "cancelled", {"status": "cancelled"}
@@ -1508,10 +1528,9 @@ class JobManager:
                     interruption.detail,
                 )
             elif record.cancel_requested:
-                if record.shutdown and record.type is JobType.TRANSLATE:
-                    terminal_type, terminal = self._interrupted(
-                        record, "shutdown", SHUTDOWN_INTERRUPTION_MESSAGE
-                    )
+                stop = self._resumable_stop(record)
+                if stop is not None:
+                    terminal_type, terminal = self._interrupted(record, *stop)
                 else:
                     record.status = JobStatus.CANCELLED
                     terminal_type, terminal = "cancelled", {"status": "cancelled"}
@@ -1554,6 +1573,18 @@ class JobManager:
                     )
         for queue in record.subscribers:
             queue.put_nowait(None)  # stream-end sentinel for live listeners
+
+    @staticmethod
+    def _resumable_stop(record: JobRecord) -> tuple[str, str] | None:
+        """(reason, message) when a stopped translate run is paused work,
+        not a cancel: the engine shut down, or the user paused it."""
+        if record.type is not JobType.TRANSLATE:
+            return None
+        if record.shutdown:
+            return "shutdown", SHUTDOWN_INTERRUPTION_MESSAGE
+        if record.pause_requested:
+            return "paused", PAUSE_INTERRUPTION_MESSAGE
+        return None
 
     @staticmethod
     def _interrupted(

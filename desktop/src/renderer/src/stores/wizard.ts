@@ -220,6 +220,8 @@ interface WizardStore {
   startManualSeed: () => Promise<ManualSeedOutcome>;
   handleTranslationFrame: (frame: JobEventFrame, sessionId: string) => void;
   cancelTranslate: () => Promise<void>;
+  /** Stop the running translation so "이어서 번역" can continue it later. */
+  pauseTranslate: () => Promise<void>;
   updateReviewStats: (stats: PipelineStats) => void;
   startExport: () => Promise<void>;
   /** W3 source-text export: same engine export job, untranslated values. */
@@ -1343,6 +1345,16 @@ export const useWizard = create<WizardStore>((set, get) => ({
     const { translateJobId } = get();
     if (translateJobId === null) return;
     await api.cancelJob(translateJobId);
+  },
+
+  pauseTranslate: async () => {
+    const { translateJobId, runState } = get();
+    if (translateJobId === null || runState !== "running") return;
+    try {
+      await api.pauseJob(translateJobId);
+    } catch (error) {
+      get().appendLog("error", `pause failed: ${String(error)}`);
+    }
   },
 
   updateReviewStats: (stats) => {

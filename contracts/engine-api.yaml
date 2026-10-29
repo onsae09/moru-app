@@ -63,6 +63,17 @@ paths:
       parameters: [{ $ref: "#/components/parameters/JobId" }]
       responses:
         "202": { description: cancellation requested }
+  /jobs/{jobId}/pause:
+    post:
+      summary: >-
+        Pause a running translate job - it stops like a cancel, but ends
+        interrupted with reason paused, so the session reads as work to
+        continue (POST /jobs {resume: true})
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      responses:
+        "202": { description: pause requested }
+        "404": { description: Unknown job }
+        "409": { description: Not a translate job, or already finished }
   /jobs/{jobId}/snapshot:
     get:
       summary: Compact job progress snapshot for renderer restoration
@@ -138,7 +149,8 @@ paths:
         exhausted daily quota, which stops the run at once, or kept refusing
         for capacity (429) with no call succeeding for 120 s; the run stops
         instead of failing every remaining batch), auth (a CLI subscription
-        provider refused or lacks its login, or is switched off) or
+        provider refused or lacks its login, or is switched off), paused (POST
+        /jobs/{jobId}/pause) or
         shutdown (the engine stopped mid-run); error is a user-facing message
         and detail the provider's own error excerpt;
         done export frames carry {zip_path, overrides_zip_path,
@@ -1645,7 +1657,7 @@ components:
         reason:
           type: string
           nullable: true
-          enum: [quota, auth, shutdown, null]
+          enum: [quota, auth, paused, shutdown, null]
         error: { type: string, nullable: true }
         translated_entries:
           type: integer

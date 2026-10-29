@@ -240,6 +240,7 @@ function GlossaryRow({ progress }: { progress: GlossaryProgress }) {
 function interruptBanner(reason: string | null): { title: string; body: string } {
   if (reason === "quota") return { title: "w4.banner.quotaTitle", body: "w4.banner.quotaBody" };
   if (reason === "auth") return { title: "w4.banner.authTitle", body: "w4.banner.authBody" };
+  if (reason === "paused") return { title: "w4.banner.pausedTitle", body: "w4.banner.pausedBody" };
   return { title: "w4.banner.interruptedTitle", body: "w4.banner.interruptedBody" };
 }
 

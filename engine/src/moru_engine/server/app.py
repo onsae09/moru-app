@@ -511,6 +511,16 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"id": record.id, "status": record.status.value}
 
+    @api.post("/jobs/{job_id}/pause", status_code=202)
+    async def pause_job(job_id: str) -> dict[str, Any]:
+        try:
+            record = manager.pause(job_id)
+        except UnknownJobError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except JobStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"id": record.id, "status": record.status.value}
+
     @app.websocket("/jobs/{job_id}/events")
     async def job_events(websocket: WebSocket, job_id: str) -> None:
         # WS auth: ?token= query param OR Authorization header. Closing

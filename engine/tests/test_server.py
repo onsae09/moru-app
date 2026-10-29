@@ -2567,3 +2567,29 @@ def test_an_unsafe_archive_is_refused(client: TestClient, tmp_path: Path) -> Non
         zf.writestr("../escape.txt", "x")
     res = client.post("/modpacks/import", json={"archive_path": str(archive)}, headers=AUTH)
     assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_paused_translation_ends_interrupted_and_resumable(tmp_path: Path) -> None:
+    from moru_engine.server.jobs import JobManager, JobRecord, JobStatus, JobType
+    from moru_engine.server.sessions import SessionStore
+
+    manager = JobManager(session_store=SessionStore(sessions_dir=tmp_path / "s"))
+    record = JobRecord(id="job-p", type=JobType.TRANSLATE, params={})
+    manager.register_job(record)
+    record.task = asyncio.create_task(manager._run(record, asyncio.sleep(30)))
+    await asyncio.sleep(0)
+    manager.pause("job-p")
+    await record.task
+    assert record.status is JobStatus.INTERRUPTED
+    history, _ = manager.subscribe("job-p")
+    assert history[-1]["type"] == "interrupted"
+    assert history[-1]["reason"] == "paused"
+
+
+def test_pausing_a_scan_is_refused(client: TestClient, done_translate_job: JobRecord) -> None:
+    from moru_engine.server.jobs import JobType
+
+    done_translate_job.type = JobType.SCAN
+    res = client.post(f"/jobs/{done_translate_job.id}/pause", headers=AUTH)
+    assert res.status_code == 409

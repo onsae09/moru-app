@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { MoruLogo } from "@/components/MoruLogo";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -325,7 +326,8 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                   )}
                   {localTest.isError && (
                     <div className="font-mono text-[11px] text-red">
-                      {localTest.error.message}
+                      {t("common.error.connectFailed")}
+                      <ErrorDetails raw={localTest.error.message} className="mt-1" />
                     </div>
                   )}
                   {localTest.isSuccess && (
@@ -363,7 +365,10 @@ function KeyStep({ onSaved }: { onSaved: () => void }) {
                     </button>
                   </div>
                   {keyTest.isError && (
-                    <div className="font-mono text-[11px] text-red">{keyTest.error.message}</div>
+                    <div className="font-mono text-[11px] text-red">
+                      {t("common.error.connectFailed")}
+                      <ErrorDetails raw={keyTest.error.message} className="mt-1" />
+                    </div>
                   )}
                   {keyTest.isSuccess && (
                     <div className="flex items-center gap-[6px] font-mono text-[11px] text-accent">

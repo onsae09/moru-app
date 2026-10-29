@@ -55,12 +55,12 @@
   },
   "resume": {
     "gone": "There is no saved progress to resume. Retry to translate from scratch.",
-    "failed": "Could not resume the translation: {{error}}"
+    "failed": "Couldn't resume the translation. Please try again shortly."
   },
   "session": {
-    "importFailed": "Import failed: {{error}}",
+    "importFailed": "Couldn't import the session. Make sure it's a valid .moru file.",
     "exported": "Session saved: {{path}}",
-    "exportFailed": "Export failed: {{error}}"
+    "exportFailed": "Couldn't save the session file. Check the save location."
   },
   "delete": {
     "running": "This job is still running, so it can't be deleted. Try again once it finishes or is cancelled.",

@@ -101,5 +101,10 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "close": "Close"
+  },
+  "error": {
+    "details": "Show details",
+    "connectFailed": "Couldn't connect. Check the key, address and model, then try again.",
+    "networkHint": "Check your network connection and try again shortly."
   }
 }

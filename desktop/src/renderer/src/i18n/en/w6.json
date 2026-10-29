@@ -41,7 +41,8 @@
     "ovContents": "Contents",
     "ovContentsValue": "kubejs · config · scripts",
     "ovNone": "This modpack needs no override files — the resource pack alone is enough",
-    "ovHint": "Created together with the resource pack"
+    "ovHint": "Created together with the resource pack",
+    "failedHint": "Check that the output folder is writable, then try again."
   },
   "share": {
     "heading": "Share with community",

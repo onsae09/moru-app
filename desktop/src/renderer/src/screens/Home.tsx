@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
 
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { toast } from "@/components/Toast";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { moru } from "@/lib/bridge";
@@ -506,9 +507,13 @@ export function HomeScreen() {
     if (outcome === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
     else if (outcome === "gone") toast(t("history.resume.gone"), { tone: "warn" });
     else {
-      toast(t("history.resume.failed", { error: useWizard.getState().runError ?? "" }), {
-        tone: "err",
-      });
+      toast(
+        <>
+          {t("history.resume.failed")}
+          <ErrorDetails raw={useWizard.getState().runError} className="mt-1" />
+        </>,
+        { tone: "err" },
+      );
     }
   };
 

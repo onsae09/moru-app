@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Provider, SpeechLevel, TermStyle } from "../../../shared/engine";
 import { activateOnKey, pressable } from "@/components/a11y";
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { ModelSelect } from "@/components/ModelSelect";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -920,7 +921,10 @@ export function W3Settings() {
             </div>
             <div className="font-mono text-[11px] text-text3">{t("w3.key.hint")}</div>
             {keyTest.isError && (
-              <div className="mt-1 font-mono text-[11px] text-red">{keyTest.error.message}</div>
+              <div className="mt-1 font-mono text-[11px] text-red">
+                {t("common.error.connectFailed")}
+                <ErrorDetails raw={keyTest.error.message} className="mt-1" />
+              </div>
             )}
           </div>
           <input
@@ -1403,7 +1407,7 @@ export function W3Settings() {
             {wizard.sourceExportState === "failed" && (
               <div className="mt-[6px] border border-red/30 bg-red/5 px-3 py-2 text-[11px] leading-[1.5]">
                 <span className="font-semibold text-red">{t("w3.sourceExport.failed")}</span>
-                <span className="text-text2"> — {wizard.sourceExportError}</span>
+                <ErrorDetails raw={wizard.sourceExportError} className="mt-1" />
               </div>
             )}
           </>
@@ -1417,8 +1421,8 @@ export function W3Settings() {
         <div className="mb-8 border border-amber/40 px-3 py-2 text-[11px] leading-[1.5]" style={{ background: "rgba(245,180,84,0.06)" }}>
           <span className="font-semibold text-amber">{t("w3.manualSeed.refused")}</span>
           <span className="text-text2"> — {t(`w3.manualSeed.${manualSeedRefusal}`)}</span>
-          {manualSeedRefusal === "requestFailed" && wizard.runError !== null && (
-            <span className="font-mono break-words text-text3"> ({wizard.runError})</span>
+          {manualSeedRefusal === "requestFailed" && (
+            <ErrorDetails raw={wizard.runError} className="mt-1" />
           )}
         </div>
       )}

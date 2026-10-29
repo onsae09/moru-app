@@ -21,7 +21,6 @@
     "test": "연결 테스트",
     "testing": "연결 확인 중…",
     "testOk": "연결 성공",
-    "testFail": "연결 실패: {{message}}",
     "save": "키 저장",
     "remove": "제거",
     "show": "보기",

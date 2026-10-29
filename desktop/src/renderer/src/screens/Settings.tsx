@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
 import { formatInt } from "@/lib/format";
@@ -134,12 +135,15 @@ function TestStatusLine({ status }: { status: TestStatus }) {
       ? t("settings.models.testing")
       : status.kind === "ok"
         ? t("settings.models.testOk")
-        : t("settings.models.testFail", { message: status.message });
+        : t("common.error.connectFailed");
   const color = status.kind === "testing" ? "text-text2" : status.kind === "ok" ? "text-accent" : "text-red";
   return (
-    <div className="flex items-center gap-[10px] border-t border-line2 px-5 py-3">
-      {dot}
-      <span className={`font-mono text-[11px] ${color}`}>{text}</span>
+    <div className="border-t border-line2 px-5 py-3">
+      <div className="flex items-center gap-[10px]">
+        {dot}
+        <span className={`font-mono text-[11px] ${color}`}>{text}</span>
+      </div>
+      {status.kind === "fail" && <ErrorDetails raw={status.message} className="mt-1.5 pl-4" />}
     </div>
   );
 }
@@ -704,10 +708,8 @@ function ModelsTab() {
           <div className="flex items-center gap-[10px]">
             <div className="h-[6px] w-[6px] bg-red" />
             <span className="font-mono text-[11px] text-red">{t("settings.models.loadError")}</span>
-            <span className="truncate font-mono text-[10px] text-text3">
-              {providersQuery.error.message}
-            </span>
           </div>
+          <ErrorDetails raw={providersQuery.error.message} className="mt-2" />
           <button
             className="mt-3 border border-edge bg-transparent px-3 py-2 text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
             onClick={() => void providersQuery.refetch()}

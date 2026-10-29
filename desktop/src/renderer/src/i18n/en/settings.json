@@ -21,7 +21,6 @@
     "test": "Test connection",
     "testing": "Testing connection…",
     "testOk": "Connection OK",
-    "testFail": "Connection failed: {{message}}",
     "save": "Save key",
     "remove": "Remove",
     "show": "Show",

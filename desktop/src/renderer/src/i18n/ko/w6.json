@@ -41,7 +41,8 @@
     "ovContents": "포함",
     "ovContentsValue": "kubejs · config · scripts",
     "ovNone": "이 모드팩에는 덮어쓰기가 필요한 파일이 없어요 — 리소스팩만 적용하면 됩니다",
-    "ovHint": "리소스팩을 생성하면 함께 만들어져요"
+    "ovHint": "리소스팩을 생성하면 함께 만들어져요",
+    "failedHint": "출력 폴더에 쓸 수 있는지 확인하고 다시 시도해 주세요."
   },
   "share": {
     "heading": "커뮤니티에 공유",

@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { toast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -417,9 +418,13 @@ export function HistoryScreen(): React.JSX.Element {
     if (outcome === "busy") toast(t("history.reopen.busy"), { tone: "warn" });
     else if (outcome === "gone") toast(t("history.resume.gone"), { tone: "warn" });
     else {
-      toast(t("history.resume.failed", { error: useWizard.getState().runError ?? "" }), {
-        tone: "err",
-      });
+      toast(
+        <>
+          {t("history.resume.failed")}
+          <ErrorDetails raw={useWizard.getState().runError} className="mt-1" />
+        </>,
+        { tone: "err" },
+      );
     }
   };
 
@@ -461,7 +466,13 @@ export function HistoryScreen(): React.JSX.Element {
         await reopen(rec.id, "w5");
       }
     } catch (err) {
-      toast(t("history.session.importFailed", { error: String(err) }), { tone: "err" });
+      toast(
+        <>
+          {t("history.session.importFailed")}
+          <ErrorDetails raw={String(err)} className="mt-1" />
+        </>,
+        { tone: "err" },
+      );
     }
   };
 
@@ -474,7 +485,13 @@ export function HistoryScreen(): React.JSX.Element {
       await api.exportSession(targetId, savePath);
       toast(t("history.session.exported", { path: savePath }), { tone: "ok" });
     } catch (err) {
-      toast(t("history.session.exportFailed", { error: String(err) }), { tone: "err" });
+      toast(
+        <>
+          {t("history.session.exportFailed")}
+          <ErrorDetails raw={String(err)} className="mt-1" />
+        </>,
+        { tone: "err" },
+      );
     }
   };
 

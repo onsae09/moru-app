@@ -17,6 +17,7 @@ import type {
   PipelineStats,
   UploadParams,
 } from "../../../shared/engine";
+import { ErrorDetails } from "@/components/ErrorDetails";
 import { useWizardResetGuard } from "@/components/WizardResetGuard";
 import { api, openJobEvents } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -500,7 +501,8 @@ export function W6Export() {
             {wizard.exportState === "failed" && (
               <div className="mb-3 border border-red/30 bg-red/5 px-3 py-2 text-[11px] leading-[1.5]">
                 <span className="font-semibold text-red">{t("w6.export.failed")}</span>
-                <span className="text-text2"> — {wizard.exportError}</span>
+                <span className="text-text2"> — {t("w6.export.failedHint")}</span>
+                <ErrorDetails raw={wizard.exportError} className="mt-1" />
               </div>
             )}
 
@@ -818,7 +820,8 @@ export function W6Export() {
                       <span className="font-semibold text-red">
                         {t("w6.share.cfSearchFailed")}
                       </span>
-                      <span className="text-text2"> — {search.message}</span>
+                      <span className="text-text2"> — {t("common.error.networkHint")}</span>
+                      <ErrorDetails raw={search.message} className="mt-1" />
                     </div>
                   )}
                   {search.kind === "done" && search.results.length === 0 && (
@@ -1060,7 +1063,8 @@ export function W6Export() {
                 {upload.kind === "failed" && (
                   <div className="mb-2 text-[11px] leading-[1.5]">
                     <span className="font-semibold text-red">{t("w6.share.uploadFailed")}</span>
-                    <span className="text-text2"> — {upload.message}</span>
+                    <span className="text-text2"> — {t("common.error.networkHint")}</span>
+                    <ErrorDetails raw={upload.message} className="mt-1" />
                   </div>
                 )}
                 <button

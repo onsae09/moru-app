@@ -564,7 +564,7 @@ export function W5Review() {
                       data-key={`${e.file}:${e.key}`}
                       role="option"
                       aria-selected={isSel}
-                      tabIndex={isSel ? 0 : -1}
+                      tabIndex={isSel || (selected === null && e === rows[0]) ? 0 : -1}
                       onClick={() => setSelectedKey(`${e.file}:${e.key}`)}
                       onKeyDown={activateOnKey(() => setSelectedKey(`${e.file}:${e.key}`))}
                       className={`grid cursor-pointer grid-cols-[20px_200px_1fr_1fr_80px] gap-[10px] border-b border-line px-[14px] py-[10px] ${

@@ -723,8 +723,9 @@ export function W4Progress() {
         </div>
       )}
 
-      {/* Hero: big progress + ticker */}
-      <div className="mb-5 grid grid-cols-1 gap-5 @4xl:grid-cols-[380px_1fr]">
+      {/* Hero: big progress + ticker. Two columns from a 1360px window (~888px
+          of content after sidebar + rail); stacked below that. */}
+      <div className="mb-5 grid grid-cols-1 gap-5 min-[1360px]:grid-cols-[380px_1fr]">
         {/* Progress ring */}
         <div
           className="relative overflow-hidden border border-accent-lo p-6 text-center"
@@ -953,7 +954,7 @@ export function W4Progress() {
       </div>
 
       {/* Files + Log */}
-      <div className="grid grid-cols-1 gap-5 @4xl:grid-cols-[1fr_380px]">
+      <div className="grid grid-cols-1 gap-5 min-[1360px]:grid-cols-[1fr_380px]">
         {/* File progress list */}
         <div className="border border-line2 bg-raised">
           <div className="flex items-center justify-between border-b border-line2 px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-text2 uppercase">

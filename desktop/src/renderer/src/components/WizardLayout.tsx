@@ -163,9 +163,10 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Container-query root: wizard screens size their grids to this pane,
-          not the viewport, since the sidebar + rail eat ~470px of it. */}
-      <div className="@container min-w-0 flex-1 overflow-y-auto">{children}</div>
+      {/* No container query root here: container-type implies layout containment, which
+          would make this pane the containing block for every position:fixed
+          dialog/backdrop inside the wizard. */}
+      <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }

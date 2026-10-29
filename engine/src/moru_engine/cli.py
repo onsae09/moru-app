@@ -3,6 +3,9 @@
 Usage:
     uv run python -m moru_engine.cli scan ./test/modpack
     uv run python -m moru_engine.cli scan ./test/modpack --json
+    uv run python -m moru_engine.cli translate ./pack --model openai/gpt-5.6-luna --json
+    uv run python -m moru_engine.cli translate ./pack-v2 \\
+        --previous-modpack ./pack-v1 --previous-resourcepack ./ko.zip
 """
 
 from __future__ import annotations
@@ -12,8 +15,11 @@ import asyncio
 import json
 import logging
 import sys
+import tempfile
 from pathlib import Path
+from typing import get_args
 
+from .dspy_modules.signatures import SpeechLevel, TermStyle
 from .pipeline import PipelineConfig, run_pipeline
 from .scanner import ScanResult, scan_modpack
 from .utils.log import setup_logging
@@ -136,20 +142,66 @@ async def _cmd_translate(args: argparse.Namespace) -> int:
     if not modpack.exists():
         logger.error("Modpack path does not exist: %s", modpack)
         return 1
-    config = PipelineConfig(
-        modpack_path=modpack,
-        output_dir=Path(args.output) if args.output else None,
-        source_locale=args.source,
-        target_locale=args.target,
-        model=args.model,
-        api_base=args.api_base,
-        use_tm=not args.no_tm,
-        use_translation_graph=not args.no_graph,
-        extract_glossary=args.extract_glossary,
-        use_mod_translations=not args.no_mod_terms,
-        max_refine=args.max_refine,
-        temperature=args.temperature,
-    )
+    previous_rp = Path(args.previous_resourcepack) if args.previous_resourcepack else None
+    previous_ov = Path(args.previous_overrides) if args.previous_overrides else None
+    if (previous_rp or previous_ov) and not args.previous_modpack:
+        logger.error("--previous-resourcepack/--previous-overrides need --previous-modpack")
+        return 1
+    try:
+        config = PipelineConfig(
+            modpack_path=modpack,
+            output_dir=Path(args.output) if args.output else None,
+            source_locale=args.source,
+            target_locale=args.target,
+            model=args.model,
+            api_base=args.api_base,
+            reasoning_effort=args.reasoning_effort,
+            use_tm=not args.no_tm,
+            use_translation_graph=not args.no_graph,
+            extract_glossary=args.extract_glossary,
+            use_mod_translations=not args.no_mod_terms,
+            use_vanilla_glossary=not args.no_vanilla_glossary,
+            max_refine=args.max_refine,
+            temperature=args.temperature,
+            speech_level=args.speech_level,
+            term_style=args.term_style,
+            source_text_only=args.source_text_only,
+            mod_blacklist=args.exclude_mod or None,
+            include_categories=args.include_category or None,
+            previous_modpack_path=Path(args.previous_modpack) if args.previous_modpack else None,
+            previous_resourcepack_path=previous_rp,
+            previous_overrides_path=previous_ov,
+            **({"batch_size": args.batch_size} if args.batch_size else {}),
+            **({"max_concurrent": args.concurrency} if args.concurrency else {}),
+        )
+    except ValueError as exc:  # pydantic ValidationError is a ValueError
+        logger.error("Invalid options: %s", exc)
+        return 1
+
+    migration = None
+    scan_result = None
+    if config.previous_modpack_path is not None:
+        # The server builds this index at scan time (W2); headless runs build
+        # it here from the same scan the pipeline then reuses.
+        from .migration import build_migration_catalog
+
+        scan_result = await scan_modpack(
+            modpack,
+            source_locale=config.source_locale,
+            target_locale=config.target_locale,
+            mod_blacklist=config.mod_blacklist,
+        )
+        cache_dir = Path(tempfile.mkdtemp(prefix="moru-cli-migration-"))
+        migration = await build_migration_catalog(
+            previous_modpack_path=config.previous_modpack_path,
+            previous_resourcepack_path=previous_rp,
+            previous_overrides_path=previous_ov,
+            current_modpack_root=modpack,
+            current_scan=scan_result,
+            source_locale=config.source_locale,
+            target_locale=config.target_locale,
+            asset_cache_dir=cache_dir,
+        )
 
     def on_event(event: str, payload: dict[str, object]) -> None:
         if event == "progress":
@@ -159,9 +211,21 @@ async def _cmd_translate(args: argparse.Namespace) -> int:
             )
             sys.stderr.flush()
 
-    result = await run_pipeline(config, on_event=on_event)
+    result = await run_pipeline(
+        config, on_event=on_event, scan_result=scan_result, migration=migration
+    )
     sys.stderr.write("\n")
     stats = result.stats
+    if args.json:
+        summary = {
+            "stats": stats.model_dump(mode="json"),
+            "failed": [
+                {"file": e.file, "key": e.key, "errors": e.errors} for e in result.failed
+            ],
+            "output_files": [str(path) for path in result.output_files],
+        }
+        sys.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
+        return 0 if stats.failed_entries == 0 else 2
     sys.stdout.write(
         f"files={stats.total_files} entries={stats.total_entries} "
         f"translated={stats.translated_entries} tm_hits={stats.tm_hits} "
@@ -238,6 +302,68 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.3,
         help="sampling temperature (also busts the DSPy response cache)",
     )
+    translate.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high"],
+        default=None,
+        help="thinking budget for reasoning models",
+    )
+    translate.add_argument(
+        "--speech-level",
+        choices=list(get_args(SpeechLevel)),
+        default="auto",
+        help="Korean speech level of the output",
+    )
+    translate.add_argument(
+        "--term-style",
+        choices=list(get_args(TermStyle)),
+        default="auto",
+        help="translate or transliterate terms with no established name",
+    )
+    translate.add_argument("--batch-size", type=int, default=None, help="entries per request")
+    translate.add_argument(
+        "--concurrency", type=int, default=None, help="concurrent provider requests"
+    )
+    translate.add_argument(
+        "--no-vanilla-glossary",
+        action="store_true",
+        help="do not seed the glossary with vanilla Minecraft names",
+    )
+    translate.add_argument(
+        "--exclude-mod",
+        action="append",
+        default=[],
+        metavar="MOD_ID",
+        help="never translate this mod (repeatable)",
+    )
+    translate.add_argument(
+        "--include-category",
+        action="append",
+        default=[],
+        metavar="CATEGORY",
+        help="translate only these scan categories (repeatable; see `scan`)",
+    )
+    translate.add_argument(
+        "--source-text-only",
+        action="store_true",
+        help="write the source text into the output trees; no provider call",
+    )
+    translate.add_argument(
+        "--previous-modpack",
+        default=None,
+        help="older version of the pack the previous translation was made for",
+    )
+    translate.add_argument(
+        "--previous-resourcepack",
+        default=None,
+        help="previous translation's resource pack (.zip or folder)",
+    )
+    translate.add_argument(
+        "--previous-overrides",
+        default=None,
+        help="previous translation's overrides (.zip or folder)",
+    )
+    translate.add_argument("--json", action="store_true", help="machine-readable summary")
     translate.set_defaults(func=_cmd_translate)
 
     verify_agy = sub.add_parser(

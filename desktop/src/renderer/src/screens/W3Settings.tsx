@@ -262,6 +262,13 @@ export function W3Settings() {
   const go = useRouter((s) => s.go);
   const wizard = useWizard();
   const settings = useSettings();
+  /* Budget input keeps its own text so an empty or half-typed value can sit in
+     the field; only a valid value (> 0) or an empty field (no limit) is saved. */
+  const [budgetText, setBudgetText] = useState(() =>
+    settings.budgetUsd === null ? "" : String(settings.budgetUsd),
+  );
+  const budgetInvalid =
+    budgetText.trim() !== "" && !(Number(budgetText) > 0 && Number.isFinite(Number(budgetText)));
   const queryClient = useQueryClient();
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -1298,6 +1305,49 @@ export function W3Settings() {
                 : t("w3.options.tmSub", { n: formatInt(tmQuery.data.entries) })
           }
         />
+      </div>
+
+      {/* Budget limit: the engine pauses the run (resumably) once spend
+          reaches it. */}
+      <div className="mb-8 border border-line2 bg-raised px-[18px] py-4">
+        <label className="flex items-center gap-[14px]">
+          <span className="flex-1">
+            <span className="mb-[2px] block text-[13px] font-bold text-text">
+              {t("w3.budget.label")}
+            </span>
+            <span className="block font-mono text-[11px] leading-[1.5] text-text3">
+              {t("w3.budget.hint")}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center border border-edge bg-ink focus-within:border-accent">
+            <span className="pl-[10px] font-mono text-[12px] text-text3">$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.5}
+              value={budgetText}
+              placeholder={t("w3.budget.placeholder")}
+              aria-invalid={budgetInvalid || undefined}
+              onChange={(e) => {
+                const text = e.target.value;
+                setBudgetText(text);
+                const n = Number(text);
+                if (text.trim() === "") settings.set({ budgetUsd: null });
+                else if (Number.isFinite(n) && n > 0) settings.set({ budgetUsd: n });
+              }}
+              className="w-[110px] px-[8px] py-[7px] font-mono text-[12px] text-text outline-none placeholder:text-text4"
+            />
+          </span>
+        </label>
+        {budgetInvalid && (
+          <div role="alert" className="mt-2 font-mono text-[11px] text-red">
+            {t("w3.budget.invalid")}
+          </div>
+        )}
+        {!budgetInvalid && settings.budgetUsd !== null && price === null && (
+          <div className="mt-2 font-mono text-[11px] text-amber">{t("w3.budget.unknownPrice")}</div>
+        )}
       </div>
 
       {/* Export as source text — no API connection, no translation. The

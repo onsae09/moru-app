@@ -149,5 +149,12 @@
     "loading": "Checking the {{provider}} connection…",
     "cliNotReady": "The {{provider}} CLI isn't ready yet. Install and sign in as shown above.",
     "noKey": "No {{provider}} API key yet. Enter one above."
+  },
+  "budget": {
+    "label": "Budget limit (USD)",
+    "hint": "When spend reaches this amount the run pauses; you can continue later with Resume. The limit applies to each run or resume separately. Leave empty for no limit.",
+    "placeholder": "No limit",
+    "invalid": "Enter an amount above 0, or leave it empty.",
+    "unknownPrice": "This model has no known price, so the budget limit can't be enforced."
   }
 }

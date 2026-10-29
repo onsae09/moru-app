@@ -6,6 +6,7 @@
 import { useTranslation } from "react-i18next";
 
 import { MoruLogo } from "@/components/MoruLogo";
+import { moru } from "@/lib/bridge";
 import { useEngineStore } from "@/stores/engine";
 
 export function EngineGate({ children }: { children: React.ReactNode }) {
@@ -23,20 +24,22 @@ export function EngineGate({ children }: { children: React.ReactNode }) {
         <div className="flex max-w-md flex-col items-center gap-3 text-center">
           <div className="text-base font-bold text-text">{t("common.engine.failedTitle")}</div>
           {info.error !== undefined && (
-            <div className="border border-line bg-bar px-3 py-2 font-mono text-[11px] text-red">
+            <div className="max-h-40 overflow-auto whitespace-pre-wrap break-all border border-line bg-bar px-3 py-2 text-left font-mono text-[11px] text-red">
               {info.error}
             </div>
           )}
           <div className="flex gap-2">
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => void moru.engine.restart()}
               className="bg-accent px-4 py-2 text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
             >
               {t("common.engine.retry")}
             </button>
             <button
-              onClick={() => {
-                if (info.error !== undefined) void navigator.clipboard.writeText(info.error);
+              onClick={async () => {
+                const tail = await moru.engine.logTail().catch(() => "");
+                const text = [info.error, tail].filter((part) => part !== undefined && part !== "").join("\n\n");
+                if (text !== "") void navigator.clipboard.writeText(text);
               }}
               className="border border-edge px-4 py-2 text-[13px] font-semibold text-text2 hover:border-edge2 hover:text-text"
             >

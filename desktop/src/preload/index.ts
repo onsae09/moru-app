@@ -26,6 +26,8 @@ const bridge: MoruBridge = {
   engine: {
     getInfo: () => ipcRenderer.invoke("engine:info"),
     onState: (cb: (info: EngineInfo) => void) => subscribe("engine:state", cb),
+    restart: () => ipcRenderer.invoke("engine:restart"),
+    logTail: () => ipcRenderer.invoke("engine:log-tail"),
   },
 
   pickFolder: () => ipcRenderer.invoke("dialog:pick-folder"),

@@ -43,6 +43,15 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
 
+  // The app never navigates its own window; a link that tries to would
+  // replace the UI (and its preload bridge) with a remote page.
+  win.webContents.on("will-navigate", (event, url) => {
+    if (url !== win.webContents.getURL()) {
+      event.preventDefault();
+      if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    }
+  });
+
   if (process.env.ELECTRON_RENDERER_URL !== undefined) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
@@ -96,7 +105,9 @@ app.on("before-quit", (event) => {
   if (!shutdownStarted) {
     shutdownStarted = true;
     event.preventDefault();
-    void sidecar.stop().finally(() => app.exit(0));
+    // quit() again rather than exit(): exit skips the `quit` event, and with
+    // it electron-updater's install-on-quit of a downloaded update.
+    void sidecar.stop().finally(() => app.quit());
   }
 });
 

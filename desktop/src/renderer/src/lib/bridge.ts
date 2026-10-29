@@ -24,6 +24,8 @@ function makeBrowserShim(): MoruBridge {
         restarts: 0,
       }),
       onState: () => noop,
+      restart: async () => window.location.reload(),
+      logTail: async () => "",
     },
     pickFolder: async () => window.prompt("모드팩 폴더 경로 입력"),
     pickFolders: async () => {

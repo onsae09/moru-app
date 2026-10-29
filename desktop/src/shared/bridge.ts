@@ -92,6 +92,10 @@ export interface MoruBridge {
   engine: {
     getInfo(): Promise<EngineInfo>;
     onState(cb: (info: EngineInfo) => void): () => void;
+    /** Fresh start from the failed state, with a full restart budget. */
+    restart(): Promise<void>;
+    /** The last lines the engine printed (also in userData/logs/engine.log). */
+    logTail(): Promise<string>;
   };
 
   pickFolder(): Promise<string | null>;

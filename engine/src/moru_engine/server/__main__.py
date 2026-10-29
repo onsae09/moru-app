@@ -10,6 +10,8 @@ import argparse
 import logging
 import os
 import sys
+import threading
+import time
 
 import uvicorn
 
@@ -46,6 +48,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Root log level (default: %(default)s).",
     )
+    parser.add_argument(
+        "--exit-with-stdin",
+        action="store_true",
+        help=(
+            "Shut down when stdin reaches EOF. The desktop holds the other end "
+            "of the pipe, so the OS closes it when the app dies by any means."
+        ),
+    )
     args = parser.parse_args(argv)
 
     token = args.token or os.environ.get("MORU_SESSION_TOKEN")
@@ -58,9 +68,39 @@ def main(argv: list[str] | None = None) -> int:
     server = uvicorn.Server(config)
     # POST /shutdown flips server.should_exit for a graceful drain.
     app.state.uvicorn_server = server
+    if args.exit_with_stdin:
+        _exit_with_stdin(server)
     logger.info("Moru engine API listening on %s:%d", args.host, args.port)
     server.run()
     return 0
+
+
+#: How long a graceful drain may take once the parent is gone.
+_ORPHAN_GRACE_SECONDS = 10.0
+
+
+def _exit_with_stdin(server: uvicorn.Server) -> None:
+    """Stop the server once the parent's end of stdin closes.
+
+    A desktop killed from the task manager, or crashing, never sends
+    POST /shutdown; without this the engine kept running and kept calling a
+    paid provider for a run nobody could see.
+    """
+
+    def watch() -> None:
+        try:
+            while sys.stdin.buffer.read(4096):
+                pass
+        except (OSError, ValueError):
+            pass
+        logger.warning("Desktop app is gone (stdin closed); shutting down")
+        server.should_exit = True
+        time.sleep(_ORPHAN_GRACE_SECONDS)
+        os._exit(0)
+
+    if sys.stdin is None:
+        return
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
 
 
 if __name__ == "__main__":

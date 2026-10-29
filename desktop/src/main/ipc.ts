@@ -145,6 +145,8 @@ export function registerIpc(sidecar: EngineSidecar, getBusy: () => boolean): voi
   void getBusy; // busy state is read by the quit flow in index.ts
 
   ipcMain.handle("engine:info", () => sidecar.info);
+  ipcMain.handle("engine:restart", () => sidecar.restart());
+  ipcMain.handle("engine:log-tail", () => sidecar.logTail);
 
   ipcMain.handle("dialog:pick-folder", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

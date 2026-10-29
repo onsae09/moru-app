@@ -2520,3 +2520,19 @@ def test_translate_with_a_switched_off_provider_is_refused(
     )
     assert res.status_code == 422
     assert "switched off" in res.json()["detail"]
+
+
+def test_engine_stops_when_its_parent_closes_stdin() -> None:
+    import subprocess
+    import sys as _sys
+
+    proc = subprocess.Popen(
+        [_sys.executable, "-m", "moru_engine.server", "--port", "0", "--token", "t",
+         "--exit-with-stdin"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    assert proc.stdin is not None
+    proc.stdin.close()
+    assert proc.wait(timeout=30) == 0

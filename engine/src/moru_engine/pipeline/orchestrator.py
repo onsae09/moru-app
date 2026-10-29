@@ -340,6 +340,31 @@ class PipelineConfig(BaseModel):
     seed_from_job_id: str | None = None
 
     @model_validator(mode="after")
+    def _output_dir_cannot_swallow_the_pack(self) -> PipelineConfig:
+        """Refuse an output folder whose regenerated trees hold the pack.
+
+        Output generation deletes ``<output>/resourcepack`` and
+        ``<output>/overrides`` before writing them. Pointed at the pack
+        root itself, that is the pack's own ``overrides/`` (every
+        CurseForge export has one) gone without a backup; pointed above
+        the pack, the pack may sit inside one of those trees.
+        """
+        if self.output_dir is None:
+            return self
+        from ..output.generator import OVERRIDES_DIRNAME, RESOURCEPACK_DIRNAME
+
+        out = self.output_dir.expanduser().resolve()
+        pack = self.modpack_path.expanduser().resolve()
+        if out == pack:
+            raise ValueError("output_dir must not be the modpack folder itself")
+        for name in (RESOURCEPACK_DIRNAME, OVERRIDES_DIRNAME):
+            if pack.is_relative_to(out / name):
+                raise ValueError(
+                    f"output_dir would replace {out / name}, which contains the modpack"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _disable_provider_stages(self) -> PipelineConfig:
         """A run that must not need a model or an API key: enforce it here.
 

@@ -353,3 +353,20 @@ async def test_stale_output_trees_are_wiped(tmp_path: Path) -> None:
     assert not stale.exists()
     assert not (tmp_path / "out/overrides/config/old.snbt").exists()
     assert result.all_files == []
+
+
+def test_output_dir_cannot_be_the_pack_or_hold_it(tmp_path: Path) -> None:
+    import pydantic
+
+    from moru_engine.pipeline.orchestrator import PipelineConfig
+
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    with pytest.raises(pydantic.ValidationError):
+        PipelineConfig(modpack_path=pack, output_dir=pack)
+    nested = tmp_path / "overrides" / "pack"
+    nested.mkdir(parents=True)
+    with pytest.raises(pydantic.ValidationError):
+        PipelineConfig(modpack_path=nested, output_dir=tmp_path)
+    # The default location inside the pack stays allowed.
+    PipelineConfig(modpack_path=pack, output_dir=pack / "moru_output")

@@ -92,7 +92,7 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-full">
-      <aside className="w-60 shrink-0 border-r border-line bg-panel px-5 py-6">
+      <aside className="w-52 shrink-0 border-r border-line bg-panel px-4 py-6 xl:w-60 xl:px-5">
         <div className="mb-1 font-mono text-[11px] font-semibold tracking-[0.08em] text-text3 uppercase">
           <span className="text-accent">▍</span> {t("common.wizard.title")}
         </div>
@@ -158,7 +158,9 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex-1 overflow-y-auto">{children}</div>
+      {/* Container-query root: wizard screens size their grids to this pane,
+          not the viewport, since the sidebar + rail eat ~470px of it. */}
+      <div className="@container min-w-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }

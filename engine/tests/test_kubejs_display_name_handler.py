@@ -170,3 +170,39 @@ def test_template_expression_round_trips_as_one_placeholder() -> None:
 
     assert protected.protected == "Orb of {{VAR}}"
     assert protected.restore("{{VAR}}의 오브") == "${orb.toUpperCase()}의 오브"
+
+
+@pytest.mark.asyncio
+async def test_tooltips_and_text_components_are_extracted(tmp_path: Path) -> None:
+    script = tmp_path / "modpack/kubejs/client_scripts/tooltips.js"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "ItemEvents.tooltip(event => {\n"
+        "  event.add('minecraft:stone', 'Very heavy rock')\n"
+        "  event.add(['a:b', \"c:d\"], Text.gold('Shiny'))\n"
+        "  event.add('x:y', Text.translate('tooltip.x'))\n"
+        "  event.addAdvanced('z:w', (item, adv, text) => { text.add(1, Text.of('Line two')) })\n"
+        "})\n"
+        "event.create('gem').displayName('Gem').tooltip('Glows at night')\n"
+        "const id = Text.of(someVar)\n"
+        "console.log('not user text')\n",
+        encoding="utf-8",
+    )
+    extracted = await KubeJSDisplayNameHandler().extract(script)
+    assert extracted == {
+        "display_name.0001": "Gem",
+        "tooltip.0001": "Very heavy rock",
+        "tooltip.0002": "Glows at night",
+        "text.0001": "Shiny",
+        "text.0002": "Line two",
+    }
+
+
+@pytest.mark.asyncio
+async def test_tooltip_rewrite_touches_only_the_text(tmp_path: Path) -> None:
+    script = tmp_path / "modpack/kubejs/client_scripts/tooltips.js"
+    script.parent.mkdir(parents=True)
+    script.write_text("event.add('minecraft:stone', 'Very heavy rock')\n", encoding="utf-8")
+    out = tmp_path / "out.js"
+    await KubeJSDisplayNameHandler().apply(script, {"tooltip.0001": "아주 무거운 돌"}, out)
+    assert out.read_text(encoding="utf-8") == "event.add('minecraft:stone', '아주 무거운 돌')\n"

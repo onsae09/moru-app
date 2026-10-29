@@ -1,10 +1,16 @@
-"""Safe extraction of KubeJS ``.displayName(<string>)`` calls.
+"""Safe extraction of user-facing string literals from KubeJS scripts.
 
-KubeJS startup scripts frequently register user-facing item names directly in
-JavaScript instead of language JSON.  Translating the whole script would put
-executable code in the model's hands, so this handler exposes only direct
-string/template-literal arguments and splices the reviewed translations back
-into an otherwise byte-for-byte copy of the source file.
+KubeJS scripts frequently register user-facing text directly in JavaScript
+instead of language JSON: item names (``.displayName('…')``), tooltips
+(``.tooltip('…')`` on a builder, ``event.add(item, '…')`` in
+``ItemEvents.tooltip``) and text components (``Text.of('…')``,
+``Text.gold('…')``, ``Component.literal('…')``). Translating the whole script
+would put executable code in the model's hands, so this handler exposes only
+direct string/template-literal arguments of those calls and splices the
+reviewed translations back into an otherwise byte-for-byte copy of the file.
+
+``Text.translate``/``Component.translatable`` take a language KEY, never
+prose, and are left alone.
 """
 
 from __future__ import annotations
@@ -26,6 +32,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DISPLAY_NAME_CALL_RE = re.compile(r"\.displayName\s*\(\s*")
+
+#: Builder tooltips (``event.create('x').tooltip('…')``).
+_TOOLTIP_CALL_RE = re.compile(r"\.tooltip\s*\(\s*")
+
+#: Text components whose single argument is literal display text. The color
+#: shorthands are KubeJS's ``Text.<color>(…)`` helpers.
+_TEXT_CALL_RE = re.compile(
+    r"\b(?:Text\.(?:of|literal|string|black|darkBlue|darkGreen|darkAqua|darkRed|"
+    r"darkPurple|gold|gray|darkGray|blue|green|aqua|red|lightPurple|yellow|white)"
+    r"|Component\.literal)\s*\(\s*"
+)
+
+#: ``event.add(<item>, '…')`` inside ``ItemEvents.tooltip``: the item is a
+#: quoted id or an array of them; only the SECOND argument is text.
+_TOOLTIP_ADD_RE = re.compile(
+    r"\b(?:event|e|evt|tooltip)\.add\s*\(\s*"
+    r"(?:'[^'\\\n]*'|\"[^\"\\\n]*\"|\[(?:\s*(?:'[^'\\\n]*'|\"[^\"\\\n]*\")\s*,?)+\s*\])"
+    r"\s*,\s*"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +115,73 @@ def _region_map(source: str) -> list[str]:
     return regions
 
 
+def _literal_end(source: str, start: int) -> int | None:
+    """Index of the closing quote of the literal opening at ``start``."""
+    quote = source[start]
+    cursor = start + 1
+    while cursor < len(source):
+        if source[cursor] == "\\":
+            cursor += 2
+            continue
+        if source[cursor] == quote:
+            return cursor
+        cursor += 1
+    return None
+
+
+def _call_literals(
+    source: str,
+    path: Path,
+    regions: list[str],
+    call_re: re.Pattern[str],
+    label: str,
+    closers: str = ")",
+) -> list[tuple[str, int, int]]:
+    """(quote, start, end) of each direct literal argument ``call_re`` opens.
+
+    The literal must be the whole argument: followed by one of ``closers``
+    (``)``, or ``,``/``)`` for a list element). Anything else — a
+    concatenation, a method call on the literal — is an expression and is
+    left alone.
+    """
+    found: list[tuple[str, int, int]] = []
+    for call in call_re.finditer(source):
+        region = regions[call.start()]
+        if region != "code":
+            if region == "literal":
+                # The scanner has no regex-literal state, so a pattern such as
+                # ``/'/`` shifts every later boundary. Skipping is safe (extract
+                # and apply agree), but the miss must not be silent.
+                logger.warning(
+                    "Skipped %s at %s:%d: scanned as string literal",
+                    label,
+                    path,
+                    source.count("\n", 0, call.start()) + 1,
+                )
+            continue
+        start = call.end()
+        if start >= len(source) or source[start] not in {"'", '"', "`"}:
+            continue
+        end = _literal_end(source, start)
+        if end is None:
+            continue
+        tail = end + 1
+        while tail < len(source) and source[tail].isspace():
+            tail += 1
+        if tail >= len(source) or source[tail] not in closers:
+            continue
+        found.append((source[start], start + 1, end))
+    return found
+
+
+#: Call shapes beside ``displayName`` and the key prefix each one files under.
+_EXTRA_CALLS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("tooltip", _TOOLTIP_CALL_RE),
+    ("tooltip", _TOOLTIP_ADD_RE),
+    ("text", _TEXT_CALL_RE),
+)
+
+
 def _display_name_literals(source: str, path: Path) -> list[_DisplayNameLiteral]:
     """Return direct quoted arguments, ignoring expressions and comments.
 
@@ -98,48 +190,42 @@ def _display_name_literals(source: str, path: Path) -> list[_DisplayNameLiteral]
     ``displayName(Component.translatable(...))`` remain untouched, while both
     ordinary strings and template literals such as ```Orb of ${name}``` are
     safe to translate.
+
+    ``display_name.NNNN`` keys number displayName calls exactly as before
+    tooltips and text components were extracted, so earlier sessions and
+    reviewed translations keep their keys; the other shapes number their own
+    ``tooltip.NNNN`` / ``text.NNNN`` sequences in file order.
     """
-    found: list[_DisplayNameLiteral] = []
     regions = _region_map(source)
-    for call in _DISPLAY_NAME_CALL_RE.finditer(source):
-        region = regions[call.start()]
-        if region != "code":
-            if region == "literal":
-                # The scanner has no regex-literal state, so a pattern such as
-                # ``/'/`` shifts every later boundary. Skipping is safe (extract
-                # and apply agree), but the miss must not be silent.
-                logger.warning(
-                    "Skipped displayName at %s:%d: scanned as string literal",
-                    path,
-                    source.count("\n", 0, call.start()) + 1,
-                )
-            continue
-        start = call.end()
-        if start >= len(source) or source[start] not in {"'", '"', "`"}:
-            continue
-        quote = source[start]
-        cursor = start + 1
-        while cursor < len(source):
-            if source[cursor] == "\\":
-                cursor += 2
-                continue
-            if source[cursor] == quote:
-                break
-            cursor += 1
-        if cursor >= len(source):
-            continue
-        tail = cursor + 1
-        while tail < len(source) and source[tail].isspace():
-            tail += 1
-        if tail >= len(source) or source[tail] != ")":
-            continue
+    found: list[_DisplayNameLiteral] = []
+    taken: set[int] = set()
+    for quote, start, end in _call_literals(source, path, regions, _DISPLAY_NAME_CALL_RE, "displayName"):
+        taken.add(start)
         found.append(
             _DisplayNameLiteral(
                 key=f"display_name.{len(found) + 1:04d}",
                 quote=quote,
-                text=source[start + 1 : cursor],
-                start=start + 1,
-                end=cursor,
+                text=source[start:end],
+                start=start,
+                end=end,
+            )
+        )
+    extra: list[tuple[str, str, int, int]] = []
+    for prefix, call_re in _EXTRA_CALLS:
+        for quote, start, end in _call_literals(source, path, regions, call_re, prefix):
+            if start not in taken:
+                taken.add(start)
+                extra.append((prefix, quote, start, end))
+    counters: dict[str, int] = {}
+    for prefix, quote, start, end in sorted(extra, key=lambda item: item[2]):
+        counters[prefix] = counters.get(prefix, 0) + 1
+        found.append(
+            _DisplayNameLiteral(
+                key=f"{prefix}.{counters[prefix]:04d}",
+                quote=quote,
+                text=source[start:end],
+                start=start,
+                end=end,
             )
         )
     return found
@@ -179,7 +265,7 @@ def _escape_delimiter(text: str, delimiter: str) -> str:
 
 
 class KubeJSDisplayNameHandler(ContentHandler):
-    """Translate only direct ``displayName`` literals in KubeJS JS/TS."""
+    """Translate only direct display-text literals in KubeJS JS/TS."""
 
     name: ClassVar[str] = "kubejs_display_name"
     priority: ClassVar[int] = 14

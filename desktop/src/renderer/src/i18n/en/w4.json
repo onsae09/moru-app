@@ -83,6 +83,8 @@
     "cancelledBody": "Partial results were preserved · you can inspect them in review",
     "quotaTitle": "Paused: the AI provider's usage limit was reached",
     "quotaBody": "Finished translations are saved. Once your quota or credit resets, \"Resume translation\" translates only what is left.",
+    "budgetTitle": "Paused: the budget limit was reached",
+    "budgetBody": "This run's cost reached your budget limit. Finished translations are saved; raise the limit or press \"Resume translation\" to translate only what is left.",
     "pausedTitle": "Translation paused",
     "pausedBody": "Finished translations are saved. \"Resume translation\" translates only what is left.",
     "authTitle": "Paused: the AI provider refused the login",

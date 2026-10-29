@@ -718,3 +718,32 @@ test("a delete the engine refuses keeps the history row", async () => {
   expect(outcome).toBe("running");
   expect(useSessions.getState().sessions.map((s) => s.id)).toEqual(["s1"]);
 });
+
+test("reaching the budget ceiling pauses the run once", async () => {
+  const { useSettings } = await import("./settings.ts");
+  const pauses = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    pauses.push(String(url));
+    return response({ id: "job-1", status: "running" });
+  };
+  useSettings.setState({ budgetUsd: 0.01 });
+  useWizard.setState({
+    sessionId: "s1",
+    runState: "running",
+    translateJobId: "job-1",
+    // A static-priced model, so no pricing fetch is needed.
+    model: "openai/gpt-5.6-luna",
+  });
+  try {
+    const frame = { type: "tokens", prompt_tokens: 5_000_000, completion_tokens: 1_000_000 };
+    useWizard.getState().handleTranslationFrame(frame, "s1");
+    useWizard.getState().handleTranslationFrame(frame, "s1");
+    await new Promise((r) => setTimeout(r, 0));
+  } finally {
+    globalThis.fetch = originalFetch;
+    useSettings.setState({ budgetUsd: null });
+  }
+  expect(useWizard.getState().budgetPaused).toBe(true);
+  expect(pauses.filter((u) => u.endsWith("/jobs/job-1/pause"))).toHaveLength(1);
+});

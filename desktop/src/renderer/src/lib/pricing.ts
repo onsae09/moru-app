@@ -159,6 +159,11 @@ export async function fetchPricingTable(): Promise<PricingTable | null> {
   }
 }
 
+/** The table already in memory or the local cache, without fetching. */
+export function cachedPricingTable(): PricingTable | null {
+  return memoryTable ?? readLocalCache();
+}
+
 /** react-query wrapper; data is null (not undefined) when unavailable. */
 export function usePricingTable(): PricingTable | null {
   const query = useQuery({

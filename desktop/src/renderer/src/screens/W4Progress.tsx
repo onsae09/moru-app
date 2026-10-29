@@ -237,7 +237,13 @@ function GlossaryRow({ progress }: { progress: GlossaryProgress }) {
 
 
 /** i18n keys of the interrupted banner for a run's stop reason. */
-function interruptBanner(reason: string | null): { title: string; body: string } {
+function interruptBanner(
+  reason: string | null,
+  budgetPaused = false,
+): { title: string; body: string } {
+  if (reason === "paused" && budgetPaused) {
+    return { title: "w4.banner.budgetTitle", body: "w4.banner.budgetBody" };
+  }
   if (reason === "quota") return { title: "w4.banner.quotaTitle", body: "w4.banner.quotaBody" };
   if (reason === "auth") return { title: "w4.banner.authTitle", body: "w4.banner.authBody" };
   if (reason === "paused") return { title: "w4.banner.pausedTitle", body: "w4.banner.pausedBody" };
@@ -627,10 +633,10 @@ export function W4Progress() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-bold text-amber">
-              {t(interruptBanner(interruptReason).title)}
+              {t(interruptBanner(interruptReason, wizard.budgetPaused).title)}
             </div>
             <div className="mt-0.5 text-[11.5px] text-text2">
-              {t(interruptBanner(interruptReason).body)}
+              {t(interruptBanner(interruptReason, wizard.budgetPaused).body)}
             </div>
           </div>
           {resumable && sessionId !== null && (

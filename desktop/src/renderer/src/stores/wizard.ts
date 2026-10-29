@@ -18,6 +18,7 @@ import type {
 import type { ModpackProbe } from "../../../shared/bridge";
 import { api, EngineApiError, openJobEvents } from "../lib/api";
 import { providerIdOf } from "../lib/models";
+import { cachedPricingTable, costUsd, priceForModel } from "../lib/pricing";
 import { moru } from "../lib/bridge";
 import { WEB_URL } from "../lib/web";
 import {
@@ -152,6 +153,8 @@ interface WizardStore {
   resumable: boolean;
   /** Why an `interrupted` run stopped (`quota` | `shutdown`), when known. */
   interruptReason: string | null;
+  /** This run was paused by the budget ceiling (settings.budgetUsd). */
+  budgetPaused: boolean;
   startedAt: number | null;
   /** First provider batch start; excludes scan/glossary from live throughput. */
   translationStartedAt: number | null;
@@ -436,6 +439,21 @@ async function resumeModel(
   return interruptReason === "auth" || disabled(original) ? current : original;
 }
 
+/** Spend of the running job so far, or null when its model has no known price. */
+function runCostUsd(state: WizardStore): number | null {
+  if (state.model === null) return null;
+  const price = priceForModel(cachedPricingTable(), state.model);
+  if (price === null) return null;
+  return costUsd(
+    {
+      promptTokens: state.promptTokens,
+      completionTokens: state.completionTokens,
+      cachedTokens: state.cachedTokens,
+    },
+    price,
+  );
+}
+
 /** How long a dropped event stream waits for a restarting engine. */
 const ENGINE_RECOVERY_TIMEOUT_MS = 90_000;
 
@@ -680,6 +698,7 @@ const initialJobState = {
   runError: null,
   resumable: false,
   interruptReason: null,
+  budgetPaused: false,
   startedAt: null,
   translationStartedAt: null,
   finishedAt: null,
@@ -1108,6 +1127,7 @@ export const useWizard = create<WizardStore>((set, get) => ({
       runState: "running",
       model: settings.model,
       runError: null,
+      budgetPaused: false,
       startedAt: Date.now(),
       translationStartedAt: null,
       finishedAt: null,
@@ -1212,6 +1232,18 @@ export const useWizard = create<WizardStore>((set, get) => ({
     if (get().sessionId !== sessionId) return;
     set((prev) => translationFramePatch(prev, frame));
     const current = get();
+    if (frame.type === "tokens" && current.runState === "running" && !current.budgetPaused) {
+      const budget = useSettings.getState().budgetUsd;
+      const spent = budget !== null && budget > 0 ? runCostUsd(current) : null;
+      if (budget !== null && spent !== null && spent >= budget) {
+        set({ budgetPaused: true });
+        get().appendLog(
+          "warn",
+          `budget reached: $${spent.toFixed(2)} ≥ $${budget.toFixed(2)}; pausing`,
+        );
+        void get().pauseTranslate();
+      }
+    }
     const terminal =
       frame.type === "done" ||
       frame.type === "failed" ||

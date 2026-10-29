@@ -97,6 +97,12 @@ interface SettingsStore {
   /** Meaning-translate vs transliterate for terms with no established name. */
   termStyle: TermStyle;
   targetLocale: string;
+  /**
+   * USD ceiling for one translation run (start or resume); reaching it
+   * pauses the run resumably. null = no ceiling. Not enforceable for a
+   * model with no known price.
+   */
+  budgetUsd: number | null;
   recentFolders: string[];
   /** Mod ids never translated; seeded from DEFAULT_MOD_BLACKLIST. */
   modBlacklist: string[];
@@ -136,6 +142,7 @@ export const useSettings = create<SettingsStore>()(
       openaiCompatBaseUrl: "http://localhost:1234/v1",
       speechLevel: "auto",
       termStyle: "auto",
+      budgetUsd: null,
       targetLocale: "ko_kr",
       recentFolders: [],
       modBlacklist: [...DEFAULT_MOD_BLACKLIST],

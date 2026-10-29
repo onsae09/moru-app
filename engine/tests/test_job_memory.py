@@ -115,6 +115,12 @@ def test_old_finished_runs_are_evicted_and_reload_on_demand(
     assert "run1" in resident
     assert "run0" not in resident
     assert len(resident) == jobs.MAX_RESIDENT_FINISHED_RUNS
-    reloaded = JobRecord(id="run0", type=JobType.TRANSLATE, params={})
+    reloaded = JobRecord(id="run0", type=JobType.TRANSLATE, params={},
+                         status=JobStatus.DONE, finished=True)
     monkeypatch.setattr(store, "load_job_session", lambda job_id: reloaded)
     assert manager.get("run0") is reloaded
+    # A reload is itself evictable, so browsing history cannot regrow memory,
+    # but the run just asked for stays.
+    assert "run0" in manager._jobs
+    resident = [job_id for job_id in ids if job_id in manager._jobs]
+    assert len(resident) == jobs.MAX_RESIDENT_FINISHED_RUNS

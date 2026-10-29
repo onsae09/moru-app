@@ -1,9 +1,11 @@
 """Async job manager backing the sidecar's /jobs API.
 
 The desktop GUI starts long-running work (scan / translate / export)
-through ``POST /jobs`` and follows it over a WebSocket. Every job keeps a
-full event history, so a subscriber that connects after events already
-fired first replays the past, then streams live frames.
+through ``POST /jobs`` and follows it over a WebSocket. Every job keeps an
+event history, so a subscriber that connects after events already fired
+first replays the past, then streams live frames. A very long history is
+folded down to its snapshot except for a verbatim recent tail (see
+``_compact_history``).
 """
 
 from __future__ import annotations
@@ -813,6 +815,11 @@ class JobManager:
         restored = self._session_store.load_job_session(job_id)
         if restored is not None:
             self._jobs[job_id] = restored
+            if restored.type is JobType.TRANSLATE:
+                # Browsing the history reloads runs one by one; they are as
+                # evictable as the runs that finished here.
+                self._persisted_order.append(job_id)
+                self._evict_finished(keep=job_id)
             return restored
         raise UnknownJobError(f"unknown job: {job_id}")
 
@@ -1547,7 +1554,7 @@ class JobManager:
                 continue
             queue.put_nowait(frame)
 
-    def _evict_finished(self) -> None:
+    def _evict_finished(self, keep: str | None = None) -> None:
         """Drop the oldest finished, persisted translate runs from memory.
 
         Each holds its full PipelineResult and event history, and nothing
@@ -1568,7 +1575,8 @@ class JobManager:
             busy = (
                 # Only a completed run: an interrupted or cancelled one may
                 # be resumed, and a resume reads its predecessor from here.
-                record.status is not JobStatus.DONE
+                job_id == keep
+                or record.status is not JobStatus.DONE
                 or not record.finished
                 or record.subscribers
                 or (record.task is not None and not record.task.done())

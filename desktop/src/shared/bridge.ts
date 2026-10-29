@@ -141,6 +141,8 @@ export interface MoruBridge {
 
   /** renderer -> main: a translation job is running (quit confirmation). */
   setBusy(busy: boolean): void;
+  /** The theme on screen, so the window background matches it (and the next launch's first paint). */
+  setTheme(theme: "dark" | "light"): void;
 
   updates: {
     check(): Promise<void>;

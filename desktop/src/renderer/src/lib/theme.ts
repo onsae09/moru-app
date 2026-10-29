@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { useSettings, type ThemeSetting } from "../stores/settings";
+import { moru } from "./bridge";
 
 export type ResolvedTheme = "dark" | "light";
 
@@ -23,7 +24,11 @@ export function resolveTheme(setting: ThemeSetting): ResolvedTheme {
 }
 
 function apply(setting: ThemeSetting): void {
-  document.documentElement.dataset.theme = resolveTheme(setting);
+  const theme = resolveTheme(setting);
+  document.documentElement.dataset.theme = theme;
+  // The native window paints its own background before (and around) the
+  // page: keep it matching instead of flashing dark under a light UI.
+  moru.setTheme(theme);
 }
 
 let installed = false;

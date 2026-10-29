@@ -3,6 +3,7 @@
  * quit confirmation while a job is running.
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { BrowserWindow, app, dialog, ipcMain, shell } from "electron";
@@ -12,6 +13,22 @@ import { EngineSidecar } from "./sidecar";
 import { registerUpdater } from "./updater";
 
 const sidecar = new EngineSidecar();
+
+/** Window background per theme — the dark and light `--color-bg` tokens. */
+const WINDOW_BACKGROUND = { dark: "#0E1512", light: "#F6F9F7" } as const;
+type WindowTheme = keyof typeof WINDOW_BACKGROUND;
+
+const themeFile = (): string => path.join(app.getPath("userData"), "window-theme.json");
+
+/** The theme the renderer last reported, so the first paint already matches. */
+function savedTheme(): WindowTheme {
+  try {
+    const value: unknown = JSON.parse(readFileSync(themeFile(), "utf-8"));
+    return value === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
 let busy = false;
 let quitConfirmed = false;
 let shutdownStarted = false;
@@ -24,7 +41,7 @@ function createWindow(): BrowserWindow {
     minHeight: 760,
     frame: false,
     show: false,
-    backgroundColor: "#0E1512",
+    backgroundColor: WINDOW_BACKGROUND[savedTheme()],
     webPreferences: {
       preload: path.join(import.meta.dirname, "../preload/index.mjs"),
       contextIsolation: true,
@@ -66,6 +83,17 @@ void app.whenReady().then(() => {
 
   ipcMain.on("app:set-busy", (_event, value: boolean) => {
     busy = value;
+  });
+  ipcMain.on("app:set-theme", (event, value: unknown) => {
+    const theme: WindowTheme = value === "light" ? "light" : "dark";
+    BrowserWindow.fromWebContents(event.sender)?.setBackgroundColor(WINDOW_BACKGROUND[theme]);
+    if (theme !== savedTheme()) {
+      try {
+        writeFileSync(themeFile(), JSON.stringify(theme), "utf-8");
+      } catch {
+        // cosmetic only: the next launch paints dark first
+      }
+    }
   });
 
   sidecar.on("state", (info) => {

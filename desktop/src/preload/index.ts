@@ -65,6 +65,7 @@ const bridge: MoruBridge = {
   webRequest: (init) => ipcRenderer.invoke("web:request", init),
 
   setBusy: (value) => ipcRenderer.send("app:set-busy", value),
+  setTheme: (theme) => ipcRenderer.send("app:set-theme", theme),
 
   updates: {
     check: () => ipcRenderer.invoke("updates:check"),

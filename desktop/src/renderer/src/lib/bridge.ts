@@ -98,6 +98,7 @@ function makeBrowserShim(): MoruBridge {
       return { status: res.status, body: await res.text() };
     },
     setBusy: noop,
+    setTheme: noop,
     updates: {
       check: async () => undefined,
       install: noop,

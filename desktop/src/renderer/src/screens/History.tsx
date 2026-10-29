@@ -235,6 +235,8 @@ function SessionRow({
               <button
                 className={`${actionBase} border-edge text-text2 hover:border-edge2 hover:text-text`}
                 aria-label={t("history.action.more")}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((v) => !v)}
               >
                 ⋯

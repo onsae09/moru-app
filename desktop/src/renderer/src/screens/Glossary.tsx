@@ -918,6 +918,7 @@ export function GlossaryScreen() {
                           onClick={() => beginEdit(index)}
                           disabled={busy}
                           title={t("glossary.rowEdit")}
+                          aria-label={`${t("glossary.rowEdit")}: ${term.source}`}
                           className="p-1 text-text3 hover:text-text disabled:opacity-40"
                         >
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -928,6 +929,7 @@ export function GlossaryScreen() {
                           onClick={() => removeTerm(index)}
                           disabled={busy}
                           title={t("glossary.rowDelete")}
+                          aria-label={`${t("glossary.rowDelete")}: ${term.source}`}
                           className="p-1 text-text3 hover:text-red disabled:opacity-40"
                         >
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">

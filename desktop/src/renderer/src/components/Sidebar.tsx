@@ -31,7 +31,9 @@ function NavButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className="relative flex items-center gap-2.5 px-3 py-[9px] text-left text-[13px] font-medium text-text2 hover:bg-hover hover:text-text"
     >
       {active && <ActiveBar />}

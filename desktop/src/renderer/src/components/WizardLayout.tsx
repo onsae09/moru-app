@@ -100,7 +100,7 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
           {wizard.modpackName !== "" ? wizard.modpackName : "—"}
         </div>
 
-        <div className="flex flex-col gap-0.5">
+        <nav aria-label={t("common.wizard.title")} className="flex flex-col gap-0.5">
           {STEPS.map((step) => {
             const active = screen === step.screen || (step.screen === "w5" && screen === "w5m");
             const done = stepDone[step.screen];
@@ -108,8 +108,10 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
             return (
               <button
                 key={step.screen}
+                type="button"
                 onClick={() => enabled && go(step.screen)}
                 disabled={!enabled}
+                aria-current={active ? "step" : undefined}
                 className="relative flex items-center gap-2.5 px-3 py-2.5 text-left enabled:hover:bg-hover disabled:cursor-default"
               >
                 {active && <div className="absolute top-2 bottom-2 left-0 w-[3px] bg-accent" />}
@@ -136,7 +138,7 @@ export function WizardLayout({ children }: { children: React.ReactNode }) {
               </button>
             );
           })}
-        </div>
+        </nav>
 
         <div className="mt-6 border-t border-line pt-5">
           <div className="mb-1 font-mono text-[11px] text-text3">{t("common.wizard.eta")}</div>

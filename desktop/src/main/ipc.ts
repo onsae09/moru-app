@@ -5,24 +5,27 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import http from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { BrowserWindow, app, dialog, ipcMain, safeStorage, shell } from "electron";
 
 import type { ModpackProbe, WebAccount, WebRequestInit, WebResponse } from "../shared/bridge";
 import { detectInstances, launcherRoots } from "./launchers";
+import { SecretStore } from "./secretStore";
 import type { EngineSidecar } from "./sidecar";
 
 /* ---- secrets (API keys) ---- */
 
-const secretsPath = (): string => path.join(app.getPath("userData"), "secrets.json");
+let secretStore: SecretStore | null = null;
+const secrets = (): SecretStore =>
+  (secretStore ??= new SecretStore(path.join(app.getPath("userData"), "secrets.json")));
 
 async function readSecrets(): Promise<Record<string, string>> {
   try {
-    const raw = await readFile(secretsPath(), "utf-8");
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
+    return await secrets().read();
+  } catch (error) {
+    // Moved aside by the store; reads see no key until one is saved again.
+    console.error(`[secrets] ${String(error)}`);
     return {};
   }
 }
@@ -182,7 +185,15 @@ export function registerIpc(sidecar: EngineSidecar, getBusy: () => boolean): voi
   ipcMain.handle("fs:detect-instances", (_event, paths: unknown) => detectInstances(paths));
   ipcMain.handle("fs:launcher-roots", () => launcherRoots());
 
+  // Folders only: opening an arbitrary file would also launch executables.
   ipcMain.handle("shell:open-path", async (_event, target: string) => {
+    let isDirectory = false;
+    try {
+      isDirectory = statSync(target).isDirectory();
+    } catch {
+      isDirectory = false;
+    }
+    if (!isDirectory) throw new Error(`refusing to open a non-folder path: ${target}`);
     await shell.openPath(target);
   });
   ipcMain.handle("shell:show-item", (_event, target: string) => {
@@ -225,16 +236,17 @@ export function registerIpc(sidecar: EngineSidecar, getBusy: () => boolean): voi
     }
   });
   ipcMain.handle("secrets:set", async (_event, key: string, value: string) => {
-    const store = await readSecrets();
-    store[key] = safeStorage.isEncryptionAvailable()
+    const stored = safeStorage.isEncryptionAvailable()
       ? `enc:${safeStorage.encryptString(value).toString("base64")}`
       : value;
-    await writeFile(secretsPath(), JSON.stringify(store), "utf-8");
+    await secrets().update((store) => {
+      store[key] = stored;
+    });
   });
   ipcMain.handle("secrets:delete", async (_event, key: string) => {
-    const store = await readSecrets();
-    delete store[key];
-    await writeFile(secretsPath(), JSON.stringify(store), "utf-8");
+    await secrets().update((store) => {
+      delete store[key];
+    });
   });
 
   /* web API proxy — renderer pages load from file:// where CORS blocks

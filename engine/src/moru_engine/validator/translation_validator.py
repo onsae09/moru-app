@@ -12,6 +12,8 @@ from ..models import (
     ValidationSeverity,
     ValidationType,
 )
+from ..placeholder import JAVA_FORMAT_RE as _JAVA_FORMAT_RE
+from ..placeholder import NUMBERED_FORMAT_RE as _NUMBERED_FORMAT_RE
 from ..placeholder import PlaceholderProtector
 
 from ..models.glossary import ProperNounRule, TermRule
@@ -28,8 +30,6 @@ MAX_LENGTH_RATIO = 3.0
 MIN_LENGTH_RATIO = 0.2
 
 _UNRESTORED_TOKEN_RE = re.compile(r"\{\{[A-Z]+\d*\}\}")
-_JAVA_FORMAT_RE = re.compile(r"%(?:\d+\$)?[sdifxXobeEgGaAcChHnp]")
-_NUMBERED_FORMAT_RE = re.compile(r"%(\d+)\$[sdifxXobeEgGaAcChHnp]")
 _SECTION_COLOR_RE = re.compile(r"§[0-9a-fk-or]", re.IGNORECASE)
 _AMPERSAND_COLOR_RE = re.compile(r"&[0-9a-fk-or]", re.IGNORECASE)
 

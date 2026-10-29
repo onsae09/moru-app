@@ -320,3 +320,10 @@ async def test_comment_keys_never_reach_translation_or_failures(
         ).read_text(encoding="utf-8")
     )
     assert written["_comment"] == "Misc"
+
+
+def test_dropped_precision_specifier_is_reported() -> None:
+    from moru_engine.validator.translation_validator import TranslationValidator
+
+    issues = TranslationValidator()._check_placeholders("k", "Speed: %.1f", "속도:")
+    assert issues

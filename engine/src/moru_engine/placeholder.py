@@ -8,6 +8,13 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+#: Flags, width, precision and conversion of a java.util.Formatter specifier
+#: (everything after "%" and the optional "n$" index). Shared with the
+#: validator so protection and validation see the same specifiers.
+JAVA_FORMAT_BODY = r"[-#+0,(]*\d*(?:\.\d+)?[sdifxXobeEgGaAcChHnp]"
+JAVA_FORMAT_RE = re.compile(rf"%(?:\d+\$)?{JAVA_FORMAT_BODY}")
+NUMBERED_FORMAT_RE = re.compile(rf"%(\d+)\${JAVA_FORMAT_BODY}")
+
 # Placeholder patterns. Dict order is the overlap priority: when two
 # patterns match overlapping spans, the earlier pattern keeps its match
 # and the later one is dropped (see protect()).
@@ -31,8 +38,9 @@ PATTERNS = {
     # and leave the "$" outside the token as loose prose — the very thing
     # this entry exists to prevent.
     "js_template": re.compile(r"\$\{[^{}]*\}"),
-    # Java format specifiers: %s, %d, %1$s, %2$d, etc.
-    "java_format": re.compile(r"%(?:\d+\$)?[sdifxXobeEgGaAcChHnp%]"),
+    # Java format specifiers: %s, %d, %1$s, %2$d, %.1f, %,d, %02d, %-5s ...
+    # The space flag is left out on purpose: "50% done" would read as "% d".
+    "java_format": re.compile(rf"%%|%(?:\d+\$)?{JAVA_FORMAT_BODY}"),
     # Minecraft color codes: §a, §0-§f, §k-§o, §r
     "mc_color_section": re.compile(r"§[0-9a-fk-or]", re.IGNORECASE),
     # Alternative color codes: &a, &0-&f, etc.
@@ -86,7 +94,7 @@ TOKEN_RE = re.compile(r"\{\{[A-Z]+\d*\}\}")
 # occurrence stands for a different one ("%1$s" names a fixed argument and
 # "%%" is a literal percent — neither is order-sensitive). The char class
 # mirrors PATTERNS["java_format"].
-_POSITIONAL_ARG_RE = re.compile(r"^%[sdifxXobeEgGaAcChHnp]$")
+_POSITIONAL_ARG_RE = re.compile(rf"^%{JAVA_FORMAT_BODY}$")
 
 
 #: Macro bodies that Patchouli renders as a line break: ``$(br)``/``$(br2)``

@@ -265,3 +265,16 @@ def test_percent_literal_is_not_a_positional_argument() -> None:
     # "%%" renders a literal percent sign; it consumes no argument.
     protected = PlaceholderProtector().protect("100%% of 100%%")
     assert protected.collapsed_positional_arg() is None
+
+
+@pytest.mark.parametrize("spec", ["%.1f", "%,d", "%02d", "%-5s", "%1$.2f", "%+d", "%%"])
+def test_formatter_flags_width_and_precision_are_protected(spec: str) -> None:
+    protected = PlaceholderProtector().protect(f"Speed: {spec} blocks")
+    assert spec not in protected.protected
+    assert protected.restore(protected.protected) == f"Speed: {spec} blocks"
+
+
+def test_percent_before_prose_is_not_a_specifier() -> None:
+    # The space flag is excluded so "50% done" stays prose.
+    protected = PlaceholderProtector().protect("50% done")
+    assert protected.placeholders == []

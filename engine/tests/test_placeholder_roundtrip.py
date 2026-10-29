@@ -306,9 +306,24 @@ def test_prose_ampersands_are_not_color_codes(text: str) -> None:
         ("&lBold&r and &aGreen", ["&l", "&r", "&a"]),
         ("Press &eJump&r to R&D", ["&e", "&r", "&D"]),
         ("(&cWarning&r)", ["&c", "&r"]),
+        ("%s&r", ["&r"]),
+        ("Durability&7: %d", ["&7"]),
     ],
 )
 def test_real_ampersand_codes_are_still_protected(text: str, codes: list[str]) -> None:
     protected = PlaceholderProtector().protect(text)
-    assert sorted(p.original for p in protected.placeholders) == sorted(codes)
+    ampersands = [p.original for p in protected.placeholders if p.original[0] == "&"]
+    assert sorted(ampersands) == sorted(codes)
     assert protected.restore(protected.protected) == text
+
+
+def test_validator_counts_codes_glued_to_hangul() -> None:
+    """A Korean output places codes against Hangul; those are not prose."""
+    from moru_engine.validator import TranslationValidator
+
+    report = TranslationValidator().validate(
+        {"k": "&6Gold&r Sword"}, {"k": "황금&6검&r"}
+    )
+    assert not [i for i in report.get_errors() if "Ampersand" in i.message]
+    report = TranslationValidator().validate({"k": "&6Gold&r Sword"}, {"k": "황금 검"})
+    assert [i for i in report.get_errors() if "Ampersand" in i.message]

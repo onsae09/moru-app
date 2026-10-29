@@ -78,12 +78,26 @@ def ampersand_color_codes(text: str) -> list[re.Match[str]]:
     "R&D", "Q&A" and "Rock&roll" all contain a valid code letter, and a
     code glued to the end of a word is real too ("&6gold&r"), so no
     per-match rule separates them. The text decides: a glued "&x" counts
-    only when the same text has an unmistakable code — one that does not
-    follow a letter or digit (line start, after a space or punctuation).
-    A string that uses & codes at all practically always opens with one.
+    only when the same text has an unmistakable code. A code is unmistakable
+    unless it follows an ASCII letter or digit — so at line start, after a
+    space, punctuation, a format specifier ("%s&r") or a Hangul/CJK word
+    (target-language prose never spells "R&D" glued to Hangul) — and a
+    digit code ("Durability&7:") always is. A string that uses & codes at
+    all practically always has one.
     """
     found = list(PATTERNS["mc_color_ampersand"].finditer(text))
-    if any(m.start() == 0 or not text[m.start() - 1].isalnum() for m in found):
+    if not found:
+        return []
+    format_ends = {m.end() for m in JAVA_FORMAT_RE.finditer(text)}
+
+    def unmistakable(match: re.Match[str]) -> bool:
+        start = match.start()
+        if start == 0 or start in format_ends or match.group(0)[1].isdigit():
+            return True
+        before = text[start - 1]
+        return not (before.isascii() and before.isalnum())
+
+    if any(unmistakable(m) for m in found):
         return found
     return []
 

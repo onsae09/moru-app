@@ -42,7 +42,7 @@ class XMLParser(BaseParser):
         logger.info("Parsing XML file: %s", self.path)
 
         try:
-            async with aiofiles.open(self.path, encoding="utf-8", errors="replace") as f:
+            async with aiofiles.open(self.path, encoding="utf-8-sig", errors="replace") as f:
                 content = await f.read()
         except OSError as e:
             raise ParseError(self.path, f"Could not read file: {e}") from e
@@ -69,7 +69,7 @@ class XMLParser(BaseParser):
 
         # Read original structure
         try:
-            async with aiofiles.open(self.path, encoding="utf-8", errors="replace") as f:
+            async with aiofiles.open(self.path, encoding="utf-8-sig", errors="replace") as f:
                 original_content = await f.read()
         except OSError as e:
             raise DumpError(self.path, f"Could not read file: {e}") from e

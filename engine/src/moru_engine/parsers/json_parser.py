@@ -58,7 +58,7 @@ class JSONParser(BaseParser):
 
         try:
             async with aiofiles.open(
-                self.path, encoding="utf-8", errors="replace"
+                self.path, encoding="utf-8-sig", errors="replace"
             ) as f:
                 content = await f.read()
         except OSError as e:
@@ -117,7 +117,7 @@ class JSONParser(BaseParser):
         source_path = self.original_path if self.original_path else self.path
         try:
             async with aiofiles.open(
-                source_path, encoding="utf-8", errors="replace"
+                source_path, encoding="utf-8-sig", errors="replace"
             ) as f:
                 original_content = await f.read()
         except OSError as e:
@@ -155,6 +155,8 @@ class JSONParser(BaseParser):
         Raises:
             ValueError: If JSON parsing fails after all recovery attempts.
         """
+        # A BOM survives callers that decode bytes themselves (JAR members).
+        content = content.removeprefix("\ufeff")
         # Normalize tabs to spaces
         content = re.sub(r"\t", " ", content)
 

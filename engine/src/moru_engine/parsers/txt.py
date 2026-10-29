@@ -41,7 +41,7 @@ class TextParser(BaseParser):
 
         try:
             async with aiofiles.open(
-                self.path, encoding="utf-8", errors="replace"
+                self.path, encoding="utf-8-sig", errors="replace"
             ) as f:
                 content = await f.read()
         except OSError as e:

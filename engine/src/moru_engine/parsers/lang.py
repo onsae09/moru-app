@@ -45,7 +45,7 @@ class LangParser(BaseParser):
 
         try:
             async with aiofiles.open(
-                self.path, encoding="utf-8", errors="replace"
+                self.path, encoding="utf-8-sig", errors="replace"
             ) as f:
                 text = await f.read()
         except OSError as e:
@@ -65,6 +65,7 @@ class LangParser(BaseParser):
         resource pack ZIP member has no path to hand a parser, and must
         still honour ``#PARSE_ESCAPES`` and the comment-key convention.
         """
+        text = text.removeprefix("\ufeff")
         mapping: dict[str, str] = {}
         parse_escapes = any(
             line.strip().upper() == PARSE_ESCAPES_DIRECTIVE
@@ -152,7 +153,7 @@ class LangParser(BaseParser):
         """
         try:
             async with aiofiles.open(
-                source, encoding="utf-8", errors="replace"
+                source, encoding="utf-8-sig", errors="replace"
             ) as f:
                 async for raw_line in f:
                     line = raw_line.strip()

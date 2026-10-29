@@ -55,3 +55,15 @@ async def test_plain_lang_dump_does_not_json_escape_quotes_or_paths(
         r"path=C:\\mods",
         'quote=Say "hi"',
     ]
+
+
+def test_bom_does_not_leak_into_the_first_key() -> None:
+    from moru_engine.parsers.lang import LangParser
+
+    assert list(LangParser.parse_text("﻿item.x=Stone\n")) == ["item.x"]
+
+
+def test_json_with_bom_still_parses() -> None:
+    from moru_engine.parsers.json_parser import JSONParser
+
+    assert JSONParser._load_json_content('﻿{"a": "b"}') == {"a": "b"}

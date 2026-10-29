@@ -147,7 +147,7 @@ export function ModelSelect({
               }}
               onKeyDown={onKeyDown}
               placeholder={t("w3.advanced.modelSearchPlaceholder")}
-              className="w-full border-b border-line2 bg-ink px-[10px] py-[7px] font-mono text-[12px] text-text outline-none placeholder:text-text3"
+              className="w-full border-b border-line2 bg-ink px-[10px] py-[7px] font-mono text-[12px] text-text outline-none placeholder:text-text3 focus:border-accent"
             />
             {filtered.length === 0 ? (
               <div className="px-[10px] py-3 font-mono text-[11px] text-text3">

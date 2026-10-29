@@ -654,7 +654,7 @@ export function GlossaryScreen() {
           <select
             value={targetLang}
             onChange={(e) => setTargetLang(e.target.value)}
-            className="cursor-pointer bg-transparent font-mono text-[11px] text-text outline-none"
+            className="cursor-pointer bg-transparent font-mono text-[11px] text-text"
           >
             {TARGET_LOCALES.map((locale) => (
               <option key={locale.code} value={locale.code} className="bg-panel text-text">
@@ -677,7 +677,7 @@ export function GlossaryScreen() {
 
         <div className="flex-1" />
 
-        <div className="flex min-w-[240px] items-center gap-1.5 border border-edge bg-card px-2.5 py-1.5">
+        <div className="flex min-w-[240px] items-center gap-1.5 border border-edge bg-card px-2.5 py-1.5 focus-within:border-accent">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#6A7C74" strokeWidth="1.5">
             <circle cx="5" cy="5" r="3.5" />
             <path d="M8 8 L11 11" />

@@ -436,6 +436,93 @@ paths:
                 properties:
                   matched: { type: integer }
                   changed: { type: integer }
+  /translate/{jobId}/entries/reviewed/all:
+    post:
+      summary: >
+        Mark every entry of one review view reviewed (or not): the same
+        selection GET /entries makes for `filter`, `search` and `file`,
+        across all pages. One journal line. Same response as
+        /entries/reviewed.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reviewed]
+              properties:
+                reviewed: { type: boolean }
+                filter: { type: string, default: all }
+                search: { type: string, maxLength: 200, default: "" }
+                file: { type: string, nullable: true }
+      responses:
+        "200":
+          description: "`matched` entries in the view; `changed` of them flipped."
+  /translate/{jobId}/review/targets:
+    post:
+      summary: >
+        The entries an AI re-review of `buckets` (failed / warning /
+        glossary) would cover, optionally in one file. Never calls a model.
+        Hand translations are never offered; signed-off entries only with
+        `include_reviewed`.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buckets]
+              properties:
+                buckets:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [failed, warning, glossary] }
+                file: { type: string, nullable: true }
+                include_reviewed: { type: boolean, default: false }
+      responses:
+        "200":
+          description: >-
+            `refs` ({key, file}) to send to /review in slices;
+            `skipped_human` and `skipped_reviewed` count what was left out.
+  /translate/{jobId}/review:
+    post:
+      summary: >
+        AI re-review of up to 200 entries. The model is given each entry's
+        current translation and its problems (validation messages, missing
+        glossary terms), in batches per file. An entry changes only when the
+        answer is better (fewer errors, then fewer missing glossary terms,
+        then fewer warnings); its status follows the new validation
+        (passed / warning / failed) and its review sign-off is cleared.
+        Hand translations are skipped. 409 while the job runs.
+      parameters: [{ $ref: "#/components/parameters/JobId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refs]
+              properties:
+                refs:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [key, file]
+                    properties:
+                      key: { type: string }
+                      file: { type: string }
+      responses:
+        "200":
+          description: >-
+            `improved` (Entry[]) were replaced; `unchanged` came back no
+            better; `pending` were not reached because the provider refused
+            the credential or ran out of quota (`interruption`: {reason,
+            message, detail}), and the client should stop; `skipped` were
+            unknown or hand-edited; `stats` are the run's counters after.
   /translate/{jobId}/entries/counts:
     get:
       summary: >

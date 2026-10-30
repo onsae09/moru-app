@@ -82,6 +82,33 @@ export interface Entry {
   stale_source?: boolean;
 }
 
+/** The buckets an AI re-review pass can cover. */
+export type ReviewBucket = "failed" | "warning" | "glossary";
+
+/** POST /translate/{jobId}/review/targets — what a re-review would send. */
+export interface ReviewTargets {
+  refs: { key: string; file: string }[];
+  /** Hand translations, never offered to the model. */
+  skipped_human: number;
+  /** Signed-off entries, left out unless asked for. */
+  skipped_reviewed: number;
+}
+
+/** POST /translate/{jobId}/review — one slice of a re-review pass. */
+export interface ReviewSliceResult {
+  /** Entries whose new translation was better and replaced the old one. */
+  improved: Entry[];
+  /** Reviewed, but the answer was no better: left as they were. */
+  unchanged: number;
+  /** Not reached: the slice was interrupted first. */
+  pending: number;
+  /** Gone, or hand-edited since the target list was built. */
+  skipped: number;
+  /** Set when the provider refused the credential or ran out of quota. */
+  interruption: { reason: string; message: string; detail: string } | null;
+  stats: PipelineStats;
+}
+
 export interface EntryPage {
   total: number;
   page: number;

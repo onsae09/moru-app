@@ -52,6 +52,7 @@ from ..pipeline import (
     EntryStatus,
     PipelineResult,
     RetranslateError,
+    ReviewTarget,
     TranslationPipeline,
 )
 from ..pipeline.checkpoint import CheckpointStore
@@ -220,6 +221,27 @@ class EntryRef(BaseModel):
     file: str
 
 
+#: The buckets an AI re-review can be asked to cover.
+ReviewBucket = Literal["failed", "warning", "glossary"]
+
+
+class ReviewTargetsRequest(BaseModel):
+    """Which flagged entries an AI re-review pass should cover."""
+
+    buckets: list[ReviewBucket] = Field(min_length=1, max_length=3)
+    file: str | None = Field(None, max_length=1024)
+    #: Entries the reviewer already signed off are left alone by default.
+    include_reviewed: bool = False
+
+
+class ReviewRequest(BaseModel):
+    """One slice of an AI re-review pass; the client walks the target list."""
+
+    #: Bounded so one request stays seconds-to-a-minute and a cancel between
+    #: slices takes effect soon.
+    refs: list[EntryRef] = Field(min_length=1, max_length=200)
+
+
 class ReviewMark(BaseModel):
     """Sign entries off on the review screen, or take the mark back."""
 
@@ -227,6 +249,15 @@ class ReviewMark(BaseModel):
     #: keeps one request from writing an unbounded journal line.
     refs: list[EntryRef] = Field(min_length=1, max_length=1000)
     reviewed: bool
+
+
+class ReviewAllMark(BaseModel):
+    """Sign off every entry a review view shows, across all its pages."""
+
+    reviewed: bool
+    filter: EntryBucket = "all"
+    search: str = Field("", max_length=200)
+    file: str | None = Field(None, max_length=1024)
 
 
 class ValidateRequest(BaseModel):
@@ -780,6 +811,22 @@ def create_app(
         changed = await manual.record_review(job_id, picked, body.reviewed)
         return {"matched": len(picked), "changed": changed}
 
+    @api.post("/translate/{job_id}/entries/reviewed/all")
+    async def mark_all_reviewed(job_id: str, body: ReviewAllMark) -> dict[str, int]:
+        """Mark every entry of one review view, not just the page on screen.
+
+        Same selection as ``GET /entries`` with the same filter, search and
+        file, so "all" means what the reviewer is looking at. Still one
+        journal line.
+        """
+        _, result = _get_pipeline_result(job_id)
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        picked = manual.select(
+            job_id, _in_file(result.entries, body.file), body.filter, body.search, misses
+        )
+        changed = await manual.record_review(job_id, picked, body.reviewed)
+        return {"matched": len(picked), "changed": changed}
+
     @api.get("/translate/{job_id}/entries")
     async def translate_entries(
         job_id: str,
@@ -978,6 +1025,112 @@ def create_app(
         manager.refresh_translate_stats(record)
         await _persist_session(record)
         return manual.enrich(_entry_payload(entry), job_id, entry)
+
+    def _is_human_edit(job_id: str, entry: EntryResult) -> bool:
+        mark = manual.state(job_id).get(entry_ref(entry.file, entry.key))
+        return mark is not None and mark.text is not None and mark.origin == "human"
+
+    @api.post("/translate/{job_id}/review/targets")
+    async def review_targets(job_id: str, body: ReviewTargetsRequest) -> dict[str, Any]:
+        """The entries an AI re-review pass would cover, without touching a model.
+
+        Hand translations are never offered: a re-review must not overwrite
+        what a person settled. Signed-off entries are left out unless asked.
+        """
+        _, result = _get_pipeline_result(job_id)
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        entries = _in_file(result.entries, body.file)
+        picked: dict[tuple[str, str], EntryResult] = {}
+        for bucket in body.buckets:
+            for e in manual.select(job_id, entries, bucket, "", misses):
+                picked.setdefault((e.file, e.key), e)
+        state = manual.state(job_id)
+        refs: list[dict[str, str]] = []
+        skipped_human = skipped_reviewed = 0
+        for e in picked.values():
+            if _is_human_edit(job_id, e):
+                skipped_human += 1
+                continue
+            mark = state.get(entry_ref(e.file, e.key))
+            if not body.include_reviewed and mark is not None and mark.reviewed:
+                skipped_reviewed += 1
+                continue
+            refs.append({"key": e.key, "file": e.file})
+        return {
+            "refs": refs,
+            "skipped_human": skipped_human,
+            "skipped_reviewed": skipped_reviewed,
+        }
+
+    @api.post("/translate/{job_id}/review")
+    async def review_entries(job_id: str, body: ReviewRequest) -> dict[str, Any]:
+        """AI re-review of a slice of flagged entries, in batches.
+
+        The model sees each entry's current translation and its problems
+        (validation messages, missing glossary terms). An entry changes only
+        when the answer is better; ``improved`` lists those. A refused
+        credential or spent quota ends the slice early and is reported in
+        ``interruption`` so the client stops walking the list.
+        """
+        record, result = _get_pipeline_result(job_id)
+        if not record.finished:
+            raise HTTPException(
+                status_code=409,
+                detail=f"translate job {job_id} is still running",
+            )
+        misses = await asyncio.to_thread(_glossary_misses, result)
+        by_ref = {(e.file, e.key): e for e in result.entries}
+        targets: list[ReviewTarget] = []
+        skipped = 0
+        for ref in body.refs:
+            entry = by_ref.get((ref.file, ref.key))
+            # Re-checked here: a hand edit may have landed since the list
+            # was built.
+            if entry is None or _is_human_edit(job_id, entry):
+                skipped += 1
+                continue
+            problems = list(entry.errors)
+            problems += [
+                f"required glossary term missing: {term}"
+                for term in misses.get(entry_ref(entry.file, entry.key), ())
+            ]
+            targets.append(ReviewTarget(entry=entry, problems=problems))
+        try:
+            pipeline = TranslationPipeline(result.config)
+        except Exception as exc:  # noqa: BLE001 — bad model/key config
+            raise HTTPException(
+                status_code=422, detail=f"cannot build translator: {exc}"
+            ) from exc
+        miss_index = miss_index_holder.get(
+            f"{result.config.source_locale}\u0000{result.config.target_locale}"
+        )
+        try:
+            outcome = await pipeline.review_entries(
+                result,
+                targets,
+                miss_index.misses if miss_index is not None else None,
+            )
+        finally:
+            pipeline.close()
+        if outcome.improved:
+            # New model text was never looked at: an old sign-off must not
+            # carry over to it.
+            await manual.record_review(job_id, outcome.improved, False)
+            manager.refresh_translate_stats(record)
+            await _persist_session(record)
+        interruption = outcome.interruption
+        return {
+            "improved": [
+                manual.enrich(_entry_payload(e), job_id, e) for e in outcome.improved
+            ],
+            "unchanged": outcome.unchanged,
+            "pending": outcome.pending,
+            "skipped": skipped,
+            "interruption": (
+                None if interruption is None else interruption.model_dump()
+            ),
+            "stats": result.stats.model_dump(),
+        }
 
     @api.get("/translate/{job_id}/stats")
     async def translate_stats(job_id: str) -> dict[str, Any]:

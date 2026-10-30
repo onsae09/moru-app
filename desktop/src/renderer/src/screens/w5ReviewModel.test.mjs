@@ -3,11 +3,14 @@ import { expect, test } from "bun:test";
 import ko from "../i18n/ko/w5.json";
 import en from "../i18n/en/w5.json";
 import {
+  addSlice,
+  emptyTally,
   entryId,
   fileLabel,
   nextRowId,
   reviewKeyAction,
   reviewedPercent,
+  reviewSlices,
   sortFiles,
 } from "./w5ReviewModel.ts";
 
@@ -89,4 +92,19 @@ function keyPaths(obj, prefix = "") {
 
 test("the review screen's ko and en strings have identical keys", () => {
   expect(keyPaths(ko).sort()).toEqual(keyPaths(en).sort());
+});
+
+test("a re-review walks the targets in request-sized slices", () => {
+  const refs = Array.from({ length: 95 }, (_, i) => i);
+  const slices = reviewSlices(refs, 40);
+  expect(slices.map((s) => s.length)).toEqual([40, 40, 15]);
+  expect(slices.flat()).toEqual(refs);
+  expect(reviewSlices([], 40)).toEqual([]);
+});
+
+test("an interrupted slice counts only what it reached as done", () => {
+  let tally = emptyTally(80);
+  tally = addSlice(tally, { improved: [1, 2], unchanged: 37, skipped: 1, pending: 0 }, 40);
+  tally = addSlice(tally, { improved: [3], unchanged: 4, skipped: 0, pending: 35 }, 40);
+  expect(tally).toEqual({ done: 45, total: 80, improved: 3, unchanged: 41, skipped: 1 });
 });

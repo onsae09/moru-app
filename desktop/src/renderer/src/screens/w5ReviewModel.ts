@@ -92,3 +92,45 @@ export function reviewedPercent(reviewed: number | null, total: number | null): 
   if (reviewed === null || total === null || total <= 0) return null;
   return Math.min(100, (reviewed / total) * 100);
 }
+
+/**
+ * Entries per AI re-review request. Small enough that progress moves and a
+ * cancel lands within one model round-trip or two; large enough that the
+ * engine still packs full batches.
+ */
+export const REVIEW_SLICE = 40;
+
+/** `refs` cut into request-sized slices, in order. */
+export function reviewSlices<T>(refs: readonly T[], size = REVIEW_SLICE): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < refs.length; i += size) out.push(refs.slice(i, i + size));
+  return out;
+}
+
+/** Running totals of an AI re-review pass. */
+export interface ReviewTally {
+  done: number;
+  total: number;
+  improved: number;
+  unchanged: number;
+  skipped: number;
+}
+
+export function emptyTally(total: number): ReviewTally {
+  return { done: 0, total, improved: 0, unchanged: 0, skipped: 0 };
+}
+
+/** Fold one slice's result into the tally. `pending` entries are not done. */
+export function addSlice(
+  tally: ReviewTally,
+  slice: { improved: readonly unknown[]; unchanged: number; skipped: number; pending: number },
+  sent: number,
+): ReviewTally {
+  return {
+    ...tally,
+    done: tally.done + sent - slice.pending,
+    improved: tally.improved + slice.improved.length,
+    unchanged: tally.unchanged + slice.unchanged,
+    skipped: tally.skipped + slice.skipped,
+  };
+}

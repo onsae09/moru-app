@@ -1706,6 +1706,143 @@ def test_retranslate_on_scan_job_is_404(
     assert response.status_code == 404
 
 
+def _flagged_entries(record: JobRecord) -> None:
+    record.result.entries = [
+        EntryResult(
+            key=f"item.mod.bad_{i}",
+            file="lang/en_us.json",
+            source_text=f"Bad {i}",
+            status=EntryStatus.FAILED,
+            errors=["llm call failed: boom"],
+        )
+        for i in range(3)
+    ] + [
+        EntryResult(
+            key="item.mod.fine",
+            file="lang/en_us.json",
+            source_text="Fine",
+            translated_text="좋음",
+            status=EntryStatus.PASSED,
+        )
+    ]
+
+
+def test_review_targets_skip_hand_edits_and_signed_off(
+    client: TestClient, done_translate_job: JobRecord
+) -> None:
+    _flagged_entries(done_translate_job)
+    job = done_translate_job.id
+    edited = client.patch(
+        f"/translate/{job}/entries/item.mod.bad_0",
+        json={"translated_text": "손번역", "file": "lang/en_us.json"},
+        headers=AUTH,
+    )
+    assert edited.status_code == 200
+    # A hand edit is MODIFIED now, so put it back in the failed bucket to
+    # prove origin, not status, is what excludes it.
+    done_translate_job.result.entries[0].status = EntryStatus.FAILED
+    marked = client.post(
+        f"/translate/{job}/entries/reviewed",
+        json={"refs": [{"key": "item.mod.bad_1", "file": "lang/en_us.json"}], "reviewed": True},
+        headers=AUTH,
+    )
+    assert marked.status_code == 200
+
+    body = client.post(
+        f"/translate/{job}/review/targets", json={"buckets": ["failed"]}, headers=AUTH
+    ).json()
+    assert body["refs"] == [{"key": "item.mod.bad_2", "file": "lang/en_us.json"}]
+    assert body["skipped_human"] == 1 and body["skipped_reviewed"] == 1
+
+    with_reviewed = client.post(
+        f"/translate/{job}/review/targets",
+        json={"buckets": ["failed", "warning"], "include_reviewed": True},
+        headers=AUTH,
+    ).json()
+    assert {r["key"] for r in with_reviewed["refs"]} == {"item.mod.bad_1", "item.mod.bad_2"}
+
+
+def test_review_applies_improvements_and_clears_sign_off(
+    client: TestClient, done_translate_job: JobRecord, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import moru_engine.server.app as app_module
+    from moru_engine.pipeline.orchestrator import ReviewOutcome
+
+    _flagged_entries(done_translate_job)
+    job = done_translate_job.id
+    seen: list[list[str]] = []
+
+    class FakePipeline:
+        def __init__(self, _config: Any) -> None:
+            pass
+
+        async def review_entries(self, result, targets, _misses):
+            seen.extend(t.problems for t in targets)
+            entry = targets[0].entry
+            entry.translated_text = "고침"
+            entry.status = EntryStatus.PASSED
+            entry.errors = []
+            TranslationPipeline._refresh_stats(result)
+            return ReviewOutcome(improved=[entry], unchanged=len(targets) - 1)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(app_module, "TranslationPipeline", FakePipeline)
+    client.post(
+        f"/translate/{job}/entries/reviewed",
+        json={"refs": [{"key": "item.mod.bad_1", "file": "lang/en_us.json"}], "reviewed": True},
+        headers=AUTH,
+    )
+    response = client.post(
+        f"/translate/{job}/review",
+        json={
+            "refs": [
+                {"key": "item.mod.bad_1", "file": "lang/en_us.json"},
+                {"key": "item.mod.bad_2", "file": "lang/en_us.json"},
+                {"key": "gone", "file": "lang/en_us.json"},
+            ]
+        },
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [e["translated_text"] for e in body["improved"]] == ["고침"]
+    assert body["improved"][0]["reviewed"] is False
+    assert body["unchanged"] == 1 and body["skipped"] == 1
+    assert body["interruption"] is None
+    assert body["stats"]["failed_entries"] == 2
+    assert seen[0] == ["llm call failed: boom"]
+
+
+def test_mark_all_reviewed_covers_every_page_of_the_view(
+    client: TestClient, done_translate_job: JobRecord
+) -> None:
+    _populate_entries(done_translate_job, 250)
+    job = done_translate_job.id
+    narrowed = client.post(
+        f"/translate/{job}/entries/reviewed/all",
+        json={"reviewed": True, "search": "Source text 1"},
+        headers=AUTH,
+    ).json()
+    assert narrowed["matched"] == narrowed["changed"] == 1 + 10 + 100
+    everything = client.post(
+        f"/translate/{job}/entries/reviewed/all", json={"reviewed": True}, headers=AUTH
+    ).json()
+    assert everything == {"matched": 250, "changed": 250 - 111}
+    counts = client.get(f"/translate/{job}/entries/counts", headers=AUTH).json()
+    assert counts["reviewed"] == 250 and counts["unreviewed"] == 0
+
+
+def test_review_unknown_job_is_404(client: TestClient) -> None:
+    response = client.post(
+        "/translate/nope/review",
+        json={"refs": [{"key": "a", "file": "b"}]},
+        headers=AUTH,
+    )
+    assert response.status_code == 404
+
+
 # -- glossary / tm / config ----------------------------------------------------------
 
 

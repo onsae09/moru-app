@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Entry, EntryStatus } from "../../../shared/engine";
+import type { Entry, EntryStatus, ReviewBucket } from "../../../shared/engine";
 import {
   McText,
   STATUS_LABEL_KEY,
@@ -28,6 +28,7 @@ import {
 import { WIZARD_PAGE_CLASS } from "@/components/wizardPage";
 import { activateOnKey } from "@/components/a11y";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/components/Toast";
 import { TranslationGraphView } from "@/components/TranslationGraphView";
 import { api } from "@/lib/api";
 import { moru } from "@/lib/bridge";
@@ -39,13 +40,19 @@ import { useSessionJobs, useWizard } from "@/stores/wizard";
 
 import {
   type EntryRef,
+  type ReviewTally,
+  addSlice,
+  emptyTally,
   entryId,
   fileLabel,
   nextRowId,
   reviewKeyAction,
   reviewedPercent,
+  reviewSlices,
   sortFiles,
 } from "./w5ReviewModel";
+
+const REVIEW_BUCKETS: readonly ReviewBucket[] = ["failed", "warning", "glossary"];
 
 const PAGE_SIZE = 100;
 
@@ -190,8 +197,13 @@ export function W5Review() {
   const [draft, setDraft] = useState("");
   const [colorPreview, setColorPreview] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  // Entries retranslated so far by the bulk retry, for its progress label.
-  const [bulkDone, setBulkDone] = useState(0);
+  // AI re-review: the dialog's choices, and the running pass's totals.
+  const [aiReviewOpen, setAiReviewOpen] = useState(false);
+  const [aiBuckets, setAiBuckets] = useState<ReviewBucket[]>([...REVIEW_BUCKETS]);
+  const [aiIncludeReviewed, setAiIncludeReviewed] = useState(false);
+  const [aiTally, setAiTally] = useState<ReviewTally | null>(null);
+  const aiCancel = useRef(false);
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
@@ -372,39 +384,88 @@ export function W5Review() {
     if (refs.length > 0) reviewMut.mutate({ refs, reviewed });
   };
 
-  const bulkMut = useMutation({
-    // Retries every failed entry, not just the ones on screen: `rows` holds
-    // one PAGE_SIZE slice, so a run with more failures than that used to
-    // need the user to walk the pager and click once per page.
+  /*
+   * AI re-review of flagged entries across every page. The engine picks the
+   * targets (never hand translations), and the pass is walked in slices so
+   * progress moves and "stop" lands between two requests.
+   */
+  const aiReviewMut = useMutation({
     mutationFn: async () => {
       const jobId = translateJobId as string;
-      const refs = await api.allFailedRefs(jobId);
-      setBulkDone(0);
-      try {
-        for (const ref of refs) {
-          await api.retranslateEntry(jobId, ref.key, ref.file);
-          setBulkDone((n) => n + 1);
+      aiCancel.current = false;
+      const targets = await api.reviewTargets(jobId, aiBuckets, {
+        file: fileFilter,
+        includeReviewed: aiIncludeReviewed,
+      });
+      let tally = emptyTally(targets.refs.length);
+      setAiTally(tally);
+      let interruption: string | null = null;
+      for (const slice of reviewSlices(targets.refs)) {
+        if (aiCancel.current) break;
+        const res = await api.reviewEntries(jobId, slice);
+        tally = addSlice(tally, res, slice.length);
+        setAiTally(tally);
+        updateReviewStats(res.stats);
+        if (res.improved.length > 0) invalidate();
+        if (res.interruption !== null) {
+          interruption = res.interruption.message;
+          break;
         }
-      } catch (error) {
-        // Earlier entries may already have succeeded when a later one fails.
-        // Reconcile what did succeed without hiding the original error.
-        try {
-          updateReviewStats(await api.translateStats(jobId));
-        } catch {
-          // Entry invalidation below still refreshes the visible review rows.
-        }
-        throw error;
       }
-      return { count: refs.length, stats: await api.translateStats(jobId) };
+      return { tally, targets, interruption, cancelled: aiCancel.current };
     },
-    onSuccess: (result) => {
-      updateReviewStats(result.stats);
+    onSuccess: ({ tally, targets, interruption, cancelled }) => {
+      const skippedNote =
+        targets.skipped_human + targets.skipped_reviewed > 0
+          ? " " +
+            t("w5.aiReview.skippedNote", {
+              human: formatInt(targets.skipped_human),
+              reviewed: formatInt(targets.skipped_reviewed),
+            })
+          : "";
+      const summary = t("w5.aiReview.summary", {
+        improved: formatInt(tally.improved),
+        unchanged: formatInt(tally.unchanged),
+        done: formatInt(tally.done),
+        total: formatInt(tally.total),
+      });
+      if (interruption !== null) {
+        toast(`${t("w5.aiReview.interrupted")} ${summary} ${interruption}`, {
+          tone: "warn",
+          duration: 10000,
+        });
+      } else if (cancelled) {
+        toast(`${t("w5.aiReview.stopped")} ${summary}`, { tone: "warn" });
+      } else if (tally.total === 0) {
+        toast(t("w5.aiReview.nothing") + skippedNote, { tone: "warn" });
+      } else {
+        toast(`${t("w5.aiReview.done")} ${summary}${skippedNote}`, { tone: "ok", duration: 8000 });
+      }
     },
     onError: (err) => setActionError(errorText(err)),
     onSettled: () => {
-      setBulkDone(0);
+      setAiTally(null);
       invalidate();
     },
+  });
+
+  const toggleAiBucket = (bucket: ReviewBucket): void =>
+    setAiBuckets((prev) =>
+      prev.includes(bucket) ? prev.filter((b) => b !== bucket) : [...prev, bucket],
+    );
+
+  /* "Mark all reviewed": the whole view (filter, search, file), every page. */
+  const markAllMut = useMutation({
+    mutationFn: () =>
+      api.markAllReviewed(translateJobId as string, true, {
+        filter,
+        search: query,
+        file: fileFilter,
+      }),
+    onSuccess: (res) =>
+      toast(t("w5.markAll.done", { n: formatInt(res.changed) }), { tone: "ok" }),
+    onError: (err) => setActionError(errorText(err)),
+    onSettled: () => invalidate(),
   });
 
   const failedTotal = counts.failed ?? Math.max(failedEntryCount, Object.keys(failedKeys).length);
@@ -445,8 +506,8 @@ export function W5Review() {
       if (el !== null && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
         return;
       }
-      // The retranslate confirm owns the keyboard while it is open.
-      if (confirmRetrans !== null || e.metaKey || e.ctrlKey || e.altKey) return;
+      // An open dialog owns the keyboard.
+      if (confirmRetrans !== null || aiReviewOpen || confirmMarkAll || e.metaKey || e.ctrlKey || e.altKey) return;
       const action = reviewKeyAction(e.key);
       if (action === "next") {
         e.preventDefault();
@@ -691,25 +752,49 @@ export function W5Review() {
             : t("w5.markPage", { n: formatInt(rows.length) })}
         </button>
         <button
-          onClick={() => bulkMut.mutate()}
-          disabled={failedTotal === 0 || bulkMut.isPending}
+          onClick={() => setConfirmMarkAll(true)}
+          disabled={total === 0 || filter === "reviewed" || markAllMut.isPending}
           className="flex items-center gap-[6px] border border-edge px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text disabled:cursor-default disabled:opacity-50"
         >
-          {bulkMut.isPending ? (
-            <span className="inline-block h-3.5 w-3.5 animate-pxspin border-2 border-accent border-t-transparent" />
-          ) : (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M1 6 L3.5 8.5 L7 4 M5 8.5 L11 2.5" />
+          </svg>
+          {t("w5.markAll.button", { n: formatInt(total) })}
+        </button>
+        {aiReviewMut.isPending ? (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-[6px] border border-accent px-3 py-[6px] font-mono text-[11px] font-semibold text-accent">
+              <span className="inline-block h-3.5 w-3.5 animate-pxspin border-2 border-accent border-t-transparent" />
+              {aiTally === null
+                ? t("w5.aiReview.preparing")
+                : t("w5.aiReview.progress", {
+                    done: formatInt(aiTally.done),
+                    total: formatInt(aiTally.total),
+                    improved: formatInt(aiTally.improved),
+                  })}
+            </span>
+            <button
+              onClick={() => {
+                aiCancel.current = true;
+              }}
+              className="border border-edge px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text"
+            >
+              {t("w5.aiReview.stop")}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAiReviewOpen(true)}
+            disabled={(counts.failed ?? 0) + (counts.warning ?? 0) + (counts.glossary ?? 0) === 0}
+            className="flex items-center gap-[6px] border border-edge px-3 py-[6px] text-[11px] font-semibold text-text2 hover:border-edge2 hover:text-text disabled:cursor-default disabled:opacity-50"
+          >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M1 6 A5 5 0 0 1 11 6 L9 6" />
               <path d="M11 6 L9 4 M11 6 L9 8" />
             </svg>
-          )}
-          {bulkMut.isPending
-            ? t("w5.bulkProgress", {
-                done: formatInt(bulkDone),
-                total: formatInt(failedTotal),
-              })
-            : t("w5.bulkRetranslate", { n: formatInt(failedTotal) })}
-        </button>
+            {t("w5.aiReview.button")}
+          </button>
+        )}
       </div>
 
       {/* 2-col: table + detail */}
@@ -1169,6 +1254,65 @@ export function W5Review() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmMarkAll}
+        title={t("w5.markAll.title", { n: formatInt(total) })}
+        body={t("w5.markAll.body")}
+        confirmLabel={t("w5.markAll.confirm")}
+        onCancel={() => setConfirmMarkAll(false)}
+        onConfirm={() => {
+          setConfirmMarkAll(false);
+          markAllMut.mutate();
+        }}
+      />
+
+      <ConfirmDialog
+        open={aiReviewOpen}
+        eyebrow={t("w5.aiReview.eyebrow")}
+        title={t("w5.aiReview.title")}
+        body={
+          <div className="flex flex-col gap-3">
+            <p className="m-0">{t("w5.aiReview.body")}</p>
+            <div className="flex flex-col gap-[6px]">
+              {REVIEW_BUCKETS.map((bucket) => (
+                <label key={bucket} className="flex items-center gap-2 text-[13px] text-text">
+                  <input
+                    type="checkbox"
+                    checked={aiBuckets.includes(bucket)}
+                    onChange={() => toggleAiBucket(bucket)}
+                  />
+                  <span style={{ color: FILTER_COLOR[bucket] }}>{t(`w5.filter.${bucket}`)}</span>
+                  <span className="font-mono text-[11px] text-text3">
+                    {counts[bucket] !== null ? formatInt(counts[bucket]) : "—"}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-[12px] text-text2">
+              <input
+                type="checkbox"
+                checked={aiIncludeReviewed}
+                onChange={(e) => setAiIncludeReviewed(e.target.checked)}
+              />
+              {t("w5.aiReview.includeReviewed")}
+            </label>
+            <p className="m-0 text-[12px] text-text3">
+              {fileFilter !== null
+                ? t("w5.aiReview.scopeFile", { file: fileLabel(fileFilter).name })
+                : t("w5.aiReview.scopeAll")}{" "}
+              {t("w5.aiReview.humanNote")}
+            </p>
+          </div>
+        }
+        confirmLabel={t("w5.aiReview.start")}
+        busy={aiBuckets.length === 0}
+        onCancel={() => setAiReviewOpen(false)}
+        onConfirm={() => {
+          setAiReviewOpen(false);
+          aiReviewMut.mutate();
+        }}
+      />
 
       <ConfirmDialog
         open={confirmRetrans !== null}

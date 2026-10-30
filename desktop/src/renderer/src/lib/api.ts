@@ -22,6 +22,9 @@ import type {
   ModSourcesResult,
   PipelineStats,
   PlaceholderPattern,
+  ReviewBucket,
+  ReviewSliceResult,
+  ReviewTargets,
   Provider,
   ProviderModels,
   ProviderTestResult,
@@ -199,6 +202,39 @@ export const api = {
     request<{ matched: number; changed: number }>(`/translate/${jobId}/entries/reviewed`, {
       method: "POST",
       body: JSON.stringify({ refs, reviewed }),
+    }),
+  /**
+   * Sign off every entry one review view shows (filter, search, file),
+   * across all its pages — not just the page on screen.
+   */
+  markAllReviewed: (
+    jobId: string,
+    reviewed: boolean,
+    view: { filter: EntryFilter; search: string; file: string | null },
+  ) =>
+    request<{ matched: number; changed: number }>(`/translate/${jobId}/entries/reviewed/all`, {
+      method: "POST",
+      body: JSON.stringify({ reviewed, ...view }),
+    }),
+  /** The entries an AI re-review of `buckets` would cover. No model call. */
+  reviewTargets: (
+    jobId: string,
+    buckets: ReviewBucket[],
+    opts: { file?: string | null; includeReviewed?: boolean } = {},
+  ) =>
+    request<ReviewTargets>(`/translate/${jobId}/review/targets`, {
+      method: "POST",
+      body: JSON.stringify({
+        buckets,
+        file: opts.file ?? null,
+        include_reviewed: opts.includeReviewed ?? false,
+      }),
+    }),
+  /** AI re-review of one slice (≤ 200) of a target list. */
+  reviewEntries: (jobId: string, refs: { key: string; file: string }[]) =>
+    request<ReviewSliceResult>(`/translate/${jobId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ refs }),
     }),
   /** Every bucket's count in one server-side pass over the result. */
   entryCounts: (jobId: string, search = "", file: string | null = null) => {

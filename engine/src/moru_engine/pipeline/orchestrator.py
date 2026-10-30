@@ -72,7 +72,7 @@ from .limiter import TRANSPORT_BACKOFF_BASE, TRANSPORT_BACKOFF_MAX
 from .limiter import AdaptiveLimiter as _AdaptiveLimiter
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from ..models import LanguageFilePair
     from .checkpoint import CheckpointState, TranslationCheckpoint
@@ -167,6 +167,37 @@ def is_translatable_text(
 
 class RetranslateError(Exception):
     """Single-entry retranslation produced no acceptable output."""
+
+
+#: Opens the batch context of an AI re-review: the model gets each entry's
+#: current translation and its problems, not just the source again.
+REVIEW_CONTEXT_HEADER = (
+    "REVIEW PASS: each entry below already has a translation that was "
+    "flagged. Return a corrected translation for every key: fix the listed "
+    "problems (use the required glossary terms exactly), keep what is "
+    "already right, and keep the meaning of the source."
+)
+
+
+@dataclass(slots=True)
+class ReviewTarget:
+    """One entry for :meth:`TranslationPipeline.review_entries`."""
+
+    entry: EntryResult
+    #: What is wrong with the current translation, for the model.
+    problems: list[str]
+
+
+@dataclass(slots=True)
+class ReviewOutcome:
+    """What an AI re-review pass changed."""
+
+    improved: list[EntryResult] = field(default_factory=list)
+    #: Reviewed, but the model's answer was no better: the entry is untouched.
+    unchanged: int = 0
+    #: Never reviewed: the pass was interrupted first.
+    pending: int = 0
+    interruption: PipelineInterruption | None = None
 
 
 class EntryStatus(str, Enum):
@@ -2496,6 +2527,142 @@ class TranslationPipeline:
             graph.record_translation(entry.file, entry.key, restored)
         self._refresh_stats(result)
         return entry
+
+    async def review_entries(
+        self,
+        result: PipelineResult,
+        targets: Sequence[ReviewTarget],
+        glossary_misses: Callable[[str, str, str], Sequence[str]] | None = None,
+    ) -> ReviewOutcome:
+        """AI re-review of flagged entries (review screen "AI re-review").
+
+        Unlike :meth:`retranslate_entry`, the model is shown each entry's
+        current translation and what is wrong with it, so a warning or a
+        missing glossary term is fixed instead of re-rolled. Entries are sent
+        in batches per file, not one call each.
+
+        A new translation replaces the old one only when it is better:
+        fewer validation errors, then fewer missing glossary terms
+        (``glossary_misses(key, source, text)``), then fewer warnings.
+        The status follows the new validation (PASSED or WARNING), so the
+        review counters stay honest. A refused credential or an exhausted
+        quota stops the pass; entries already improved are kept and the
+        reason is in ``interruption``.
+        """
+        outcome = ReviewOutcome()
+        if not targets:
+            return outcome
+        glossary = result.glossary
+        if glossary is None:  # result predates run-scoped glossary storage
+            glossary, _ = await self._build_glossary([])
+        validator = TranslationValidator(glossary if glossary.has_rules else None)
+        graph = self._ensure_graph(result)
+
+        def score(entry: EntryResult, text: str) -> tuple[tuple[int, int, int], list[str], int]:
+            report = validator.validate({entry.key: entry.source_text}, {entry.key: text})
+            errors = [i.message for i in report.issues if i.severity == ValidationSeverity.ERROR]
+            warnings = [i.message for i in report.issues if i.severity != ValidationSeverity.ERROR]
+            missing = (
+                len(glossary_misses(entry.key, entry.source_text, text))
+                if glossary_misses is not None
+                else 0
+            )
+            return (len(errors), missing, len(warnings)), [*errors, *warnings], len(errors)
+
+        by_file: dict[str, list[ReviewTarget]] = {}
+        for target in targets:
+            by_file.setdefault(target.entry.file, []).append(target)
+
+        async def review_file(file: str, group: list[ReviewTarget]) -> None:
+            protected: dict[str, ProtectedText] = {}
+            batch: dict[str, str] = {}
+            problems: dict[str, str] = {}
+            for target in group:
+                entry = target.entry
+                protected[entry.key] = PlaceholderProtector().protect(entry.source_text)
+                batch[entry.key] = protected[entry.key].protected
+                current = (entry.translated_text or "").replace("\n", "\\n")
+                problems[entry.key] = (
+                    f'- {entry.key}: current="{current}"; problems: '
+                    + "; ".join(target.problems or ["unknown"])
+                )
+            entry_source = {t.entry.key: t.entry.source_text for t in group}
+            by_key = {t.entry.key: t.entry for t in group}
+            for chunk in self._make_batches(batch):
+                # Each batch carries only its own entries' problems: a file
+                # with hundreds of flagged entries would otherwise send all
+                # of them with every batch.
+                context = self._with_sibling_context(
+                    f"{REVIEW_CONTEXT_HEADER}\n"
+                    + "\n".join(problems[key] for key in chunk)
+                    + f"\nfile: {file}",
+                    graph,
+                    file,
+                    chunk,
+                )
+                chunk_glossary = GlossaryFilter.filter_for_texts(
+                    glossary, {key: entry_source[key] for key in chunk}
+                ).to_context_string()
+                translations, _failures = await self._translate_batch(
+                    chunk,
+                    chunk_glossary,
+                    context,
+                    file=file,
+                    # A re-review must reach the model, never replay the
+                    # cached answer it is reviewing.
+                    rollout_id=secrets.randbits(31),
+                )
+                # Applied per batch, so an interruption keeps what came back.
+                for key in chunk:
+                    apply(by_key[key], protected[key], translations.get(key))
+
+        def apply(entry: EntryResult, source: ProtectedText, out: str | None) -> None:
+            if out is None:
+                outcome.unchanged += 1
+                return
+            try:
+                restored = source.restore(out)
+            except PlaceholderError:
+                outcome.unchanged += 1
+                return
+            before, _, _ = score(entry, entry.translated_text or "")
+            if entry.status is EntryStatus.FAILED or not entry.translated_text:
+                before = (max(before[0], 1), *before[1:])
+            after, issues, error_count = score(entry, restored)
+            if after >= before:
+                outcome.unchanged += 1
+                return
+            entry.translated_text = restored
+            entry.errors = issues
+            entry.status = (
+                EntryStatus.FAILED
+                if error_count
+                else EntryStatus.WARNING
+                if issues
+                else EntryStatus.PASSED
+            )
+            if graph is not None:
+                graph.record_translation(entry.file, entry.key, restored)
+            outcome.improved.append(entry)
+
+        self._interruptible = True
+        try:
+            results = await asyncio.gather(
+                *(review_file(file, group) for file, group in by_file.items()),
+                return_exceptions=True,
+            )
+        finally:
+            self._interruptible = False
+        for item in results:
+            if isinstance(item, asyncio.CancelledError) and self._interruption is not None:
+                continue
+            if isinstance(item, BaseException):
+                raise item
+        outcome.interruption = self._interruption
+        # Files the interruption reached before their batch came back.
+        outcome.pending = len(targets) - len(outcome.improved) - outcome.unchanged
+        self._refresh_stats(result)
+        return outcome
 
     @staticmethod
     def _refresh_stats(result: PipelineResult) -> None:

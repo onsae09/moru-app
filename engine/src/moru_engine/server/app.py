@@ -230,6 +230,7 @@ class ReviewTargetsRequest(BaseModel):
 
     buckets: list[ReviewBucket] = Field(min_length=1, max_length=3)
     file: str | None = Field(None, max_length=1024)
+    search: str = Field("", max_length=200)
     #: Entries the reviewer already signed off are left alone by default.
     include_reviewed: bool = False
 
@@ -824,7 +825,13 @@ def create_app(
         picked = manual.select(
             job_id, _in_file(result.entries, body.file), body.filter, body.search, misses
         )
-        changed = await manual.record_review(job_id, picked, body.reviewed)
+        # Chunked like ReviewMark's bound, so no journal line grows with the
+        # size of the pack.
+        changed = 0
+        for start in range(0, len(picked), 1000):
+            changed += await manual.record_review(
+                job_id, picked[start : start + 1000], body.reviewed
+            )
         return {"matched": len(picked), "changed": changed}
 
     @api.get("/translate/{job_id}/entries")
@@ -1042,8 +1049,11 @@ def create_app(
         entries = _in_file(result.entries, body.file)
         picked: dict[tuple[str, str], EntryResult] = {}
         for bucket in body.buckets:
-            for e in manual.select(job_id, entries, bucket, "", misses):
-                picked.setdefault((e.file, e.key), e)
+            for e in manual.select(job_id, entries, bucket, body.search, misses):
+                # Deliberately untranslated or not yet translated: nothing
+                # for a reviewer to fix.
+                if e.status not in (EntryStatus.SKIPPED, EntryStatus.PENDING):
+                    picked.setdefault((e.file, e.key), e)
         state = manual.state(job_id)
         refs: list[dict[str, str]] = []
         skipped_human = skipped_reviewed = 0

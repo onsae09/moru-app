@@ -2617,6 +2617,13 @@ class TranslationPipeline:
                     apply(by_key[key], protected[key], translations.get(key))
 
         def apply(entry: EntryResult, source: ProtectedText, out: str | None) -> None:
+            try:
+                accept(entry, source, out)
+            except Exception as exc:  # noqa: BLE001 — one entry must not sink the slice
+                logger.warning("Re-review of %s failed: %s", entry.key, exc)
+                outcome.unchanged += 1
+
+        def accept(entry: EntryResult, source: ProtectedText, out: str | None) -> None:
             if out is None:
                 outcome.unchanged += 1
                 return
@@ -2653,11 +2660,13 @@ class TranslationPipeline:
             )
         finally:
             self._interruptible = False
-        for item in results:
-            if isinstance(item, asyncio.CancelledError) and self._interruption is not None:
-                continue
-            if isinstance(item, BaseException):
+        for (file, _group), item in zip(by_file.items(), results, strict=True):
+            if isinstance(item, asyncio.CancelledError) and self._interruption is None:
                 raise item
+            if isinstance(item, Exception):
+                # Counted as pending below: what other files improved is
+                # still returned and saved.
+                logger.error("Re-review of %s failed: %s", file, item)
         outcome.interruption = self._interruption
         # Files the interruption reached before their batch came back.
         outcome.pending = len(targets) - len(outcome.improved) - outcome.unchanged

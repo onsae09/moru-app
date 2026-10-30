@@ -220,13 +220,14 @@ export const api = {
   reviewTargets: (
     jobId: string,
     buckets: ReviewBucket[],
-    opts: { file?: string | null; includeReviewed?: boolean } = {},
+    opts: { file?: string | null; search?: string; includeReviewed?: boolean } = {},
   ) =>
     request<ReviewTargets>(`/translate/${jobId}/review/targets`, {
       method: "POST",
       body: JSON.stringify({
         buckets,
         file: opts.file ?? null,
+        search: opts.search ?? "",
         include_reviewed: opts.includeReviewed ?? false,
       }),
     }),

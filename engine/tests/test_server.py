@@ -1761,6 +1761,18 @@ def test_review_targets_skip_hand_edits_and_signed_off(
     ).json()
     assert {r["key"] for r in with_reviewed["refs"]} == {"item.mod.bad_1", "item.mod.bad_2"}
 
+    searched = client.post(
+        f"/translate/{job}/review/targets",
+        json={"buckets": ["failed"], "search": "Bad 2"},
+        headers=AUTH,
+    ).json()
+    assert [r["key"] for r in searched["refs"]] == ["item.mod.bad_2"]
+    done_translate_job.result.entries[2].status = EntryStatus.SKIPPED
+    skipped = client.post(
+        f"/translate/{job}/review/targets", json={"buckets": ["failed", "glossary"]}, headers=AUTH
+    ).json()
+    assert skipped["refs"] == []
+
 
 def test_review_applies_improvements_and_clears_sign_off(
     client: TestClient, done_translate_job: JobRecord, monkeypatch: pytest.MonkeyPatch

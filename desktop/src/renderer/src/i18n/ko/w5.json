@@ -94,7 +94,10 @@
     "done": "AI 재검수 완료:",
     "stopped": "AI 재검수를 중지했어요:",
     "interrupted": "AI 재검수가 중간에 멈췄어요:",
-    "nothing": "재검수할 항목이 없어요."
+    "nothing": "재검수할 항목이 없어요.",
+    "counting": "대상 계산 중...",
+    "targetCount": "대상 {{n}}건.",
+    "scopeSearch": "검색어 “{{q}}”에 맞는 항목만."
   },
   "markAll": {
     "button": "전체 {{n}}건 검수 완료",

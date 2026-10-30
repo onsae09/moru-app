@@ -162,3 +162,27 @@ async def test_review_interruption_keeps_finished_batches(
     assert outcome.interruption is not None and outcome.interruption.reason == "quota"
     assert [e.key for e in outcome.improved] == ["quest.title"]
     assert outcome.pending == 2
+
+
+@pytest.mark.asyncio
+async def test_one_broken_entry_does_not_sink_the_others(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from moru_engine.validator import TranslationValidator
+
+    real = TranslationValidator.validate
+
+    def picky(self, sources, translations):  # noqa: ANN001, ANN202
+        if "item.shard" in sources:
+            raise ValueError("validator blew up")
+        return real(self, sources, translations)
+
+    monkeypatch.setattr(TranslationValidator, "validate", picky)
+    result, outcome, _ = await _review(
+        tmp_path,
+        {"item.orb": "공허 오브", "item.shard": "공허 파편"},
+        ["item.orb", "item.shard"],
+    )
+    assert [e.key for e in outcome.improved] == ["item.orb"]
+    assert outcome.unchanged == 1 and outcome.pending == 0
+    assert result.entries[2].translated_text == "보이드 조각"

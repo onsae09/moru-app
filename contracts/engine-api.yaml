@@ -463,7 +463,8 @@ paths:
     post:
       summary: >
         The entries an AI re-review of `buckets` (failed / warning /
-        glossary) would cover, optionally in one file. Never calls a model.
+        glossary) would cover, optionally narrowed by file and search. Skipped
+        and pending entries are never targets. Never calls a model.
         Hand translations are never offered; signed-off entries only with
         `include_reviewed`.
       parameters: [{ $ref: "#/components/parameters/JobId" }]
@@ -480,6 +481,7 @@ paths:
                   minItems: 1
                   items: { type: string, enum: [failed, warning, glossary] }
                 file: { type: string, nullable: true }
+                search: { type: string, maxLength: 200, default: "" }
                 include_reviewed: { type: boolean, default: false }
       responses:
         "200":

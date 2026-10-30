@@ -395,6 +395,7 @@ export function W5Review() {
       aiCancel.current = false;
       const targets = await api.reviewTargets(jobId, aiBuckets, {
         file: fileFilter,
+        search: query,
         includeReviewed: aiIncludeReviewed,
       });
       let tally = emptyTally(targets.refs.length);
@@ -448,6 +449,21 @@ export function W5Review() {
       invalidate();
     },
   });
+
+  // What the pass would send, shown before the user commits to model calls.
+  // Model-free, so it is asked again whenever a choice changes.
+  const aiTargetsQuery = useQuery({
+    queryKey: ["w5", translateJobId, "reviewTargets", aiBuckets, aiIncludeReviewed, fileFilter, query],
+    queryFn: () =>
+      api.reviewTargets(translateJobId as string, aiBuckets, {
+        file: fileFilter,
+        search: query,
+        includeReviewed: aiIncludeReviewed,
+      }),
+    enabled: translateJobId !== null && aiReviewOpen && aiBuckets.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  const aiTargetCount = aiBuckets.length === 0 ? 0 : (aiTargetsQuery.data?.refs.length ?? null);
 
   const toggleAiBucket = (bucket: ReviewBucket): void =>
     setAiBuckets((prev) =>
@@ -1245,7 +1261,9 @@ export function W5Review() {
           )}
           <button
             onClick={() => go("w6")}
-            className="flex items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi"
+            // Exporting mid-pass would ship a moving target.
+            disabled={aiReviewMut.isPending}
+            className="flex items-center gap-[6px] bg-accent px-5 py-[10px] text-[13px] font-bold text-sel-ink hover:bg-accent-hi disabled:cursor-default disabled:opacity-50"
           >
             {t("w5.next")}
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1297,16 +1315,33 @@ export function W5Review() {
               />
               {t("w5.aiReview.includeReviewed")}
             </label>
+            <p className="m-0 font-mono text-[12px] text-text">
+              {aiTargetCount === null
+                ? t("w5.aiReview.counting")
+                : t("w5.aiReview.targetCount", { n: formatInt(aiTargetCount) })}
+              {aiTargetsQuery.data !== undefined &&
+                aiBuckets.length > 0 &&
+                aiTargetsQuery.data.skipped_human + aiTargetsQuery.data.skipped_reviewed > 0 && (
+                  <span className="text-text3">
+                    {" "}
+                    {t("w5.aiReview.skippedNote", {
+                      human: formatInt(aiTargetsQuery.data.skipped_human),
+                      reviewed: formatInt(aiTargetsQuery.data.skipped_reviewed),
+                    })}
+                  </span>
+                )}
+            </p>
             <p className="m-0 text-[12px] text-text3">
               {fileFilter !== null
                 ? t("w5.aiReview.scopeFile", { file: fileLabel(fileFilter).name })
                 : t("w5.aiReview.scopeAll")}{" "}
+              {query !== "" && `${t("w5.aiReview.scopeSearch", { q: query })} `}
               {t("w5.aiReview.humanNote")}
             </p>
           </div>
         }
         confirmLabel={t("w5.aiReview.start")}
-        busy={aiBuckets.length === 0}
+        busy={aiTargetCount === null || aiTargetCount === 0 || aiTargetsQuery.isFetching}
         onCancel={() => setAiReviewOpen(false)}
         onConfirm={() => {
           setAiReviewOpen(false);

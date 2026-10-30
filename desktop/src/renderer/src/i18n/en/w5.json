@@ -94,7 +94,10 @@
     "done": "AI re-review finished:",
     "stopped": "AI re-review stopped:",
     "interrupted": "AI re-review was interrupted:",
-    "nothing": "Nothing to re-review."
+    "nothing": "Nothing to re-review.",
+    "counting": "Counting entries...",
+    "targetCount": "{{n}} entries will be sent.",
+    "scopeSearch": "Only entries matching “{{q}}”."
   },
   "markAll": {
     "button": "Mark all {{n}} reviewed",
